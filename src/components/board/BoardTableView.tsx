@@ -144,7 +144,6 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   const canDeleteTask = (task: any) => {
     if (isLeaderOrAdmin) return true;
     if (canEditBoard && task.assignee_email === userProfile?.email) return true;
-    if (isBoardOwner) return true;
     return false;
   };
 
