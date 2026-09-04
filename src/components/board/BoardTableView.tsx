@@ -138,9 +138,8 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   });
 
   const boardName = boardInfo?.name || '';
-  const isGeneralBoard = boardName.toLowerCase().includes('projeto') || boardName.toLowerCase().includes('panorama') || boardName.toLowerCase().includes('geral');
-  const isBoardOwner = userProfile?.email?.toLowerCase().includes(boardName.toLowerCase().trim());
-  const canEditBoard = isLeaderOrAdmin || isGeneralBoard || isBoardOwner || !boardName;
+  // Qualquer membro do setor/quadro pode editar e criar tarefas no quadro
+  const canEditBoard = true;
 
   const canDeleteTask = (task: any) => {
     if (isLeaderOrAdmin) return true;
