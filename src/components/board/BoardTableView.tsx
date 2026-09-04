@@ -106,6 +106,14 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     refetchInterval: 30000
   });
 
+  const { data: workspaceUsers } = useQuery({
+    queryKey: ['workspace_users'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('email, avatar_url, role');
+      return data || [];
+    }
+  });
+
   const { data: currentUserProfile } = useQuery({
     queryKey: ['current_user_profile'],
     queryFn: async () => {
