@@ -84,10 +84,14 @@ export function BoardTableView({ boardId }: { boardId: string }) {
         .select('*')
         .eq('task_id', taskDetailsOpen.id)
         .order('created_at', { ascending: false });
-      if (error) return [];
+      if (error) {
+        console.error("Tabela task_updates ainda não existe ou erro:", error);
+        return [];
+      }
       return data;
     },
-    enabled: !!taskDetailsOpen?.id
+    enabled: !!taskDetailsOpen?.id,
+    refetchInterval: 2000 // Polling a cada 2s para simular realtime nos comentários
   });
 
   const { data: activityLogs } = useQuery({
@@ -106,33 +110,37 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     refetchInterval: 30000
   });
 
+  const { data: userProfile } = useQuery({
+    queryKey: ['current_user'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    }
+  });
+
   const { data: workspaceUsers } = useQuery({
     queryKey: ['workspace_users'],
     queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('email, avatar_url, role');
-      return data || [];
+      const { data: profiles } = await supabase.from('profiles').select('email, avatar_url, role');
+      return profiles || [];
     }
   });
 
-  const { data: currentUserProfile } = useQuery({
-    queryKey: ['current_user_profile'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      return data || { email: user.email, role: 'user' };
-    }
-  });
-
+  const currentUserProfile = workspaceUsers?.find((u: any) => u.email === userProfile?.email);
   const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
-  const userProfile = { email: currentUserProfile?.email };
+  
+  const { data: boardInfo } = useQuery({
+    queryKey: ['board_info', boardId],
+    queryFn: async () => {
+      const { data } = await supabase.from('boards').select('name').eq('id', boardId).single();
+      return data;
+    }
+  });
 
   const canEditBoard = true;
 
   const canDeleteTask = (task: any) => {
-    if (isLeaderOrAdmin) return true;
-    if (canEditBoard && task.assignee_email === userProfile?.email) return true;
-    return false;
+    return true; // Qualquer usuário no quadro pode excluir ou gerenciar tarefas
   };
 
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -283,14 +291,66 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['tasks', boardId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // 1. Pega as tarefas locais deste quadro
+      const { data: localTasks, error } = await supabase
         .from('tasks')
         .select('*, task_updates(id)')
         .eq('board_id', boardId)
         .order('position');
       if (error) throw error;
-      return data || [];
-    }
+
+      // 2. Pega o nome do quadro para identificar se é um quadro pessoal
+      const { data: boardData } = await supabase.from('boards').select('name').eq('id', boardId).single();
+      const boardName = boardData?.name || '';
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      let externalTasks: any[] = [];
+      
+      // Evita puxar tarefas em quadros gerais (ex: Panorama do projeto)
+      const isGeneralBoard = boardName.toLowerCase().includes('projeto') || boardName.toLowerCase().includes('panorama') || boardName.toLowerCase().includes('geral');
+      
+      if (!isGeneralBoard && boardName.length > 2) {
+        const cleanBoardName = boardName.trim();
+        
+        // Pega todos os perfis para tentar achar o dono do quadro
+        const { data: profiles } = await supabase.from('profiles').select('email');
+        const matchedProfiles = profiles?.filter(p => p.email.toLowerCase().includes(cleanBoardName.toLowerCase())) || [];
+        
+        // Constrói a busca: Nome do quadro OU qualquer email que contenha o nome do quadro
+        let orQuery = `assignee_email.ilike.%${cleanBoardName}%`;
+        
+        matchedProfiles.forEach(p => {
+          orQuery += `,assignee_email.ilike.%${p.email}%`;
+        });
+        
+        // Se o usuário logado for dono, adiciona o email dele pra garantir 100% de precisão
+        if (user?.email && user.email.toLowerCase().includes(cleanBoardName.toLowerCase())) {
+          orQuery += `,assignee_email.ilike.%${user.email}%`;
+        }
+
+        const { data: extData } = await supabase
+          .from('tasks')
+          .select('*, task_updates(id), boards!inner(id, name, workspace_id)')
+          .neq('board_id', boardId)
+          .or(orQuery);
+          
+        if (extData) {
+          const activeWorkspace = localStorage.getItem('monday_active_workspace');
+          externalTasks = extData
+            .filter((t: any) => !activeWorkspace || t.boards.workspace_id === activeWorkspace)
+            .map((t: any) => ({
+              ...t,
+              is_external: true,
+              external_board_name: t.boards.name,
+              external_board_id: t.boards.id
+            }));
+        }
+      }
+
+      return [...(localTasks || []), ...externalTasks];
+    },
+    refetchInterval: 30000
   });
 
   const deleteTask = useMutation({
@@ -417,25 +477,19 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     if (!canEditBoard) return;
     const defaultGroup = 'Tarefas pendentes';
     const position = (groupedTasks[defaultGroup]?.length || 0) + 1;
-    
-    // Inserção otimizada
-    const { data: newTask, error } = await supabase.from('tasks').insert([
+    const { error } = await supabase.from('tasks').insert([
       { 
         title: 'Nova Tarefa', 
         board_id: boardId, 
         group_name: defaultGroup, 
         position: position 
       }
-    ]).select().single();
-
+    ]);
     if (error) {
       alert('Erro ao criar tarefa: ' + error.message);
     } else {
-      // Atualiza o cache local imediatamente sem dar 'loading' na página inteira
-      queryClient.setQueryData(['tasks', boardId], (oldTasks: any[] | undefined) => {
-        return oldTasks ? [...oldTasks, { ...newTask, task_updates: [] }] : [{ ...newTask, task_updates: [] }];
-      });
       queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+      // Remove do colapso caso esteja fechado
       setCollapsedGroups(prev => prev.filter(name => name !== defaultGroup));
     }
   };
@@ -628,21 +682,17 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                         if (e.key === 'Enter' && e.currentTarget.value.trim() !== '') {
                           const taskTitle = e.currentTarget.value.trim();
                           e.currentTarget.value = '';
-                          const { data: newTask, error } = await supabase.from('tasks').insert([
+                          const { error } = await supabase.from('tasks').insert([
                             { 
                               title: taskTitle, 
                               board_id: boardId, 
                               group_name: title, 
                               position: (groupTasks?.length || 0) + 1 
                             }
-                          ]).select().single();
-
+                          ]);
                           if (error) {
                             alert('Erro ao criar: ' + error.message);
                           } else {
-                            queryClient.setQueryData(['tasks', boardId], (oldTasks: any[] | undefined) => {
-                              return oldTasks ? [...oldTasks, { ...newTask, task_updates: [] }] : [{ ...newTask, task_updates: [] }];
-                            });
                             queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
                           }
                         }

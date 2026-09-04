@@ -17,8 +17,24 @@ export function AssigneeCell({ task }: { task: any }) {
   const { data: workspaceUsers } = useQuery({
     queryKey: ['workspace_users'],
     queryFn: async () => {
+      // 1. Pega os usuários oficiais da base (cadastrados) com seus avatares
       const { data: profiles } = await supabase.from('profiles').select('email, avatar_url');
-      return profiles || [];
+      const registeredUsers = profiles ? profiles.map((p: any) => ({ email: p.email, avatar_url: p.avatar_url })) : [];
+      
+      // 2. Pega os e-mails que já foram atribuídos a alguma tarefa
+      const { data: tasks } = await supabase.from('tasks').select('assignee_email').not('assignee_email', 'is', null);
+      const taskEmails = tasks ? tasks.flatMap((d: any) => d.assignee_email.split(',').map((e: string) => e.trim())) : [];
+      
+      // Combinar tudo e remover duplicatas baseadas no email
+      const allEmails = new Set([...registeredUsers.map(u => u.email), ...taskEmails]);
+      
+      return Array.from(allEmails).map(email => {
+        const profile = registeredUsers.find(u => u.email === email);
+        return {
+          email,
+          avatar_url: profile?.avatar_url || null
+        };
+      });
     }
   });
 
