@@ -291,66 +291,15 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['tasks', boardId],
     queryFn: async () => {
-      // 1. Pega as tarefas locais deste quadro
-      const { data: localTasks, error } = await supabase
+      const { data, error } = await supabase
         .from('tasks')
         .select('*, task_updates(id)')
         .eq('board_id', boardId)
         .order('position');
       if (error) throw error;
-
-      // 2. Pega o nome do quadro para identificar se é um quadro pessoal
-      const { data: boardData } = await supabase.from('boards').select('name').eq('id', boardId).single();
-      const boardName = boardData?.name || '';
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      let externalTasks: any[] = [];
-      
-      // Evita puxar tarefas em quadros gerais (ex: Panorama do projeto)
-      const isGeneralBoard = boardName.toLowerCase().includes('projeto') || boardName.toLowerCase().includes('panorama') || boardName.toLowerCase().includes('geral');
-      
-      if (!isGeneralBoard && boardName.length > 2) {
-        const cleanBoardName = boardName.trim();
-        
-        // Pega todos os perfis para tentar achar o dono do quadro
-        const { data: profiles } = await supabase.from('profiles').select('email');
-        const matchedProfiles = profiles?.filter(p => p.email.toLowerCase().includes(cleanBoardName.toLowerCase())) || [];
-        
-        // Constrói a busca: Nome do quadro OU qualquer email que contenha o nome do quadro
-        let orQuery = `assignee_email.ilike.%${cleanBoardName}%`;
-        
-        matchedProfiles.forEach(p => {
-          orQuery += `,assignee_email.ilike.%${p.email}%`;
-        });
-        
-        // Se o usuário logado for dono, adiciona o email dele pra garantir 100% de precisão
-        if (user?.email && user.email.toLowerCase().includes(cleanBoardName.toLowerCase())) {
-          orQuery += `,assignee_email.ilike.%${user.email}%`;
-        }
-
-        const { data: extData } = await supabase
-          .from('tasks')
-          .select('*, task_updates(id), boards!inner(id, name, workspace_id)')
-          .neq('board_id', boardId)
-          .or(orQuery);
-          
-        if (extData) {
-          const activeWorkspace = localStorage.getItem('monday_active_workspace');
-          externalTasks = extData
-            .filter((t: any) => !activeWorkspace || t.boards.workspace_id === activeWorkspace)
-            .map((t: any) => ({
-              ...t,
-              is_external: true,
-              external_board_name: t.boards.name,
-              external_board_id: t.boards.id
-            }));
-        }
-      }
-
-      return [...(localTasks || []), ...externalTasks];
+      return data || [];
     },
-    refetchInterval: 30000
+    staleTime: 10000 // Mantem em cache local por 10s
   });
 
   const deleteTask = useMutation({
