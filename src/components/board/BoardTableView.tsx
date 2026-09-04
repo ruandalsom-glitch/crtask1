@@ -417,19 +417,25 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     if (!canEditBoard) return;
     const defaultGroup = 'Tarefas pendentes';
     const position = (groupedTasks[defaultGroup]?.length || 0) + 1;
-    const { error } = await supabase.from('tasks').insert([
+    
+    // Inserção otimizada
+    const { data: newTask, error } = await supabase.from('tasks').insert([
       { 
         title: 'Nova Tarefa', 
         board_id: boardId, 
         group_name: defaultGroup, 
         position: position 
       }
-    ]);
+    ]).select().single();
+
     if (error) {
       alert('Erro ao criar tarefa: ' + error.message);
     } else {
+      // Atualiza o cache local imediatamente sem dar 'loading' na página inteira
+      queryClient.setQueryData(['tasks', boardId], (oldTasks: any[] | undefined) => {
+        return oldTasks ? [...oldTasks, { ...newTask, task_updates: [] }] : [{ ...newTask, task_updates: [] }];
+      });
       queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
-      // Remove do colapso caso esteja fechado
       setCollapsedGroups(prev => prev.filter(name => name !== defaultGroup));
     }
   };
@@ -622,17 +628,21 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                         if (e.key === 'Enter' && e.currentTarget.value.trim() !== '') {
                           const taskTitle = e.currentTarget.value.trim();
                           e.currentTarget.value = '';
-                          const { error } = await supabase.from('tasks').insert([
+                          const { data: newTask, error } = await supabase.from('tasks').insert([
                             { 
                               title: taskTitle, 
                               board_id: boardId, 
                               group_name: title, 
                               position: (groupTasks?.length || 0) + 1 
                             }
-                          ]);
+                          ]).select().single();
+
                           if (error) {
                             alert('Erro ao criar: ' + error.message);
                           } else {
+                            queryClient.setQueryData(['tasks', boardId], (oldTasks: any[] | undefined) => {
+                              return oldTasks ? [...oldTasks, { ...newTask, task_updates: [] }] : [{ ...newTask, task_updates: [] }];
+                            });
                             queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
                           }
                         }
