@@ -105,6 +105,20 @@ export function KanbanCard({ task, isOverlay, onOpenTask }: { task: any, isOverl
             </div>
           </div>
         )}
+
+        {/* Esforço / Complexidade Badge */}
+        {task.effort && (
+          <div className="relative group/tooltip">
+            <div className="flex items-center bg-slate-100 rounded px-2 py-0.5 text-xs font-medium text-slate-700 gap-1.5 h-5 border border-slate-200">
+              <span>{task.effort === 'Baixo' ? '⚡' : task.effort === 'Médio' ? '⚖️' : task.effort === 'Alto' ? '🔥' : '🚀'}</span>
+              {task.effort}
+            </div>
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#323338] text-white text-[11px] font-bold px-2 py-1 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+              Esforço
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#323338]"></div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="text-xs text-slate-500 mb-4 mt-1 font-medium truncate">

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { StatusCell } from './StatusCell';
 import { PriorityCell } from './PriorityCell';
+import { EffortCell } from './EffortCell';
 import { AssigneeCell } from './AssigneeCell';
 import { Reactions } from './Reactions';
 import { UpdateContent } from './UpdateContent';
@@ -490,7 +491,8 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                   <th className="font-normal px-0 py-0 border-r border-slate-200 w-40 text-center">Status</th>
                   <th className="font-normal px-4 py-2 border-r border-slate-200 w-48 text-center">Timeline</th>
                   <th className="font-normal px-4 py-2 border-r border-slate-200 w-32 text-center">Prazo</th>
-                  <th className="font-normal px-0 py-0 border-r border-slate-200 w-40 text-center">Prioridade</th>
+                  <th className="font-normal px-0 py-0 border-r border-slate-200 w-36 text-center">Prioridade</th>
+                  <th className="font-normal px-0 py-0 border-r border-slate-200 w-40 text-center">Esforço</th>
                   <th className="font-normal px-4 py-2 border-r border-slate-200 w-32 text-center">Arquivos</th>
                   <th className="w-10 text-center p-0"></th>
                 </tr>
@@ -587,6 +589,9 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                       </td>
                       <td className="p-0 border-r border-slate-200 text-center">
                         <PriorityCell task={task} />
+                      </td>
+                      <td className="p-0 border-r border-slate-200 text-center">
+                        <EffortCell task={task} />
                       </td>
                       <td className="px-4 py-0 border-r border-slate-200 text-center hover:bg-slate-50 cursor-pointer group/file relative h-full">
                         <label className="flex items-center justify-center h-[42px] w-full cursor-pointer">
