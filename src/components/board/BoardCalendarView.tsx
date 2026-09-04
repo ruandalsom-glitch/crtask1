@@ -192,16 +192,10 @@ export function BoardCalendarView({ boardId }: { boardId: string }) {
     }
   });
 
-  const boardName = boardInfo?.name || '';
-  const isGeneralBoard = boardName.toLowerCase().includes('projeto') || boardName.toLowerCase().includes('panorama') || boardName.toLowerCase().includes('geral');
-  const isBoardOwner = userProfile?.email?.toLowerCase().includes(boardName.toLowerCase().trim());
-  const canEditBoard = isLeaderOrAdmin || isGeneralBoard || isBoardOwner || !boardName;
+  const canEditBoard = true;
 
   const canDeleteTask = (task: any) => {
-    if (isLeaderOrAdmin) return true;
-    if (canEditBoard && task.assignee_email === userProfile?.email) return true;
-    if (isBoardOwner) return true;
-    return false;
+    return true;
   };
 
   const [drawerTab, setDrawerTab] = useState<'updates'|'files'|'activity'>('updates');

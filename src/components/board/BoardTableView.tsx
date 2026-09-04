@@ -295,11 +295,12 @@ export function BoardTableView({ boardId }: { boardId: string }) {
         .from('tasks')
         .select('*, task_updates(id)')
         .eq('board_id', boardId)
-        .order('position');
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true });
       if (error) throw error;
       return data || [];
     },
-    staleTime: 10000 // Mantem em cache local por 10s
+    staleTime: 10000
   });
 
   const deleteTask = useMutation({

@@ -61,10 +61,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     }
   });
 
-  const boardName = boardInfo?.name || '';
-  const isGeneralBoard = boardName.toLowerCase().includes('projeto') || boardName.toLowerCase().includes('panorama') || boardName.toLowerCase().includes('geral');
-  const isBoardOwner = userProfile?.email?.toLowerCase().includes(boardName.toLowerCase().trim());
-  const canEditBoard = isLeaderOrAdmin || isGeneralBoard || isBoardOwner || !boardName;
+  const canEditBoard = true;
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['tasks', boardId],
