@@ -106,35 +106,19 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     refetchInterval: 30000
   });
 
-  const { data: userProfile } = useQuery({
-    queryKey: ['current_user'],
+  const { data: currentUserProfile } = useQuery({
+    queryKey: ['current_user_profile'],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      return user;
+      if (!user) return null;
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      return data || { email: user.email, role: 'user' };
     }
   });
 
-  const { data: workspaceUsers } = useQuery({
-    queryKey: ['workspace_users'],
-    queryFn: async () => {
-      const { data: profiles } = await supabase.from('profiles').select('email, avatar_url, role');
-      return profiles || [];
-    }
-  });
-
-  const currentUserProfile = workspaceUsers?.find((u: any) => u.email === userProfile?.email);
   const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
-  
-  const { data: boardInfo } = useQuery({
-    queryKey: ['board_info', boardId],
-    queryFn: async () => {
-      const { data } = await supabase.from('boards').select('name').eq('id', boardId).single();
-      return data;
-    }
-  });
+  const userProfile = { email: currentUserProfile?.email };
 
-  const boardName = boardInfo?.name || '';
-  // Qualquer membro do setor/quadro pode editar e criar tarefas no quadro
   const canEditBoard = true;
 
   const canDeleteTask = (task: any) => {
