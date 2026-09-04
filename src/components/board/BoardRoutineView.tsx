@@ -263,7 +263,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                   type="text" 
                   value={newRoutine.title}
                   onChange={e => setNewRoutine({...newRoutine, title: e.target.value})}
-                  className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
                   placeholder="Ex: Backup do banco de dados"
                 />
               </div>
@@ -275,7 +275,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                     type="time" 
                     value={newRoutine.time}
                     onChange={e => setNewRoutine({...newRoutine, time: e.target.value})}
-                    className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -284,7 +284,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                     type="time" 
                     value={newRoutine.timeEnd}
                     onChange={e => setNewRoutine({...newRoutine, timeEnd: e.target.value})}
-                    className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -292,11 +292,11 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                   <select 
                     value={newRoutine.assignee_email}
                     onChange={e => setNewRoutine({...newRoutine, assignee_email: e.target.value})}
-                    className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
                   >
-                    <option value="">Nenhum</option>
+                    <option value="" className="text-slate-800">Nenhum</option>
                     {workspaceUsers?.map((u: any) => (
-                      <option key={u.email} value={u.email}>{u.email}</option>
+                      <option key={u.email} value={u.email} className="text-slate-800">{u.email}</option>
                     ))}
                   </select>
                 </div>
