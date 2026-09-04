@@ -163,7 +163,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
         const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, pendingFile);
 
         if (uploadError) {
-          alert("Erro no upload: Você criou o bucket 'attachments' e deu permissão pública no Supabase? (Veja o SQL)");
+          alert(`Erro no upload: ${uploadError.message || JSON.stringify(uploadError)}`);
           console.error(uploadError);
           setIsUploading(false);
           return;
