@@ -93,7 +93,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
       return data;
     },
     enabled: !!taskDetailsOpen?.id,
-    refetchInterval: 2000 // Polling a cada 2s para simular realtime nos comentários
+    refetchInterval: 10000 // Polling otimizado a cada 10s para evitar re-renders excessivos
   });
 
   const { data: activityLogs } = useQuery({

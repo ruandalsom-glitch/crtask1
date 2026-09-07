@@ -45,7 +45,7 @@ export function NotificationBell() {
       return data;
     },
     enabled: !!userProfile?.email,
-    refetchInterval: 5000 // Real-time falback
+    refetchInterval: 15000 // Polling otimizado a cada 15s
   });
 
   const markAsRead = useMutation({

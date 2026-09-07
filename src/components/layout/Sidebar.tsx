@@ -23,7 +23,7 @@ export function Sidebar() {
       const { data: { user } } = await supabase.auth.getUser();
       return user;
     },
-    staleTime: 0
+    staleTime: 5 * 60 * 1000
   });
 
   const { data: workspaces, isLoading: isLoadingWorkspaces } = useQuery({
@@ -43,7 +43,7 @@ export function Sidebar() {
       }
     },
     enabled: !!userProfile?.id,
-    staleTime: 0
+    staleTime: 5 * 60 * 1000
   });
 
   useEffect(() => {
@@ -158,7 +158,8 @@ export function Sidebar() {
                 if (name && activeWorkspaceId) {
                   const { data, error } = await supabase.from('boards').insert([{ name, workspace_id: activeWorkspaceId }]).select();
                   if (!error && data) {
-                    window.location.href = `/boards/${data[0].id}`;
+                    queryClient.invalidateQueries({ queryKey: ['sidebar_boards', activeWorkspaceId] });
+                    router.push(`/boards/${data[0].id}`);
                   }
                 } else if (!activeWorkspaceId) {
                   alert('Selecione um setor primeiro!');
@@ -189,7 +190,8 @@ export function Sidebar() {
                       e.preventDefault();
                       if(confirm(`Excluir o quadro "${board.name}"? Todas as tarefas serão perdidas!`)) {
                         await supabase.from('boards').delete().eq('id', board.id);
-                        window.location.href = '/'; 
+                        queryClient.invalidateQueries({ queryKey: ['sidebar_boards', activeWorkspaceId] });
+                        router.push('/');
                       }
                     }}
                     className="absolute right-2 opacity-0 group-hover/board:opacity-100 p-1 hover:bg-red-100 rounded text-slate-400 hover:text-red-500 transition-all shrink-0"
