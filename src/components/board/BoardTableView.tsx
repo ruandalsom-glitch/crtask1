@@ -7,6 +7,7 @@ import { StatusCell } from './StatusCell';
 import { PriorityCell } from './PriorityCell';
 import { EffortCell } from './EffortCell';
 import { AssigneeCell } from './AssigneeCell';
+import { AssigneeViewToggle } from './AssigneeViewToggle';
 import { Reactions } from './Reactions';
 import { UpdateContent } from './UpdateContent';
 import { PlusCircle, Trash2, MessageSquare, X, Paperclip, Activity, Copy, Download, Archive, MoreHorizontal, MessageCirclePlus, AlertCircle, CheckCircle2, Search, UserPlus, Sparkles, FileText, Calendar, Eye, EyeOff } from 'lucide-react';
@@ -770,6 +771,10 @@ export function BoardTableView({ boardId }: { boardId: string }) {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="ml-auto">
+          <AssigneeViewToggle />
         </div>
       </div>
 

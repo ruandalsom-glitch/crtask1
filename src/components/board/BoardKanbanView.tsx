@@ -21,6 +21,7 @@ import { KanbanCard } from './KanbanCard';
 import { Reactions } from './Reactions';
 import { UpdateContent } from './UpdateContent';
 import { Eye, EyeOff } from 'lucide-react';
+import { AssigneeViewToggle } from './AssigneeViewToggle';
 
 const STATUSES = ['Pendente', 'Trabalhando', 'Travado', 'Feito'];
 
@@ -270,7 +271,14 @@ export function BoardKanbanView({ boardId }: { boardId: string }) {
   const activeTask = tasks.find(t => t.id === activeId);
 
   return (
-    <div className="p-8 h-full flex overflow-x-auto gap-6 bg-[#f5f6f8]">
+    <div className="h-full flex flex-col bg-[#f5f6f8]">
+      {isLeaderOrAdmin && (
+        <div className="px-8 py-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Painel Kanban</span>
+          <AssigneeViewToggle />
+        </div>
+      )}
+      <div className="p-8 h-full flex overflow-x-auto gap-6 flex-1">
       <DndContext 
         sensors={sensors} 
         collisionDetection={closestCorners} 
@@ -403,5 +411,6 @@ export function BoardKanbanView({ boardId }: { boardId: string }) {
         </>
       )}
     </div>
+  </div>
   );
 }

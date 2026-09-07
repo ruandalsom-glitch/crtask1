@@ -1,10 +1,12 @@
 'use client';
 
+import { useState, useEffect, useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Calendar, MessageCirclePlus, User } from 'lucide-react';
+import { Calendar, MessageCirclePlus, User, Mail } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
+import { AssigneeViewMode } from './AssigneeViewToggle';
 
 const STATUS_COLORS: any = {
   'Feito': 'bg-[#00c875]',
@@ -30,6 +32,22 @@ export function KanbanCard({ task, isOverlay, onOpenTask }: { task: any, isOverl
     isDragging,
   } = useSortable({ id: task.id, data: { type: 'Task', task } });
 
+  const [viewMode, setViewModeState] = useState<AssigneeViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('crtask_assignee_view_mode') as AssigneeViewMode) || 'icons';
+    }
+    return 'icons';
+  });
+
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('crtask_assignee_view_mode') as AssigneeViewMode;
+      if (saved) setViewModeState(saved);
+    };
+    window.addEventListener('assignee_view_mode_change', handleSync);
+    return () => window.removeEventListener('assignee_view_mode_change', handleSync);
+  }, []);
+
   const { data: workspaceUsers } = useQuery({
     queryKey: ['workspace_users'],
     queryFn: async () => {
@@ -38,10 +56,27 @@ export function KanbanCard({ task, isOverlay, onOpenTask }: { task: any, isOverl
     }
   });
 
+  const currentEmails = useMemo(() => {
+    return task.assignee_email
+      ? task.assignee_email.split(',').map((e: string) => e.trim()).filter(Boolean)
+      : [];
+  }, [task.assignee_email]);
+
+  const formattedNames = useMemo(() => {
+    if (currentEmails.length === 0) return '';
+    return currentEmails.map((email: string) => {
+      const prefix = email.split('@')[0];
+      return prefix
+        .split(/[\._-]/)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+    }).join(', ');
+  }, [currentEmails]);
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging && !isOverlay ? 0 : 1, // Torna o original invisível para não haver duplicidade
+    opacity: isDragging && !isOverlay ? 0 : 1,
   };
 
   const formatDate = (dateStr: string) => {
@@ -126,22 +161,32 @@ export function KanbanCard({ task, isOverlay, onOpenTask }: { task: any, isOverl
       </div>
 
       <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-        <div className="flex -space-x-2">
-          {task.assignee_email ? (
-            task.assignee_email.split(',').map((email: string, i: number) => {
-              const e = email.trim();
-              if (!e) return null;
-              const profile = workspaceUsers?.find((u: any) => u.email === e);
-              const avatarSrc = profile?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${e}`;
-              return (
-                <div key={i} title={e} className="w-6 h-6 rounded-full bg-slate-200 border border-white overflow-hidden flex items-center justify-center relative group">
-                  <img src={avatarSrc} alt="avatar" className="w-full h-full object-cover" />
-                </div>
-              );
-            })
-          ) : (
-            <div className="w-6 h-6 rounded-full bg-slate-100 border border-white overflow-hidden flex items-center justify-center" title="Sem responsável">
+        <div className="flex items-center">
+          {currentEmails.length === 0 ? (
+            <div className="w-6 h-6 rounded-full bg-slate-100 border border-white flex items-center justify-center" title="Sem responsável">
               <User className="w-3.5 h-3.5 text-slate-400" />
+            </div>
+          ) : viewMode === 'names' ? (
+            <div className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-full text-[11px] font-semibold text-slate-700 max-w-[130px] truncate flex items-center gap-1" title={currentEmails.join(', ')}>
+              <User className="w-3 h-3 text-blue-600 shrink-0" />
+              <span className="truncate">{formattedNames}</span>
+            </div>
+          ) : viewMode === 'emails' ? (
+            <div className="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-full text-[11px] font-medium text-blue-800 max-w-[150px] truncate flex items-center gap-1" title={currentEmails.join(', ')}>
+              <Mail className="w-3 h-3 text-blue-600 shrink-0" />
+              <span className="truncate">{currentEmails.join(', ')}</span>
+            </div>
+          ) : (
+            <div className="flex -space-x-2">
+              {currentEmails.map((e: string, i: number) => {
+                const profile = workspaceUsers?.find((u: any) => u.email === e);
+                const avatarSrc = profile?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${e}`;
+                return (
+                  <div key={i} title={e} className="w-6 h-6 rounded-full bg-slate-200 border border-white overflow-hidden flex items-center justify-center relative group">
+                    <img src={avatarSrc} alt="avatar" className="w-full h-full object-cover" />
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
