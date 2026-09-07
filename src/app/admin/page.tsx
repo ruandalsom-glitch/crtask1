@@ -80,22 +80,26 @@ export default function AdminPage() {
     }
   });
 
-  // 4. Adicionar Usuário ao Workspace
+  // 4. Adicionar/Alocar Usuário ao Workspace (Remove de qualquer outro setor anterior para garantir 1 setor por usuário)
   const addMember = useMutation({
     mutationFn: async () => {
       if (!selectedWorkspace || !selectedUser) return;
+      
+      // Garante exclusividade de setor para não-admins
+      await supabase.from('workspace_members').delete().eq('user_id', selectedUser);
+      
       const { error } = await supabase.from('workspace_members').insert([
-        { workspace_id: selectedWorkspace, user_id: selectedUser }
+        { workspace_id: selectedWorkspace, user_id: selectedUser, role: 'Membro' }
       ]);
       if (error) throw error;
     },
     onSuccess: () => {
-      alert('Usuário adicionado com sucesso!');
+      alert('Usuário alocado ao setor com sucesso!');
       queryClient.invalidateQueries({ queryKey: ['admin_workspace_members'] });
       setSelectedUser('');
     },
     onError: (err: any) => {
-      alert('Erro ao adicionar (Talvez já esteja no setor?): ' + err.message);
+      alert('Erro ao alocar setor: ' + err.message);
     }
   });
 
@@ -163,7 +167,7 @@ export default function AdminPage() {
             <button 
               onClick={() => createWorkspace.mutate(newWorkspaceName)}
               disabled={!newWorkspaceName || createWorkspace.isPending}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
             >
               Criar
             </button>
@@ -187,7 +191,7 @@ export default function AdminPage() {
           
           <div className="flex flex-col gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-600 mb-1">Selecione o Setor</label>
+              <label className="block text-sm font-semibold text-slate-600 mb-1">Selecione o Setor Exclusivo</label>
               <select 
                 value={selectedWorkspace}
                 onChange={(e) => setSelectedWorkspace(e.target.value)}
@@ -217,15 +221,15 @@ export default function AdminPage() {
             <button 
               onClick={() => addMember.mutate()}
               disabled={!selectedWorkspace || !selectedUser || addMember.isPending}
-              className="mt-2 bg-green-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-green-700 disabled:opacity-50"
+              className="mt-2 bg-green-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-green-700 disabled:opacity-50 cursor-pointer"
             >
-              Dar Acesso a este Setor
+              Definir Setor deste Usuário
             </button>
           </div>
 
           {selectedWorkspace && (
             <div className="mt-6 border-t border-slate-100 pt-4">
-              <h3 className="text-sm font-semibold text-slate-500 mb-2">Quem já está neste setor:</h3>
+              <h3 className="text-sm font-semibold text-slate-500 mb-2">Membros alocados neste setor:</h3>
               <ul className="divide-y divide-slate-100 border border-slate-100 rounded-lg max-h-40 overflow-y-auto">
                 {workspaceMembers?.filter((m: any) => m.workspace_id === selectedWorkspace).map((m: any) => {
                   const userProfile = profiles?.find((p: any) => p.id === m.user_id);
@@ -234,11 +238,11 @@ export default function AdminPage() {
                       <span>{userProfile?.email || 'Usuário desconhecido'}</span>
                       <button 
                         onClick={() => {
-                          if(confirm('Tem certeza que deseja remover o acesso deste usuário a este setor?')) {
+                          if(confirm('Tem certeza que deseja remover este usuário deste setor?')) {
                             removeMember.mutate({ workspace_id: selectedWorkspace, user_id: m.user_id });
                           }
                         }}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors cursor-pointer"
                         title="Remover Acesso"
                       >
                         Remover
@@ -282,9 +286,9 @@ export default function AdminPage() {
                       </select>
                     </td>
                     <td className="py-3 text-right">
-                      {p.role === 'admin' && <span className="text-xs text-blue-500">Acesso Total</span>}
-                      {p.role === 'leader' && <span className="text-xs text-purple-500">Acesso de Líder</span>}
-                      {(p.role === 'user' || !p.role) && <span className="text-xs text-slate-400">Restrito</span>}
+                      {p.role === 'admin' && <span className="text-xs text-blue-500 font-bold">Admin (Todos os Setores)</span>}
+                      {p.role === 'leader' && <span className="text-xs text-purple-500 font-bold">Líder (1 Setor Exclusivo)</span>}
+                      {(p.role === 'user' || !p.role) && <span className="text-xs text-slate-400">Usuário (1 Setor Exclusivo)</span>}
                     </td>
                   </tr>
                 ))}
