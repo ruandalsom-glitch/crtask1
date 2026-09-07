@@ -206,7 +206,29 @@ export function BoardKanbanView({ boardId }: { boardId: string }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  if (isLoading) return <div className="p-8">Carregando Kanban...</div>;
+  if (isLoading) {
+    return (
+      <div className="p-8 h-full flex overflow-x-auto gap-6 flex-1 bg-[#f8fafc] animate-skeleton">
+        {[1, 2, 3, 4].map((col) => (
+          <div key={col} className="w-72 shrink-0 bg-slate-100 rounded-xl p-4 flex flex-col gap-4 border border-slate-200">
+            <div className="h-6 w-32 bg-slate-200 rounded-md"></div>
+            <div className="space-y-3">
+              {[1, 2, 3].map((card) => (
+                <div key={card} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-3">
+                  <div className="h-4 w-full bg-slate-200 rounded"></div>
+                  <div className="h-4 w-2/3 bg-slate-200 rounded"></div>
+                  <div className="flex justify-between items-center pt-2">
+                    <div className="h-6 w-16 bg-slate-200 rounded-full"></div>
+                    <div className="h-6 w-6 bg-slate-200 rounded-full"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   // Organizar tarefas por coluna
   const columnsData = STATUSES.map(status => ({

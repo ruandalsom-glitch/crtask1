@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from "@/components/layout/Sidebar";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { UserProfile } from "@/components/layout/UserProfile";
-import { Briefcase, Search } from "lucide-react";
+import { Briefcase, Search, Sparkles } from "lucide-react";
 import { useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -14,6 +14,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const INACTIVITY_LIMIT = 12 * 60 * 60 * 1000; // 12 horas em ms
 
   const handleLogout = useCallback(async () => {
+    localStorage.clear();
+    sessionStorage.clear();
     await supabase.auth.signOut();
     window.location.href = '/login';
   }, []);
@@ -89,7 +91,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     };
 
     checkReminders();
-    const intervalId = setInterval(checkReminders, 60000); // Roda a cada 1 minuto
+    const intervalId = setInterval(checkReminders, 60000);
     
     return () => clearInterval(intervalId);
   }, [pathname]);
@@ -99,19 +101,46 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden w-full">
-      <aside className="w-16 bg-[#1a1a1a] text-white flex flex-col items-center py-4 shrink-0 z-50 relative">
-        <div className="w-10 h-10 bg-black rounded-lg mb-8 flex items-center justify-center shadow-lg cursor-pointer overflow-hidden border border-white/10 p-0.5">
-          <img src="/logo.png" alt="CR Logo" className="w-full h-full object-contain rounded-md" />
+    <div className="flex h-screen overflow-hidden w-full bg-slate-900">
+      {/* Primary Navigation Rail (Dark Theme - Linear / Monday Style) */}
+      <aside className="w-16 bg-[#0f172a] text-slate-300 flex flex-col items-center py-4 shrink-0 z-50 relative border-r border-slate-800/80 shadow-2xl">
+        <div 
+          onClick={() => window.location.href = '/'}
+          className="w-10 h-10 bg-slate-950 rounded-xl mb-6 flex items-center justify-center shadow-lg cursor-pointer overflow-hidden border border-slate-800 p-0.5 hover:border-indigo-500/50 hover:scale-105 transition-all group relative"
+          title="CR Operacional - Início"
+        >
+          <img src="/logo.png" alt="CR Logo" className="w-full h-full object-contain rounded-lg" />
+          <div className="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
         </div>
         
-        <nav className="flex flex-col gap-6 items-center flex-1 w-full">
-          <button className="w-full flex justify-center p-2 text-white border-l-[3px] border-white bg-white/10 transition-colors">
-            <Briefcase strokeWidth={2.5} className="w-5 h-5" />
+        <nav className="flex flex-col gap-4 items-center flex-1 w-full">
+          <button 
+            onClick={() => window.location.href = '/'}
+            className="w-full flex justify-center py-3 text-white border-l-[3px] border-indigo-500 bg-slate-800/60 transition-all relative group cursor-pointer"
+            title="Espaços de Trabalho"
+          >
+            <Briefcase strokeWidth={2.2} className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform" />
+            <div className="absolute left-full ml-3 px-2.5 py-1 bg-slate-900 text-white text-xs font-semibold rounded-md shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-800">
+              Espaços de Trabalho
+            </div>
           </button>
-          <NotificationBell />
-          <button className="w-full flex justify-center p-2 text-slate-400 hover:text-white transition-colors border-l-[3px] border-transparent">
-            <Search strokeWidth={2.5} className="w-5 h-5" />
+          
+          <div className="w-full relative group">
+            <NotificationBell />
+          </div>
+
+          <button 
+            onClick={() => {
+              const term = prompt('Pesquisa global por tarefas ou quadros:');
+              if (term) window.location.href = `/?search=${encodeURIComponent(term)}`;
+            }}
+            className="w-full flex justify-center py-3 text-slate-400 hover:text-white transition-all border-l-[3px] border-transparent hover:border-slate-500 relative group cursor-pointer"
+            title="Pesquisa Rápida"
+          >
+            <Search strokeWidth={2.2} className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <div className="absolute left-full ml-3 px-2.5 py-1 bg-slate-900 text-white text-xs font-semibold rounded-md shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-800">
+              Buscar (Ctrl + K)
+            </div>
           </button>
         </nav>
 
@@ -120,9 +149,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       
+      {/* Secondary Workspace Sidebar */}
       <Sidebar />
 
-      <main className="flex-1 flex flex-col overflow-hidden bg-white z-10 shadow-sm relative rounded-tl-2xl md:rounded-none border-l border-t md:border-t-0 border-slate-200 mt-2 ml-[-8px] md:mt-0 md:ml-0">
+      {/* Main App Content View Container */}
+      <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 z-10 shadow-sm relative rounded-tl-2xl md:rounded-none border-l border-slate-200">
         {children}
       </main>
     </div>

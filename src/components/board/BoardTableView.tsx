@@ -372,8 +372,28 @@ export function BoardTableView({ boardId }: { boardId: string }) {
 
   if (isLoading) {
     return (
-      <div className="p-8 flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+      <div className="w-full h-full flex flex-col p-8 space-y-6 animate-skeleton">
+        <div className="flex items-center gap-4 border-b border-slate-200 pb-4">
+          <div className="w-24 h-9 bg-slate-200 rounded-md"></div>
+          <div className="w-64 h-9 bg-slate-200 rounded-full"></div>
+          <div className="w-32 h-9 bg-slate-200 rounded-full"></div>
+          <div className="w-32 h-9 bg-slate-200 rounded-full"></div>
+        </div>
+        <div className="space-y-4">
+          <div className="w-48 h-7 bg-slate-200 rounded-md"></div>
+          <div className="border border-slate-200 rounded-lg overflow-hidden space-y-2 p-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-4 py-2 border-b border-slate-100 last:border-0">
+                <div className="w-4 h-4 bg-slate-200 rounded"></div>
+                <div className="flex-1 h-5 bg-slate-200 rounded"></div>
+                <div className="w-28 h-7 bg-slate-200 rounded"></div>
+                <div className="w-28 h-7 bg-slate-200 rounded-full"></div>
+                <div className="w-32 h-5 bg-slate-200 rounded"></div>
+                <div className="w-24 h-5 bg-slate-200 rounded"></div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
