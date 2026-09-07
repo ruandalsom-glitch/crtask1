@@ -480,25 +480,25 @@ export function BoardTableView({ boardId }: { boardId: string }) {
               cursor: pointer;
             }
           `}} />
-          <div className="bg-white relative">
-            <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
+          <div className="bg-white relative rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 text-[#676879] text-[14px]">
+                <tr className="border-b border-slate-200 text-[#676879] text-[13px] bg-slate-50/50">
                   <th className="w-2 p-0"></th>
                   <th className="w-10 text-center p-0 border-r border-slate-200"></th>
-                  <th className="font-normal px-4 py-2 border-r border-slate-200" style={{ width: '40%', minWidth: '350px' }}></th>
-                  <th className="w-14 border-r border-slate-200"></th>
-                  <th className="font-normal px-4 py-2 border-r border-slate-200 w-32 text-center">Responsável</th>
-                  <th className="font-normal px-0 py-0 border-r border-slate-200 w-40 text-center">Status</th>
-                  <th className="font-normal px-4 py-2 border-r border-slate-200 w-48 text-center">Timeline</th>
-                  <th className="font-normal px-4 py-2 border-r border-slate-200 w-32 text-center">Prazo</th>
-                  <th className="font-normal px-0 py-0 border-r border-slate-200 w-36 text-center">Prioridade</th>
-                  <th className="font-normal px-0 py-0 border-r border-slate-200 w-40 text-center">Esforço</th>
-                  <th className="font-normal px-4 py-2 border-r border-slate-200 w-32 text-center">Arquivos</th>
+                  <th className="font-semibold px-4 py-2 border-r border-slate-200 text-left min-w-[280px]">Item / Tarefa</th>
+                  <th className="w-12 text-center p-0 border-r border-slate-200"></th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-36 text-center">Responsável</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-36 text-center">Status</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-40 text-center">Timeline</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-32 text-center">Prazo</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-32 text-center">Prioridade</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-32 text-center">Esforço</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-24 text-center">Arquivos</th>
                   <th className="w-10 text-center p-0"></th>
                 </tr>
               </thead>
-              <tbody className="text-[15px]">
+              <tbody className="text-[14px]">
                 {groupTasks && groupTasks.length > 0 ? (
                   groupTasks.map((task) => (
                     <tr key={task.id} className={`group/row border-b border-slate-200 transition-colors h-[42px] ${selectedTasks.includes(task.id) ? 'bg-blue-50/50' : 'hover:bg-[#f5f6f8]'}`}>
@@ -511,7 +511,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                           className="w-4 h-4 rounded border-slate-300 opacity-0 group-hover/row:opacity-100 transition-opacity absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer checked:opacity-100 accent-blue-600" 
                         />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 relative truncate group/title">
+                      <td className="px-4 py-0 border-r border-slate-200 relative group/title min-w-[280px]">
                         <div className="flex items-center justify-between w-full">
                           <div className="flex items-center gap-2">
                             {task.is_external && (
@@ -779,7 +779,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-auto pb-24 pt-6">
-        <div className="min-w-[1300px] w-full">
+        <div className="w-full min-w-[1050px]">
           {groupsToRender.map(groupName => renderGroup(groupName, groupedTasks[groupName] || []))}
           
           <div className="px-8 mt-6">

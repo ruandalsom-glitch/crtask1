@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { LayoutTemplate, Grid, LogOut, ChevronLeft, ChevronRight, ChevronDown, CheckSquare } from 'lucide-react';
+import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
@@ -16,34 +16,45 @@ export function Sidebar() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  const { data: workspaces } = useQuery({
-    queryKey: ['sidebar_workspaces'],
+  const { data: userProfile } = useQuery({
+    queryKey: ['current_user'],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
+      return user;
+    }
+  });
+
+  const { data: workspaces } = useQuery({
+    queryKey: ['sidebar_workspaces', userProfile?.id],
+    queryFn: async () => {
+      if (!userProfile) return [];
       
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', userProfile.id).single();
       
       if (profile?.role === 'admin') {
         const { data } = await supabase.from('workspaces').select('*').order('created_at');
         return data || [];
       } else {
-        const { data } = await supabase.from('workspace_members').select('workspaces(*)').eq('user_id', user.id);
+        const { data } = await supabase.from('workspace_members').select('workspaces(*)').eq('user_id', userProfile.id);
         return data?.map((d: any) => d.workspaces).filter(Boolean) || [];
       }
-    }
+    },
+    enabled: !!userProfile?.id
   });
 
   useEffect(() => {
-    if (workspaces && workspaces.length > 0 && !activeWorkspaceId) {
-      const savedId = localStorage.getItem('monday_active_workspace');
+    if (workspaces && workspaces.length > 0 && userProfile?.id) {
+      const storageKey = `monday_active_workspace_${userProfile.id}`;
+      const savedId = localStorage.getItem(storageKey);
       if (savedId && workspaces.find(w => w.id === savedId)) {
         setActiveWorkspaceId(savedId);
       } else {
         setActiveWorkspaceId(workspaces[0].id);
+        localStorage.setItem(storageKey, workspaces[0].id);
+        localStorage.setItem('monday_active_workspace', workspaces[0].id);
       }
     }
-  }, [workspaces, activeWorkspaceId]);
+  }, [workspaces, userProfile?.id]);
 
   const { data: boards, isLoading } = useQuery({
     queryKey: ['sidebar_boards', activeWorkspaceId],
@@ -55,22 +66,6 @@ export function Sidebar() {
     },
     enabled: !!activeWorkspaceId
   });
-
-  const { data: userProfile } = useQuery({
-    queryKey: ['current_user'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    }
-  });
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/login';
-  };
-
-  const initial = userProfile?.email ? userProfile.email.charAt(0).toUpperCase() : 'U';
-  const displayName = userProfile?.email ? userProfile.email.split('@')[0] : 'Usuário';
 
   return (
     <div className={`relative bg-[#f7f8f9] border-slate-200 flex flex-col z-40 hidden md:flex shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-4 border-r-0 hover:bg-slate-200 cursor-pointer' : 'w-[260px] border-r'}`}
@@ -88,7 +83,7 @@ export function Sidebar() {
         <div className="p-4 border-b border-slate-200 shrink-0 relative">
           <button 
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="w-full flex items-center justify-between p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            className="w-full flex items-center justify-between p-2 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
           >
             <div className="flex flex-col items-start overflow-hidden">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Setor Atual</span>
@@ -106,11 +101,11 @@ export function Sidebar() {
                 <button
                   key={w.id}
                   onClick={() => {
-                    if (w.id !== activeWorkspaceId) {
+                    if (w.id !== activeWorkspaceId && userProfile?.id) {
                       setActiveWorkspaceId(w.id);
+                      localStorage.setItem(`monday_active_workspace_${userProfile.id}`, w.id);
                       localStorage.setItem('monday_active_workspace', w.id);
                       setIsDropdownOpen(false);
-                      // Se estiver numa rota de board, redireciona pro inicio pra não ver as tarefas velhas
                       if (pathname.startsWith('/boards/')) {
                         router.push('/');
                       }
