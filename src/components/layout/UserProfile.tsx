@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { LogOut, Upload, User, Image as ImageIcon, ShieldCheck, Mail, MailWarning, BarChart3 } from 'lucide-react';
+import { LogOut, User, Image as ImageIcon, ShieldCheck, Mail, MailWarning, BarChart3 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -62,6 +62,9 @@ export function UserProfile() {
   };
 
   const handleSignOut = async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    queryClient.clear();
     await supabase.auth.signOut();
     window.location.href = '/login';
   };
@@ -81,7 +84,6 @@ export function UserProfile() {
       const fileName = `${user.id}-${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      // Upload na storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
@@ -90,14 +92,12 @@ export function UserProfile() {
         throw uploadError;
       }
 
-      // Pegar URL pública
       const { data: publicUrlData } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
       const avatarUrl = publicUrlData.publicUrl;
 
-      // Atualizar profile
       const { error: updateError } = await supabase
         .from('profiles')
         .upsert(
@@ -166,54 +166,54 @@ export function UserProfile() {
                 disabled={uploading}
                 className="hidden" 
               />
-              </label>
+            </label>
 
-              <button 
-                onClick={async () => {
-                  const newStatus = !(profile?.receive_emails ?? true);
-                  try {
-                    const { error } = await supabase.from('profiles').update({ receive_emails: newStatus }).eq('id', profile?.id);
-                    if (error) throw error;
-                    setProfile({ ...profile, receive_emails: newStatus });
-                  } catch (e: any) {
-                    alert('Para ativar essa opção, precisamos adicionar a coluna no banco. Vá no SQL Editor e rode: ALTER TABLE profiles ADD COLUMN receive_emails BOOLEAN DEFAULT TRUE;');
-                  }
-                }}
-                className="flex items-center gap-3 w-full p-2 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors mt-1"
-              >
-                {(profile?.receive_emails ?? true) ? (
-                  <Mail className="w-4 h-4 text-green-500" />
-                ) : (
-                  <MailWarning className="w-4 h-4 text-slate-400" />
-                )}
-                <div className="flex flex-col items-start">
-                  <span>Notificações por Email</span>
-                  <span className="text-[10px] text-slate-400">{(profile?.receive_emails ?? true) ? 'Ativado (Clique para desativar)' : 'Desativado (Clique para ativar)'}</span>
-                </div>
-              </button>
-              
-              {profile?.role === 'admin' && (
-                <>
-                  <a 
-                    href="/admin"
-                    className="flex items-center gap-3 w-full p-2 hover:bg-blue-50 hover:text-blue-700 rounded-lg text-sm text-slate-700 transition-colors mt-1 border-t border-slate-100"
-                  >
-                    <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    <span className="font-semibold text-blue-700">Painel de Administração</span>
-                  </a>
-                  <a 
-                    href="/admin/reports"
-                    className="flex items-center gap-3 w-full p-2 hover:bg-emerald-50 hover:text-emerald-700 rounded-lg text-sm text-slate-700 transition-colors mt-1"
-                  >
-                    <BarChart3 className="w-4 h-4 text-emerald-600" />
-                    <span className="font-semibold text-emerald-700">Relatórios e Insights</span>
-                  </a>
-                </>
+            <button 
+              onClick={async () => {
+                const newStatus = !(profile?.receive_emails ?? true);
+                try {
+                  const { error } = await supabase.from('profiles').update({ receive_emails: newStatus }).eq('id', profile?.id);
+                  if (error) throw error;
+                  setProfile({ ...profile, receive_emails: newStatus });
+                } catch (e: any) {
+                  alert('Erro ao atualizar notificação por email.');
+                }
+              }}
+              className="flex items-center gap-3 w-full p-2 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors mt-1 cursor-pointer"
+            >
+              {(profile?.receive_emails ?? true) ? (
+                <Mail className="w-4 h-4 text-green-500" />
+              ) : (
+                <MailWarning className="w-4 h-4 text-slate-400" />
               )}
-              
-              <button 
+              <div className="flex flex-col items-start">
+                <span>Notificações por Email</span>
+                <span className="text-[10px] text-slate-400">{(profile?.receive_emails ?? true) ? 'Ativado (Clique para desativar)' : 'Desativado (Clique para ativar)'}</span>
+              </div>
+            </button>
+            
+            {profile?.role === 'admin' && (
+              <>
+                <a 
+                  href="/admin"
+                  className="flex items-center gap-3 w-full p-2 hover:bg-blue-50 hover:text-blue-700 rounded-lg text-sm text-slate-700 transition-colors mt-1 border-t border-slate-100"
+                >
+                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                  <span className="font-semibold text-blue-700">Painel de Administração</span>
+                </a>
+                <a 
+                  href="/admin/reports"
+                  className="flex items-center gap-3 w-full p-2 hover:bg-emerald-50 hover:text-emerald-700 rounded-lg text-sm text-slate-700 transition-colors mt-1"
+                >
+                  <BarChart3 className="w-4 h-4 text-emerald-600" />
+                  <span className="font-semibold text-emerald-700">Relatórios e Insights</span>
+                </a>
+              </>
+            )}
+            
+            <button 
               onClick={handleSignOut}
-              className="flex items-center gap-3 w-full p-2 hover:bg-red-50 hover:text-red-600 rounded-lg text-sm text-slate-700 transition-colors mt-1"
+              className="flex items-center gap-3 w-full p-2 hover:bg-red-50 hover:text-red-600 rounded-lg text-sm text-slate-700 transition-colors mt-1 cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
               <span>Sair da conta</span>

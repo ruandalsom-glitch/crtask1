@@ -22,6 +22,8 @@ export default function LoginPage() {
 
     if (isLogin) {
       // -------------------- FLUXO DE LOGIN --------------------
+      localStorage.clear();
+      sessionStorage.clear();
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,

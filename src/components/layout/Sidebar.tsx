@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare } from 'lucide-react';
 import Link from 'next/link';
@@ -12,6 +12,7 @@ export function Sidebar() {
 
   const router = useRouter();
   const pathname = usePathname();
+  const queryClient = useQueryClient();
 
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -21,13 +22,14 @@ export function Sidebar() {
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       return user;
-    }
+    },
+    staleTime: 0
   });
 
-  const { data: workspaces } = useQuery({
+  const { data: workspaces, isLoading: isLoadingWorkspaces } = useQuery({
     queryKey: ['sidebar_workspaces', userProfile?.id],
     queryFn: async () => {
-      if (!userProfile) return [];
+      if (!userProfile?.id) return [];
       
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', userProfile.id).single();
       
@@ -36,10 +38,12 @@ export function Sidebar() {
         return data || [];
       } else {
         const { data } = await supabase.from('workspace_members').select('workspaces(*)').eq('user_id', userProfile.id);
-        return data?.map((d: any) => d.workspaces).filter(Boolean) || [];
+        const mapped = data?.map((d: any) => d.workspaces).filter(Boolean) || [];
+        return mapped;
       }
     },
-    enabled: !!userProfile?.id
+    enabled: !!userProfile?.id,
+    staleTime: 0
   });
 
   useEffect(() => {
@@ -56,7 +60,7 @@ export function Sidebar() {
     }
   }, [workspaces, userProfile?.id]);
 
-  const { data: boards, isLoading } = useQuery({
+  const { data: boards, isLoading: isLoadingBoards } = useQuery({
     queryKey: ['sidebar_boards', activeWorkspaceId],
     queryFn: async () => {
       if (!activeWorkspaceId) return [];
@@ -66,6 +70,9 @@ export function Sidebar() {
     },
     enabled: !!activeWorkspaceId
   });
+
+  const activeWorkspaceName = workspaces?.find(w => w.id === activeWorkspaceId)?.name || workspaces?.[0]?.name || 'Carregando...';
+  const hasMultipleWorkspaces = Boolean(workspaces && workspaces.length > 1);
 
   return (
     <div className={`relative bg-[#f7f8f9] border-slate-200 flex flex-col z-40 hidden md:flex shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-4 border-r-0 hover:bg-slate-200 cursor-pointer' : 'w-[260px] border-r'}`}
@@ -81,20 +88,29 @@ export function Sidebar() {
 
       <div className={`flex flex-col h-full w-[260px] overflow-hidden transition-opacity duration-300 ${isCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <div className="p-4 border-b border-slate-200 shrink-0 relative">
-          <button 
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="w-full flex items-center justify-between p-2 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-          >
-            <div className="flex flex-col items-start overflow-hidden">
+          {hasMultipleWorkspaces ? (
+            <button 
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="w-full flex items-center justify-between p-2 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+            >
+              <div className="flex flex-col items-start overflow-hidden">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Setor Atual</span>
+                <h2 className="font-extrabold text-[16px] tracking-tight text-[#323338] truncate w-full text-left">
+                  {activeWorkspaceName}
+                </h2>
+              </div>
+              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+            </button>
+          ) : (
+            <div className="p-2 flex flex-col items-start overflow-hidden">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Setor Atual</span>
               <h2 className="font-extrabold text-[16px] tracking-tight text-[#323338] truncate w-full text-left">
-                {workspaces?.find(w => w.id === activeWorkspaceId)?.name || 'Carregando...'}
+                {activeWorkspaceName}
               </h2>
             </div>
-            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-          </button>
+          )}
 
-          {isDropdownOpen && (
+          {hasMultipleWorkspaces && isDropdownOpen && (
             <div className="absolute top-full left-4 right-4 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg z-50 py-2 max-h-64 overflow-y-auto">
               <div className="px-3 py-1 text-xs font-bold text-slate-400 uppercase tracking-wider">Alternar Setor</div>
               {workspaces?.map(w => (
@@ -113,7 +129,7 @@ export function Sidebar() {
                       setIsDropdownOpen(false);
                     }
                   }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition-colors ${w.id === activeWorkspaceId ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700'}`}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition-colors cursor-pointer ${w.id === activeWorkspaceId ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700'}`}
                 >
                   {w.name}
                 </button>
@@ -155,7 +171,7 @@ export function Sidebar() {
             </button>
           </div>
 
-          {isLoading ? (
+          {isLoadingBoards ? (
             <div className="px-2 py-2 text-xs text-slate-400 shrink-0">Carregando quadros...</div>
           ) : (
             <div className="flex flex-col gap-1 shrink-0">
