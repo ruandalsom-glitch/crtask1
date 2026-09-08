@@ -424,16 +424,18 @@ export function BoardTableView({ boardId }: { boardId: string }) {
       'Pendente': '#c4c4c4'
     };
 
-    const priorityColors: any = {
-      'Alta': '#401694',
-      'Média': '#5559df',
-      'Baixa': '#579bfc',
-      'Vazio': '#c4c4c4'
+    const effortColors: any = {
+      'Baixo': { bg: '#579bfc', label: '⚡ Baixo' },
+      'Médio': { bg: '#fdab3d', label: '⚖️ Médio' },
+      'Alto': { bg: '#e2445c', label: '🔥 Alto' },
+      'Muito Alto': { bg: '#784bd1', label: '🚀 Muito Alto' }
     };
 
     const rowsHtml = targetTasks.map((t: any) => {
       const statusBg = statusColors[t.status] || '#c4c4c4';
-      const priorityBg = priorityColors[t.priority] || '#c4c4c4';
+      const effortKey = t.effort || 'Vazio';
+      const effortBg = effortColors[effortKey]?.bg || '#c4c4c4';
+      const effortLabel = effortColors[effortKey]?.label || '-';
       const assignee = t.assignee_email ? t.assignee_email.split('@')[0] : 'Sem responsável';
       const dateFormatted = t.due_date ? new Date(t.due_date).toLocaleDateString('pt-BR') : '-';
 
@@ -447,8 +449,8 @@ export function BoardTableView({ boardId }: { boardId: string }) {
             </span>
           </td>
           <td style="padding: 10px 14px; text-align: center;">
-            <span style="background: ${priorityBg}; color: white; padding: 5px 14px; border-radius: 6px; font-weight: 700; font-size: 12px; display: inline-block; width: 80px;">
-              ${t.priority || 'Vazio'}
+            <span style="background: ${effortBg}; color: white; padding: 5px 14px; border-radius: 6px; font-weight: 700; font-size: 12px; display: inline-block; width: 100px;">
+              ${effortLabel}
             </span>
           </td>
           <td style="padding: 10px 14px; text-align: center; color: #334155; font-size: 13px;">${assignee}</td>
@@ -490,7 +492,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                 <th>Item / Tarefa</th>
                 <th class="center">Grupo</th>
                 <th class="center">Status</th>
-                <th class="center">Prioridade</th>
+                <th class="center">Esforço</th>
                 <th class="center">Responsável</th>
                 <th class="center">Prazo</th>
               </tr>
