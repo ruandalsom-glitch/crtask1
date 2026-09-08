@@ -486,7 +486,12 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   });
 
   const groupedTasks = filteredTasks?.reduce((acc: any, task: any) => {
-    const groupName = task.group_name || 'Tarefas pendentes';
+    let groupName = task.group_name || 'Tarefas pendentes';
+    if (task.status === 'Feito') {
+      groupName = 'Concluído';
+    } else if (groupName === 'Concluído') {
+      groupName = 'Tarefas pendentes';
+    }
     if (!acc[groupName]) acc[groupName] = [];
     acc[groupName].push(task);
     return acc;

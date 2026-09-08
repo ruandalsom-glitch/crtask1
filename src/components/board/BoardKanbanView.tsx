@@ -193,7 +193,15 @@ export function BoardKanbanView({ boardId }: { boardId: string }) {
         alert("Você não tem permissão para alterar o status desta tarefa.");
         throw new Error("Unauthorized");
       }
-      const { error } = await supabase.from('tasks').update({ status }).eq('id', id);
+      
+      const updates: any = { status };
+      if (status === 'Feito') {
+        updates.group_name = 'Concluído';
+      } else if (taskToUpdate?.group_name === 'Concluído' || !taskToUpdate?.group_name) {
+        updates.group_name = 'Tarefas pendentes';
+      }
+
+      const { error } = await supabase.from('tasks').update(updates).eq('id', id);
       if (error) throw error;
     },
     onSettled: () => {
