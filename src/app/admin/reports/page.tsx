@@ -11,23 +11,23 @@ import remarkGfm from 'remark-gfm';
 
 export default function ReportsPage() {
   const queryClient = useQueryClient();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
 
   useEffect(() => {
-    checkAdmin();
+    checkPermissions();
   }, []);
 
-  const checkAdmin = async () => {
+  const checkPermissions = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       window.location.href = '/login';
       return;
     }
     const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-    if (data?.role === 'admin') {
-      setIsAdmin(true);
+    if (data?.role === 'admin' || data?.role === 'leader') {
+      setHasAccess(true);
     } else {
-      setIsAdmin(false);
+      setHasAccess(false);
     }
   };
 
@@ -39,7 +39,7 @@ export default function ReportsPage() {
       if (error) throw error;
       return data || [];
     },
-    enabled: isAdmin === true
+    enabled: hasAccess === true
   });
 
   // Buscar último insight gerado
@@ -57,7 +57,7 @@ export default function ReportsPage() {
       if (error && error.code !== 'PGRST116') throw error; // PGRST116 é "not found"
       return data;
     },
-    enabled: isAdmin === true
+    enabled: hasAccess === true
   });
 
   const generateInsight = useMutation({
@@ -83,13 +83,13 @@ export default function ReportsPage() {
     }
   });
 
-  if (isAdmin === null) return <div className="p-10 text-center">Verificando permissões...</div>;
-  if (isAdmin === false) return (
-    <div className="p-10 flex flex-col items-center justify-center h-screen bg-slate-50">
+  if (hasAccess === null) return <div className="p-10 text-center text-slate-500 font-medium">Verificando permissões...</div>;
+  if (hasAccess === false) return (
+    <div className="p-10 flex flex-col items-center justify-center h-full w-full bg-slate-50">
       <ShieldAlert className="w-20 h-20 text-red-500 mb-4" />
       <h1 className="text-2xl font-bold text-slate-800">Acesso Negado</h1>
-      <p className="text-slate-500 mt-2">Você não tem permissão de administrador para acessar esta página.</p>
-      <Link href="/" className="mt-6 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700">Voltar ao Início</Link>
+      <p className="text-slate-500 mt-2">Você precisa ter função de Líder de Setor ou Administrador para acessar os relatórios.</p>
+      <Link href="/" className="mt-6 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors">Voltar ao Início</Link>
     </div>
   );
 
@@ -128,14 +128,15 @@ export default function ReportsPage() {
   const barData = userStats ? Object.values(userStats).sort((a: any, b: any) => (b.concluido + b.pendente) - (a.concluido + a.pendente)).slice(0, 10) : [];
 
   return (
-    <div className="p-10 max-w-6xl mx-auto h-full overflow-y-auto">
-      <div className="flex items-center gap-4 mb-8">
-        <Link href="/admin" className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors" title="Voltar ao Painel Admin">
-          <ArrowLeft className="w-6 h-6" />
-        </Link>
-        <BarChart3 className="w-8 h-8 text-blue-600" />
-        <h1 className="text-3xl font-black text-slate-800">Relatórios e Insights</h1>
-      </div>
+    <div className="w-full h-full overflow-y-auto bg-slate-50 p-6 md:p-10">
+      <div className="max-w-6xl mx-auto pb-16">
+        <div className="flex items-center gap-4 mb-8">
+          <Link href="/admin" className="p-2 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors shadow-xs" title="Voltar ao Painel Admin">
+            <ArrowLeft className="w-6 h-6" />
+          </Link>
+          <BarChart3 className="w-8 h-8 text-blue-600" />
+          <h1 className="text-2xl md:text-3xl font-black text-slate-800">Relatórios e Insights do Time</h1>
+        </div>
       
       {isLoading ? (
         <div className="text-slate-500">Carregando dados...</div>
@@ -239,6 +240,7 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
