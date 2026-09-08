@@ -40,10 +40,21 @@ export function AssigneeCell({ task }: { task: any }) {
   };
 
   const { data: workspaceUsers } = useQuery({
-    queryKey: ['workspace_users'],
+    queryKey: ['workspace_users', task.board_id],
     queryFn: async () => {
-      const { data: profiles } = await supabase.from('profiles').select('email, avatar_url, role');
-      return profiles || [];
+      let workspaceId = task.boards?.workspace_id;
+      if (!workspaceId && task.board_id) {
+        const { data: board } = await supabase.from('boards').select('workspace_id').eq('id', task.board_id).single();
+        workspaceId = board?.workspace_id;
+      }
+      
+      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role');
+      if (!workspaceId) return profiles || [];
+
+      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', workspaceId);
+      const memberUserIds = new Set(members?.map(m => m.user_id) || []);
+
+      return (profiles || []).filter(p => p.role === 'admin' || memberUserIds.has(p.id));
     },
     staleTime: 5 * 60 * 1000
   });

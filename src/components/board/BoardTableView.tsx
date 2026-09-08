@@ -121,11 +121,19 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   });
 
   const { data: workspaceUsers } = useQuery({
-    queryKey: ['workspace_users'],
+    queryKey: ['workspace_users', boardId],
     queryFn: async () => {
-      const { data: profiles } = await supabase.from('profiles').select('email, avatar_url, role');
-      return profiles || [];
-    }
+      const { data: board } = await supabase.from('boards').select('workspace_id').eq('id', boardId).single();
+      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role');
+      
+      if (!board?.workspace_id) return profiles || [];
+
+      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', board.workspace_id);
+      const memberUserIds = new Set(members?.map(m => m.user_id) || []);
+
+      return (profiles || []).filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+    },
+    staleTime: 5 * 60 * 1000
   });
 
   const currentUserProfile = workspaceUsers?.find((u: any) => u.email === userProfile?.email);
