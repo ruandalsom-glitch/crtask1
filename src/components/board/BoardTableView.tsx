@@ -378,6 +378,69 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     }
   };
 
+  const handleBulkExport = () => {
+    if (selectedTasks.length === 0) return;
+    const targetTasks = tasks?.filter((t: any) => selectedTasks.includes(t.id)) || [];
+    if (targetTasks.length === 0) return;
+
+    const headers = ['ID', 'Título', 'Status', 'Prioridade', 'Responsável', 'Prazo', 'Esforço', 'Grupo'];
+    const rows = targetTasks.map((t: any) => [
+      `"${t.id}"`,
+      `"${(t.title || '').replace(/"/g, '""')}"`,
+      `"${t.status || ''}"`,
+      `"${t.priority || ''}"`,
+      `"${t.assignee_email || ''}"`,
+      `"${t.due_date || ''}"`,
+      `"${t.effort || ''}"`,
+      `"${t.group_name || ''}"`
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `tarefas_exportadas_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBulkDuplicate = async () => {
+    const targetTasks = tasks?.filter((t: any) => selectedTasks.includes(t.id)) || [];
+    if (targetTasks.length === 0) return;
+
+    const inserts = targetTasks.map((t: any) => ({
+      title: `${t.title} (Cópia)`,
+      board_id: boardId,
+      group_name: t.group_name || 'Tarefas pendentes',
+      status: t.status || 'Pendente',
+      priority: t.priority,
+      assignee_email: t.assignee_email,
+      due_date: t.due_date,
+      effort: t.effort,
+      position: (tasks?.length || 0) + 1
+    }));
+
+    const { error } = await supabase.from('tasks').insert(inserts);
+    if (error) {
+      alert('Erro ao duplicar tarefas: ' + error.message);
+    } else {
+      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+      setSelectedTasks([]);
+    }
+  };
+
+  const handleBulkArchive = async () => {
+    if (confirm(`Arquivar ${selectedTasks.length} tarefa(s) selecionada(s)?`)) {
+      for (const id of selectedTasks) {
+        await supabase.from('tasks').update({ group_name: 'Concluído', status: 'Feito' }).eq('id', id);
+      }
+      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+      setSelectedTasks([]);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="w-full h-full flex flex-col p-8 space-y-6 animate-skeleton">
@@ -842,21 +905,34 @@ export function BoardTableView({ boardId }: { boardId: string }) {
           <div className="w-px h-6 bg-slate-200"></div>
 
           <div className="flex items-center gap-1">
-            <button className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-slate-800 transition-colors">
+            <button 
+              onClick={handleBulkDuplicate}
+              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-blue-600 transition-colors cursor-pointer"
+              title="Duplicar tarefas selecionadas"
+            >
               <Copy className="w-4 h-4 mb-1" />
               <span className="text-[11px] font-medium">Duplicar</span>
             </button>
-            <button className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-slate-800 transition-colors">
+            <button 
+              onClick={handleBulkExport}
+              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-green-600 transition-colors cursor-pointer"
+              title="Exportar selecionadas para CSV (Sem custo de Egress)"
+            >
               <Download className="w-4 h-4 mb-1" />
               <span className="text-[11px] font-medium">Exportar</span>
             </button>
-            <button className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-slate-800 transition-colors">
+            <button 
+              onClick={handleBulkArchive}
+              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-purple-600 transition-colors cursor-pointer"
+              title="Arquivar tarefas selecionadas"
+            >
               <Archive className="w-4 h-4 mb-1" />
               <span className="text-[11px] font-medium">Arquivar</span>
             </button>
             <button 
               onClick={handleBulkDelete}
-              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-red-500 transition-colors"
+              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-red-500 transition-colors cursor-pointer"
+              title="Excluir tarefas selecionadas"
             >
               <Trash2 className="w-4 h-4 mb-1" />
               <span className="text-[11px] font-medium">Excluir</span>
