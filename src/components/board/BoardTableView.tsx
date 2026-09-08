@@ -378,7 +378,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     }
   };
 
-  const handleBulkExport = () => {
+  const handleBulkExportCSV = () => {
     if (selectedTasks.length === 0) return;
     const targetTasks = tasks?.filter((t: any) => selectedTasks.includes(t.id)) || [];
     if (targetTasks.length === 0) return;
@@ -404,6 +404,113 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleBulkExportPDF = () => {
+    if (selectedTasks.length === 0) return;
+    const targetTasks = tasks?.filter((t: any) => selectedTasks.includes(t.id)) || [];
+    if (targetTasks.length === 0) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Permita pop-ups no seu navegador para exportar em PDF.");
+      return;
+    }
+
+    const statusColors: any = {
+      'Feito': '#00c875',
+      'Trabalhando': '#fdab3d',
+      'Travado': '#e2445c',
+      'Pendente': '#c4c4c4'
+    };
+
+    const priorityColors: any = {
+      'Alta': '#401694',
+      'Média': '#5559df',
+      'Baixa': '#579bfc',
+      'Vazio': '#c4c4c4'
+    };
+
+    const rowsHtml = targetTasks.map((t: any) => {
+      const statusBg = statusColors[t.status] || '#c4c4c4';
+      const priorityBg = priorityColors[t.priority] || '#c4c4c4';
+      const assignee = t.assignee_email ? t.assignee_email.split('@')[0] : 'Sem responsável';
+      const dateFormatted = t.due_date ? new Date(t.due_date).toLocaleDateString('pt-BR') : '-';
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0; height: 42px;">
+          <td style="padding: 10px 14px; font-weight: 600; color: #1e293b;">${t.title}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #64748b; font-size: 13px;">${t.group_name || 'Tarefas pendentes'}</td>
+          <td style="padding: 10px 14px; text-align: center;">
+            <span style="background: ${statusBg}; color: white; padding: 5px 14px; border-radius: 6px; font-weight: 700; font-size: 12px; display: inline-block; width: 95px;">
+              ${t.status || 'Pendente'}
+            </span>
+          </td>
+          <td style="padding: 10px 14px; text-align: center;">
+            <span style="background: ${priorityBg}; color: white; padding: 5px 14px; border-radius: 6px; font-weight: 700; font-size: 12px; display: inline-block; width: 80px;">
+              ${t.priority || 'Vazio'}
+            </span>
+          </td>
+          <td style="padding: 10px 14px; text-align: center; color: #334155; font-size: 13px;">${assignee}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #64748b; font-size: 13px;">${dateFormatted}</td>
+        </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Relatório Visual de Tarefas — CR Operacional</title>
+          <style>
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 30px; color: #0f172a; background: #ffffff; }
+            .header { display: flex; align-items: center; justify-between; border-bottom: 3px solid #6366f1; padding-bottom: 16px; margin-bottom: 24px; }
+            .brand { font-size: 24px; font-weight: 900; color: #4338ca; letter-spacing: -0.5px; }
+            .subtitle { font-size: 13px; color: #64748b; margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th { background: #f8fafc; color: #475569; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 14px; border-bottom: 2px solid #cbd5e1; text-align: left; }
+            th.center { text-align: center; }
+            .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: justify; }
+            @media print {
+              body { padding: 0; }
+              @page { margin: 1.5cm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="brand">CR Operacional — Exportação Visual de Tarefas</div>
+              <div class="subtitle">Relatório gerado em ${new Date().toLocaleString('pt-BR')} • ${targetTasks.length} tarefa(s) selecionada(s)</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Item / Tarefa</th>
+                <th class="center">Grupo</th>
+                <th class="center">Status</th>
+                <th class="center">Prioridade</th>
+                <th class="center">Responsável</th>
+                <th class="center">Prazo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+          <div class="footer">
+            Este documento reflete visualmente as tarefas selecionadas no sistema CR Operacional. Gerado localmente com 0 custo de tráfego.
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const handleBulkDuplicate = async () => {
@@ -919,12 +1026,20 @@ export function BoardTableView({ boardId }: { boardId: string }) {
               <span className="text-[11px] font-medium">Duplicar</span>
             </button>
             <button 
-              onClick={handleBulkExport}
-              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-green-600 transition-colors cursor-pointer"
-              title="Exportar selecionadas para CSV (Sem custo de Egress)"
+              onClick={handleBulkExportCSV}
+              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
+              title="Exportar selecionadas para planilha CSV (0 Egress)"
             >
               <Download className="w-4 h-4 mb-1" />
-              <span className="text-[11px] font-medium">Exportar</span>
+              <span className="text-[11px] font-medium">Planilha</span>
+            </button>
+            <button 
+              onClick={handleBulkExportPDF}
+              className="flex flex-col items-center justify-center w-16 text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+              title="Exportar selecionadas como PDF Visual (0 Egress)"
+            >
+              <FileText className="w-4 h-4 mb-1 text-indigo-600" />
+              <span className="text-[11px] font-medium">PDF Visual</span>
             </button>
             <button 
               onClick={handleBulkArchive}
