@@ -21,8 +21,17 @@
   --status-pending: #94a3b8;
 }
 
+html.dark, :root.dark {
+  --background: #0f172a;
+  --foreground: #f8fafc;
+  
+  --card-bg: #1e293b;
+  --card-border: #334155;
+  --card-hover-border: #475569;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --background: #0f172a;
     --foreground: #f8fafc;
     

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { LogOut, User, Image as ImageIcon, ShieldCheck, Mail, MailWarning, BarChart3 } from 'lucide-react';
+import { LogOut, User, Image as ImageIcon, ShieldCheck, Mail, MailWarning, BarChart3, Moon, Sun } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -11,10 +11,37 @@ export function UserProfile() {
   const [profile, setProfile] = useState<any>(null);
   const [email, setEmail] = useState<string>('');
   const [uploading, setUploading] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Carregar preferencia de tema salva
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    } else {
+      setIsDarkMode(false);
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const nextMode = !isDarkMode;
+    setIsDarkMode(nextMode);
+    if (nextMode) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+      localStorage.setItem('theme', 'light');
+    }
+  };
 
   useEffect(() => {
     async function loadUser() {
@@ -190,6 +217,23 @@ export function UserProfile() {
                 <span>Notificações por Email</span>
                 <span className="text-[10px] text-slate-400">{(profile?.receive_emails ?? true) ? 'Ativado (Clique para desativar)' : 'Desativado (Clique para ativar)'}</span>
               </div>
+            </button>
+
+            <button 
+              onClick={toggleDarkMode}
+              className="flex items-center justify-between w-full p-2 hover:bg-slate-50 rounded-lg text-sm text-slate-700 transition-colors mt-1 cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                {isDarkMode ? (
+                  <Moon className="w-4 h-4 text-indigo-500" />
+                ) : (
+                  <Sun className="w-4 h-4 text-amber-500" />
+                )}
+                <span>Tema Escuro</span>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                {isDarkMode ? 'Ligado' : 'Desligado'}
+              </span>
             </button>
             
             {profile?.role === 'admin' && (

@@ -58,12 +58,17 @@ export default function ReportsPage() {
     enabled: hasAccess === true
   });
 
-  // Lista de colaboradores únicos extraídos das tarefas
+  // Tarefas filtradas pelo setor selecionado
+  const tasksInSelectedSector = selectedSector
+    ? (allTasks || []).filter((t: any) => t.boards?.workspace_id === selectedSector)
+    : (allTasks || []);
+
+  // Lista de colaboradores únicos extraídos estritamente do setor selecionado
   const uniqueAssignees = Array.from(
     new Set(
-      allTasks?.flatMap((t: any) => 
+      tasksInSelectedSector.flatMap((t: any) => 
         t.assignee_email ? t.assignee_email.split(',').map((e: string) => e.trim()) : []
-      ) || []
+      )
     )
   ).filter(Boolean).sort();
 
@@ -390,7 +395,10 @@ export default function ReportsPage() {
                 </label>
                 <select
                   value={selectedSector}
-                  onChange={(e) => setSelectedSector(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedSector(e.target.value);
+                    setSelectedAssignee('');
+                  }}
                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition-colors"
                 >
                   <option value="">-- Todos os Setores (Geral) --</option>
