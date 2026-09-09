@@ -90,6 +90,23 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     refetchInterval: 30000
   });
 
+  const [commentDayFilter, setCommentDayFilter] = useState<string>('all');
+  const [selectedCommentDay, setSelectedCommentDay] = useState<string>(() => {
+    const day = new Date().getDay();
+    const map: Record<number, string> = { 1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta' };
+    return map[day] || 'Geral';
+  });
+
+  const availableDays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Geral'];
+
+  const parseComment = (content: string) => {
+    const match = content?.match(/^\[(Segunda|Terça|Quarta|Quinta|Sexta|Geral)\]\s*([\s\S]*)$/);
+    if (match) {
+      return { day: match[1], text: match[2] };
+    }
+    return { day: 'Geral', text: content || '' };
+  };
+
   const activeCommentTask = tasks?.find((t: any) => t.id === commentTaskId);
 
   // Buscar comentários para a rotina selecionada
@@ -167,7 +184,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
       alert("Você não tem permissão para finalizar a semana neste quadro.");
       return;
     }
-    if (!confirm('Deseja finalizar esta semana? Isso limpará a tabela de rotinas e salvará o resultado e os comentários no Histórico de Atividades.')) return;
+    if (!confirm('Deseja finalizar esta semana? Isso limpará a tabela de rotinas, salvará os resultados e os comentários por dia no Histórico de Atividades, e reiniciará os comentários para a nova semana.')) return;
     
     if (tasks) {
       for (const task of tasks) {
@@ -179,13 +196,27 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
         // Buscar comentários cadastrados para esta rotina
         const { data: comments } = await supabase
           .from('task_updates')
-          .select('content, author_email')
+          .select('id, content, author_email')
           .eq('task_id', task.id)
           .order('created_at', { ascending: true });
 
-        const commentsSummary = (comments && comments.length > 0)
-          ? ` | 💬 Comentários da Semana: ` + comments.map(c => `"${c.content}" (${c.author_email ? c.author_email.split('@')[0] : 'Usuário'})`).join('; ')
-          : '';
+        let commentsSummary = '';
+        if (comments && comments.length > 0) {
+          // Group comments by day
+          const grouped: Record<string, string[]> = {};
+          comments.forEach(c => {
+            const parsed = parseComment(c.content);
+            const author = c.author_email ? c.author_email.split('@')[0] : 'Usuário';
+            if (!grouped[parsed.day]) grouped[parsed.day] = [];
+            grouped[parsed.day].push(`"${parsed.text}" (${author})`);
+          });
+
+          const daySummaries = Object.entries(grouped)
+            .map(([day, list]) => `  • ${day}: ${list.join('; ')}`)
+            .join('\n');
+
+          commentsSummary = `\n\n💬 Comentários da Semana (por dia):\n${daySummaries}`;
+        }
         
         if (hasData || (comments && comments.length > 0)) {
           const historyText = daysOfWeek.map(d => {
@@ -204,10 +235,15 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
           const newRoutine = { ...r };
           daysOfWeek.forEach(d => delete newRoutine[d.key]);
           await supabase.from('tasks').update({ routine_status: newRoutine }).eq('id', task.id);
+
+          // Clear routine week comments after archiving
+          if (comments && comments.length > 0) {
+            await supabase.from('task_updates').delete().eq('task_id', task.id);
+          }
         }
       }
       queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
-      alert('Semana finalizada! O resultado e os comentários foram salvos no Histórico de Atividades.');
+      alert('Semana finalizada! O resultado e os comentários organizados por dia foram salvos no Histórico de Atividades.');
     }
   };
 
@@ -250,11 +286,13 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     if (!commentTaskId || !newCommentText.trim()) return;
     setIsPostingComment(true);
 
+    const formattedContent = `[${selectedCommentDay}] ${newCommentText.trim()}`;
+
     try {
       const { error } = await supabase.from('task_updates').insert([
         { 
           task_id: commentTaskId, 
-          content: newCommentText.trim(),
+          content: formattedContent,
           author_email: userProfile?.email || 'Usuário'
         }
       ]);
@@ -311,6 +349,12 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     if (status === 'Pendente') return 'bg-[#e2445c] text-white';
     return 'bg-slate-100 hover:bg-slate-200 text-transparent hover:text-slate-400';
   };
+
+  const filteredRoutineComments = routineComments?.filter((comment: any) => {
+    if (commentDayFilter === 'all') return true;
+    const parsed = parseComment(comment.content);
+    return parsed.day === commentDayFilter;
+  });
 
   return (
     <div className="w-full h-full relative flex flex-col bg-white">
@@ -485,53 +529,105 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
               </button>
             </div>
 
+            {/* Abas de filtro por dia */}
+            <div className="px-6 py-2 border-b border-slate-100 bg-slate-50 flex items-center gap-1.5 overflow-x-auto text-xs shrink-0">
+              <span className="text-slate-500 font-medium mr-1">Filtrar:</span>
+              <button
+                onClick={() => setCommentDayFilter('all')}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
+                  commentDayFilter === 'all' ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Todos ({routineComments?.length || 0})
+              </button>
+              {availableDays.map(day => {
+                const count = routineComments?.filter((c: any) => parseComment(c.content).day === day).length || 0;
+                return (
+                  <button
+                    key={day}
+                    onClick={() => setCommentDayFilter(day)}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                      commentDayFilter === day ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {day} {count > 0 && `(${count})`}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="p-6 overflow-y-auto flex-1 bg-slate-50 space-y-4">
-              {routineComments && routineComments.length > 0 ? (
-                routineComments.map((comment: any) => (
-                  <div key={comment.id} className="bg-white p-4 rounded-xl shadow-2xs border border-slate-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-slate-700">{comment.author_email}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-slate-400">
-                          {new Date(comment.created_at).toLocaleString('pt-BR')}
-                        </span>
-                        {(userProfile?.email === comment.author_email || isLeaderOrAdmin) && (
-                          <button
-                            onClick={() => handleDeleteComment(comment.id)}
-                            className="text-slate-400 hover:text-red-500 p-0.5 rounded cursor-pointer"
-                            title="Excluir comentário"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+              {filteredRoutineComments && filteredRoutineComments.length > 0 ? (
+                filteredRoutineComments.map((comment: any) => {
+                  const parsed = parseComment(comment.content);
+                  return (
+                    <div key={comment.id} className="bg-white p-4 rounded-xl shadow-2xs border border-slate-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-700">{comment.author_email}</span>
+                          <span className="bg-blue-50 text-blue-600 text-[11px] px-2 py-0.5 rounded-full font-semibold border border-blue-100">
+                            {parsed.day}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-400">
+                            {new Date(comment.created_at).toLocaleString('pt-BR')}
+                          </span>
+                          {(userProfile?.email === comment.author_email || isLeaderOrAdmin) && (
+                            <button
+                              onClick={() => handleDeleteComment(comment.id)}
+                              className="text-slate-400 hover:text-red-500 p-0.5 rounded cursor-pointer"
+                              title="Excluir comentário"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{parsed.text}</p>
                     </div>
-                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{comment.content}</p>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-center py-8 text-slate-400 text-sm">
-                  Nenhum comentário cadastrado para esta rotina ainda.
+                  {commentDayFilter === 'all' 
+                    ? 'Nenhum comentário cadastrado para esta rotina ainda.'
+                    : `Nenhum comentário encontrado para ${commentDayFilter}.`}
                 </div>
               )}
             </div>
 
-            <form onSubmit={handlePostComment} className="p-4 border-t border-slate-200 bg-white flex gap-2 shrink-0">
-              <input
-                type="text"
-                value={newCommentText}
-                onChange={(e) => setNewCommentText(e.target.value)}
-                placeholder="Escreva um comentário sobre esta rotina..."
-                className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 outline-none focus:border-blue-500 bg-white"
-              />
-              <button
-                type="submit"
-                disabled={!newCommentText.trim() || isPostingComment}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center gap-1 cursor-pointer"
-              >
-                <Send className="w-4 h-4" />
-                {isPostingComment ? 'Enviando...' : 'Enviar'}
-              </button>
+            <form onSubmit={handlePostComment} className="p-4 border-t border-slate-200 bg-white flex flex-col gap-3 shrink-0">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                <span>Comentar para o dia:</span>
+                <select
+                  value={selectedCommentDay}
+                  onChange={(e) => setSelectedCommentDay(e.target.value)}
+                  className="px-2.5 py-1 border border-slate-300 rounded-md bg-white text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+                >
+                  {availableDays.map(day => (
+                    <option key={day} value={day}>{day}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCommentText}
+                  onChange={(e) => setNewCommentText(e.target.value)}
+                  placeholder={`Escreva um comentário para ${selectedCommentDay}...`}
+                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 outline-none focus:border-blue-500 bg-white"
+                />
+                <button
+                  type="submit"
+                  disabled={!newCommentText.trim() || isPostingComment}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  {isPostingComment ? 'Enviando...' : 'Enviar'}
+                </button>
+              </div>
             </form>
           </div>
         </div>
