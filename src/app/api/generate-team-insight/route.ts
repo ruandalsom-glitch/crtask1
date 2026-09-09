@@ -26,7 +26,6 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
     let scopeInfo = 'ESCOPO DE ANÁLISE: Visão Geral de Todos os Setores e Colaboradores.';
     if (sectorName && assigneeEmail) {
@@ -72,8 +71,31 @@ DADOS BRUTOS EXTRAÍDOS DO SISTEMA:
 ${JSON.stringify(allTasks, null, 2)}
 `;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    // Tentativa em cascata para evitar instabilidade 503 dos servidores da Google
+    const candidateModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"];
+    let responseText = '';
+    let lastError = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        responseText = result.response.text();
+        if (responseText) break;
+      } catch (err: any) {
+        console.warn(`[Gemini API Warning] Falha no modelo ${modelName}:`, err.message);
+        lastError = err;
+      }
+    }
+
+    if (!responseText) {
+      if (lastError?.message?.includes('503') || lastError?.status === 503) {
+        return NextResponse.json({ 
+          error: 'A API do Google Gemini está passando por uma alta demanda temporária nos servidores da Google. Por favor, aguarde alguns segundos e tente clicar novamente.' 
+        }, { status: 503 });
+      }
+      throw lastError || new Error('Não foi possível gerar a resposta com os modelos disponíveis.');
+    }
 
     // Salvar no banco
     const { data, error } = await supabase.from('ai_insights').insert([

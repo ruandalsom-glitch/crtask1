@@ -108,7 +108,7 @@ export default function ReportsPage() {
       queryClient.invalidateQueries({ queryKey: ['admin_latest_insight'] });
     },
     onError: (err: any) => {
-      alert('Erro ao gerar insight: ' + err.message + '\nVerifique se a GEMINI_API_KEY está configurada no .env.local');
+      alert('Erro ao gerar relatório com IA: ' + err.message);
     }
   });
 
