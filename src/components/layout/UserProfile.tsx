@@ -23,9 +23,11 @@ export function UserProfile() {
     if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       setIsDarkMode(true);
       document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
     } else {
       setIsDarkMode(false);
       document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
     }
   }, []);
 
@@ -34,11 +36,11 @@ export function UserProfile() {
     setIsDarkMode(nextMode);
     if (nextMode) {
       document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
+      document.body.classList.add('dark');
       localStorage.setItem('theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
-      document.documentElement.classList.add('light');
+      document.body.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
   };
