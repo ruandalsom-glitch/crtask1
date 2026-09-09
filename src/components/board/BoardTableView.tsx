@@ -691,7 +691,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                 <tr className="border-b border-slate-200 text-[#676879] text-[13px] bg-slate-50/50">
                   <th className="w-2 p-0"></th>
                   <th className="w-10 text-center p-0 border-r border-slate-200"></th>
-                  <th className="font-semibold px-4 py-2 border-r border-slate-200 text-left min-w-[280px]">Item / Tarefa</th>
+                  <th className="font-semibold px-4 py-2 border-r border-slate-200 text-left min-w-[380px]">Item / Tarefa</th>
                   <th className="w-12 text-center p-0 border-r border-slate-200"></th>
                   <th className="font-semibold px-3 py-2 border-r border-slate-200 w-36 text-center">Responsável</th>
                   <th className="font-semibold px-3 py-2 border-r border-slate-200 w-36 text-center">Status</th>
@@ -716,9 +716,9 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                           className="w-4 h-4 rounded border-slate-300 opacity-0 group-hover/row:opacity-100 transition-opacity absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer checked:opacity-100 accent-blue-600" 
                         />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 relative group/title min-w-[280px]">
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center gap-2">
+                      <td className="px-4 py-0 border-r border-slate-200 relative group/title min-w-[380px]">
+                        <div className="flex items-center justify-between w-full h-full">
+                          <div className="flex items-center gap-2 flex-1 min-w-0 pr-6">
                             {task.is_external && (
                               <a href={`/boards/${task.external_board_id}`} className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 hover:bg-purple-200 transition-colors" title="Ir para o quadro">
                                 Quadro: {task.external_board_name}
@@ -733,7 +733,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                                   updateTask.mutate({ id: task.id, updates: { title: e.target.value } });
                                 }
                               }}
-                              className="text-[#323338] hover:text-blue-600 bg-transparent outline-none w-full cursor-text truncate flex-1"
+                              className="text-[#323338] font-medium text-[14px] hover:text-blue-600 bg-transparent outline-none w-full cursor-text truncate flex-1 focus:bg-white focus:px-2 focus:py-1 focus:ring-1 focus:ring-blue-400 rounded transition-all"
                             />
                           </div>
                           <div className="flex items-center gap-1 bg-transparent px-2 opacity-0 group-hover/title:opacity-100 transition-opacity absolute right-0 top-0 h-full">
@@ -984,7 +984,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-auto pb-24 pt-6">
-        <div className="w-full min-w-[1050px]">
+        <div className="w-full min-w-[1200px]">
           {groupsToRender.map(groupName => renderGroup(groupName, groupedTasks[groupName] || []))}
           
           <div className="px-8 mt-6">
