@@ -50,6 +50,7 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState<string | null>(null);
+  const [filterSpecificDate, setFilterSpecificDate] = useState<string>('');
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   const [priorityFilterOpen, setPriorityFilterOpen] = useState(false);
   const [dateFilterOpen, setDateFilterOpen] = useState(false);
@@ -584,10 +585,24 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     if (task.task_type === 'Lembrete') return false; // Lembretes ficam APENAS no Calendário
     if (filterStatus && task.status !== filterStatus) return false;
     if (filterPriority && task.priority !== filterPriority) return false;
-    if (filterDate) {
+    if (filterSpecificDate) {
+      if (!task.due_date) return false;
+      const taskDateStr = task.due_date.split('T')[0];
+      if (taskDateStr !== filterSpecificDate) return false;
+    } else if (filterDate) {
       const dueStatus = getDueStatus(task.due_date, task.status);
       if (filterDate === 'Atrasado' && (dueStatus !== 'overdue' || task.status === 'Feito')) return false;
       if (filterDate === 'Hoje' && dueStatus !== 'today') return false;
+      if (filterDate === 'Amanhã') {
+        if (!task.due_date) return false;
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+        const dueDate = new Date(task.due_date);
+        dueDate.setMinutes(dueDate.getMinutes() + dueDate.getTimezoneOffset());
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate.getTime() !== tomorrow.getTime()) return false;
+      }
       if (filterDate === 'Futuro' && dueStatus !== 'pending') return false;
     }
     if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -954,26 +969,74 @@ export function BoardTableView({ boardId }: { boardId: string }) {
         <div className="relative">
           <button 
             onClick={() => { setDateFilterOpen(!dateFilterOpen); setStatusFilterOpen(false); setPriorityFilterOpen(false); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[14px] transition-colors shadow-sm ${filterDate ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[14px] transition-colors shadow-sm cursor-pointer ${
+              (filterDate || filterSpecificDate) ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
           >
-            Prazo {filterDate && `: ${filterDate}`}
+            Prazo {filterSpecificDate ? `: ${filterSpecificDate.split('-').reverse().join('/')}` : filterDate ? `: ${filterDate}` : ''}
           </button>
+
           {dateFilterOpen && (
-            <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-xl p-2 z-50">
-              <div className="text-xs font-bold text-slate-400 mb-2 px-2">Filtrar por Prazo</div>
-              {[{name: 'Atrasado', color: 'bg-red-500'}, {name: 'Hoje', color: 'bg-blue-500'}, {name: 'Futuro', color: 'bg-slate-300'}].map(dateOpt => (
-                <button 
-                  key={dateOpt.name}
-                  onClick={() => { setFilterDate(filterDate === dateOpt.name ? null : dateOpt.name); setDateFilterOpen(false); }}
-                  className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-slate-100 flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className={`w-3 h-3 rounded-full ${dateOpt.color}`}></span>
-                    {dateOpt.name}
-                  </div>
-                  {filterDate === dateOpt.name && <CheckCircle2 className="w-4 h-4 text-blue-500" />}
-                </button>
-              ))}
+            <div className="absolute top-full left-0 mt-2 w-60 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between mb-2.5 px-1">
+                <span className="text-xs font-bold text-slate-500">Filtrar por Prazo</span>
+                {(filterDate || filterSpecificDate) && (
+                  <button
+                    onClick={() => { setFilterDate(null); setFilterSpecificDate(''); setDateFilterOpen(false); }}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
+
+              {/* Presets Rápidos */}
+              <div className="space-y-1 mb-3">
+                {[
+                  { name: 'Atrasado', color: 'bg-red-500' },
+                  { name: 'Hoje', color: 'bg-blue-500' },
+                  { name: 'Amanhã', color: 'bg-amber-500' },
+                  { name: 'Futuro', color: 'bg-slate-400' }
+                ].map(dateOpt => (
+                  <button 
+                    key={dateOpt.name}
+                    onClick={() => { 
+                      if (filterDate === dateOpt.name) {
+                        setFilterDate(null);
+                      } else {
+                        setFilterDate(dateOpt.name);
+                        setFilterSpecificDate('');
+                      }
+                      setDateFilterOpen(false); 
+                    }}
+                    className={`w-full text-left px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-slate-100 flex items-center justify-between cursor-pointer transition-colors ${
+                      filterDate === dateOpt.name ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${dateOpt.color}`}></span>
+                      {dateOpt.name}
+                    </div>
+                    {filterDate === dateOpt.name && <CheckCircle2 className="w-4 h-4 text-blue-500" />}
+                  </button>
+                ))}
+              </div>
+
+              {/* Seletor de Data Específica */}
+              <div className="border-t border-slate-100 pt-2.5">
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1.5 px-1">
+                  Data específica:
+                </label>
+                <input
+                  type="date"
+                  value={filterSpecificDate}
+                  onChange={(e) => {
+                    setFilterSpecificDate(e.target.value);
+                    setFilterDate(null);
+                  }}
+                  className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 bg-white focus:outline-none focus:border-blue-500 font-medium"
+                />
+              </div>
             </div>
           )}
         </div>
