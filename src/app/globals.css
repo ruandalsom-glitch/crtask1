@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --background: #f8fafc;
@@ -21,6 +22,38 @@
   --status-pending: #94a3b8;
 }
 
+/* ==========================================================================
+   TEMA CLARO (LIGHT MODE - PADRÃO)
+   ========================================================================== */
+html:not(.dark), body:not(.dark) {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html:not(.dark) .bg-\[\#f7f8f9\],
+html:not(.dark) [class*="bg-[#f7f8f9]"] {
+  background-color: #f7f8f9 !important;
+  color: #323338 !important;
+}
+
+html:not(.dark) .bg-white {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .text-\[\#323338\],
+html:not(.dark) [class*="text-[#323338]"] {
+  color: #323338 !important;
+}
+
+html:not(.dark) .text-\[\#676879\],
+html:not(.dark) [class*="text-[#676879]"] {
+  color: #676879 !important;
+}
+
+/* ==========================================================================
+   TEMA ESCURO (DARK MODE - ATIVADO)
+   ========================================================================== */
 html.dark, :root.dark {
   --background: #0f172a;
   --foreground: #f8fafc;
@@ -30,7 +63,6 @@ html.dark, :root.dark {
   --card-hover-border: #475569;
 }
 
-/* Regras Globais de Tema Escuro (Cobertura Completa) */
 html.dark, html.dark body {
   background-color: #0f172a !important;
   color: #f8fafc !important;
