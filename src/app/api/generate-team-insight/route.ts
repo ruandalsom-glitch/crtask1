@@ -36,16 +36,49 @@ export async function POST(req: Request) {
       scopeInfo = `ESCOPO DE ANÁLISE: Focado exclusivamente no Colaborador "${assigneeEmail}".`;
     }
 
-    const prompt = `Você é um Analista de Operações e Gestão de Projetos.
+    const prompt = `Você é um Analista Sênior de Operações e Gestão de Projetos.
+
+Sua missão é realizar uma análise detalhada, analítica e aprofundada das atividades do sistema, fornecendo um Relatório Executivo de Inteligência completo para a liderança.
 
 ${scopeInfo}
 
-INSTRUÇÕES DE ANÁLISE:
-1. Leia todas as tarefas do Quadro Principal fornecidas abaixo.
-2. Para cada colaborador no escopo analisado, gere um resumo objetivo das tarefas em andamento, concluídas e carga de trabalho.
-3. Se houverem tarefas sem responsável (assignee_email nulo ou vazio), agrupe-as sob "Sem Colaborador Atribuído".
-4. Finalize com um DASHBOARD EXECUTIVO em tabela Markdown com as colunas: Colaborador | Total de Tarefas | Em Andamento | Concluídas | Risco.
-5. Formate usando Markdown profissional.
+ESTRUTURA OBRIGATÓRIA DO RELATÓRIO:
+
+1. INTRODUÇÃO EXECUTIVA
+   - Contextualização do setor e escopo de análise.
+   - Metodologia de análise cruzando dados brutos do quadro de tarefas.
+
+2. ANÁLISE INDIVIDUAL DO COLABORADOR (Para cada colaborador no escopo)
+   - Nome / E-mail do Colaborador.
+   - Resumo Executivo: Papel estratégico e responsabilidades do colaborador.
+   - Atividades em Andamento: Título, status, prioridade, prazo e o IMPACTO operacional/estratégico detalhado de cada tarefa.
+   - Atividades Concluídas Recentemente: Histórico detalhado das últimas entregas com datas, prioridade e colaboradores compartilhados.
+   - Agenda e Compromissos: Reuniões e compromissos identificados no quadro.
+   - Análise de Carga de Trabalho: Avaliação detalhada do passado recente, estado atual e nível de carga (Baixa, Moderada, Alta ou Crítica).
+   - Riscos Identificados: Lista numerada detalhada de 3 a 4 riscos operacionais específicos.
+   - Recomendações: Lista numerada detalhada de 3 a 4 ações gerenciais recomendadas.
+
+3. INCONSISTÊNCIAS ENCONTRADAS
+   - Destaque de prazos genéricos, ausência de datas de vencimento ou dependências não mapeadas.
+
+4. VISÃO CONSOLIDADA DA EQUIPE
+   - Resumo Geral da Semana.
+   - Resumo Geral do Mês.
+
+5. INSIGHTS GERENCIAIS
+   - Análise de Capacidade Ociosa vs. Carga de Trabalho Oculta.
+   - Gestão de Prazos e Gargalos.
+   - Colaboração e Interdependências entre membros da equipe.
+
+6. DASHBOARD EXECUTIVO (Tabela Markdown)
+   - Tabela formatada em Markdown com as colunas: Colaborador | Nº de Tarefas | Em Andamento | Concluídas | Reuniões | Prioridade Média | Risco.
+
+7. CONCLUSÃO
+   - Síntese final com orientações estratégicas para a gestão.
+
+REGRAS DE PRECISÃO:
+- Use exclusivamente as tarefas e e-mails reais presentes nos DADOS BRUTOS abaixo.
+- Caso existam tarefas sem e-mail atribuído (assignee_email nulo ou vazio), agrupe-as sob "Sem Colaborador Atribuído".
 
 DADOS BRUTOS EXTRAÍDOS DO SISTEMA:
 ${JSON.stringify(allTasks, null, 2)}
