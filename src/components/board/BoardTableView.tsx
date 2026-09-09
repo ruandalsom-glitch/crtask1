@@ -425,10 +425,10 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     };
 
     const effortColors: any = {
-      'Baixo': { bg: '#579bfc', label: '⚡ Baixo' },
-      'Médio': { bg: '#fdab3d', label: '⚖️ Médio' },
-      'Alto': { bg: '#e2445c', label: '🔥 Alto' },
-      'Muito Alto': { bg: '#784bd1', label: '🚀 Muito Alto' }
+      'Baixo': { bg: '#579bfc', label: 'Baixo' },
+      'Médio': { bg: '#fdab3d', label: 'Médio' },
+      'Alto': { bg: '#e2445c', label: 'Alto' },
+      'Muito Alto': { bg: '#784bd1', label: 'Muito Alto' }
     };
 
     const rowsHtml = targetTasks.map((t: any) => {

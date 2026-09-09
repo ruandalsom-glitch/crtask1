@@ -6,10 +6,10 @@ import { supabase } from '@/lib/supabaseClient';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const EFFORT_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  'Baixo': { bg: 'bg-[#579bfc]', text: 'text-white', label: '⚡ Baixo' },
-  'Médio': { bg: 'bg-[#fdab3d]', text: 'text-white', label: '⚖️ Médio' },
-  'Alto': { bg: 'bg-[#e2445c]', text: 'text-white', label: '🔥 Alto' },
-  'Muito Alto': { bg: 'bg-[#784bd1]', text: 'text-white', label: '🚀 Muito Alto' },
+  'Baixo': { bg: 'bg-[#579bfc]', text: 'text-white', label: 'Baixo' },
+  'Médio': { bg: 'bg-[#fdab3d]', text: 'text-white', label: 'Médio' },
+  'Alto': { bg: 'bg-[#e2445c]', text: 'text-white', label: 'Alto' },
+  'Muito Alto': { bg: 'bg-[#784bd1]', text: 'text-white', label: 'Muito Alto' },
   'Vazio': { bg: 'bg-[#c4c4c4]', text: 'text-white', label: '-' },
 };
 

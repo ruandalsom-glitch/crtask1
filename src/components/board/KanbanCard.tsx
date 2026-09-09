@@ -145,7 +145,6 @@ export function KanbanCard({ task, isOverlay, onOpenTask }: { task: any, isOverl
         {task.effort && (
           <div className="relative group/tooltip">
             <div className="flex items-center bg-slate-100 rounded px-2 py-0.5 text-xs font-medium text-slate-700 gap-1.5 h-5 border border-slate-200">
-              <span>{task.effort === 'Baixo' ? '⚡' : task.effort === 'Médio' ? '⚖️' : task.effort === 'Alto' ? '🔥' : '🚀'}</span>
               {task.effort}
             </div>
             <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#323338] text-white text-[11px] font-bold px-2 py-1 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
