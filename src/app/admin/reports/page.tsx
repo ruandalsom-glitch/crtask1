@@ -105,8 +105,14 @@ export default function ReportsPage() {
           assigneeEmail
         })
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      const rawText = await response.text();
+      let result: any;
+      try {
+        result = JSON.parse(rawText);
+      } catch {
+        throw new Error('A requisição demorou para responder ou o servidor retornou uma resposta temporariamente indisponível. Por favor, tente novamente.');
+      }
+      if (!response.ok) throw new Error(result?.error || 'Falha ao gerar o relatório de IA.');
       return result;
     },
     onSuccess: () => {

@@ -36,32 +36,16 @@ export async function POST(req: Request) {
       scopeInfo = `ESCOPO DE ANÁLISE: Focado exclusivamente no Colaborador "${assigneeEmail}".`;
     }
 
-    const prompt = `Você é um Analista Sênior de Operações e Gestão de Projetos.
-
-Sua missão é analisar integralmente e com extrema precisão os dados brutos de tarefas fornecidos no formato JSON abaixo.
+    const prompt = `Você é um Analista de Operações e Gestão de Projetos.
 
 ${scopeInfo}
 
-REGRAS RÍGIDAS DE PRECISÃO E ANTI-ALUCINAÇÃO (OBRIGATÓRIAS):
-1. NUNCA invente, crie ou presuma e-mails, nomes, cargos ou setores fictícios que não existam EXPLICITAMENTE nos DADOS BRUTOS fornecidos abaixo.
-2. Referencie EXCLUSIVAMENTE os e-mails reais contidos no campo "assignee_email" das tarefas recebidas.
-3. Se tarefas não tiverem responsável (assignee_email nulo ou vazio), agrupe-as estritamente sob a categoria "Sem Colaborador Atribuído".
-4. Baseie 100% das contagens, métricas e análises nos dados reais da lista fornecida.
-
 INSTRUÇÕES DE ANÁLISE:
-1. Leia todas as tarefas do Quadro Principal (dados fornecidos abaixo).
-2. Para cada colaborador REAL identificado no escopo analisado, gere uma análise individual contendo:
-   - E-mail do colaborador real
-   - Resumo Executivo das suas tarefas.
-   - Atividades em andamento (detalhada com status, prioridade, prazo).
-   - Análise de carga de trabalho (Baixa, Moderada, Alta, Crítica).
-   - Riscos identificados.
-   - Recomendações.
-
-3. Gere uma visão consolidada da equipe (RESUMO GERAL DA SEMANA e RESUMO GERAL DO MÊS).
-4. Crie uma seção de INSIGHTS GERENCIAIS (quem está sobrecarregado, capacidade ociosa, riscos).
-5. Finalize com um DASHBOARD EXECUTIVO em formato de tabela Markdown com as colunas: Colaborador | Total de Tarefas | Em Andamento | Concluídas | Prioridade Média | Risco.
-6. Formate usando Markdown com linguagem profissional e gerencial.
+1. Leia todas as tarefas do Quadro Principal fornecidas abaixo.
+2. Para cada colaborador no escopo analisado, gere um resumo objetivo das tarefas em andamento, concluídas e carga de trabalho.
+3. Se houverem tarefas sem responsável (assignee_email nulo ou vazio), agrupe-as sob "Sem Colaborador Atribuído".
+4. Finalize com um DASHBOARD EXECUTIVO em tabela Markdown com as colunas: Colaborador | Total de Tarefas | Em Andamento | Concluídas | Risco.
+5. Formate usando Markdown profissional.
 
 DADOS BRUTOS EXTRAÍDOS DO SISTEMA:
 ${JSON.stringify(allTasks, null, 2)}
