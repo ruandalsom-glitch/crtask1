@@ -71,8 +71,8 @@ DADOS BRUTOS EXTRAÍDOS DO SISTEMA:
 ${JSON.stringify(allTasks, null, 2)}
 `;
 
-    // Tentativa em cascata para evitar instabilidade 503 dos servidores da Google
-    const candidateModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"];
+    // Tentativa em cascata para evitar instabilidade dos servidores da Google
+    const candidateModels = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
     let responseText = '';
     let lastError = null;
 
