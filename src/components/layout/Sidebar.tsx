@@ -75,7 +75,7 @@ export function Sidebar() {
   const hasMultipleWorkspaces = Boolean(workspaces && workspaces.length > 1);
 
   return (
-    <div className={`relative bg-[#f7f8f9] border-slate-200 flex flex-col z-40 hidden md:flex shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-4 border-r-0 hover:bg-slate-200 cursor-pointer' : 'w-[260px] border-r'}`}
+    <div className={`relative bg-[#f7f8f9] dark:bg-[#1e293b] border-slate-200 dark:border-slate-800 flex flex-col z-40 hidden md:flex shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-4 border-r-0 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer' : 'w-[260px] border-r'}`}
          onClick={() => isCollapsed && setIsCollapsed(false)}>
       
       {/* Botão de Toggle */}

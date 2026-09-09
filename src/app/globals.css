@@ -30,52 +30,86 @@ html.dark, :root.dark {
   --card-hover-border: #475569;
 }
 
-/* Regras Globais de Tema Escuro */
+/* Regras Globais de Tema Escuro (Cobertura Completa) */
 html.dark, html.dark body {
   background-color: #0f172a !important;
   color: #f8fafc !important;
 }
 
-html.dark .bg-white {
+/* Override de backgrounds em Hexadecimal e Tailwind */
+html.dark .bg-white,
+html.dark .bg-\[\#f7f8f9\],
+html.dark .bg-\[\#f5f6f8\],
+html.dark [class*="bg-[#f7f8f9]"],
+html.dark [class*="bg-[#f5f6f8]"] {
   background-color: #1e293b !important;
-  color: #f8fafc;
+  color: #f8fafc !important;
 }
 
-html.dark .bg-slate-50 {
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/50 {
   background-color: #0f172a !important;
 }
 
 html.dark .bg-slate-100 {
   background-color: #334155 !important;
-  color: #f8fafc;
+  color: #f8fafc !important;
 }
 
 html.dark .bg-slate-200 {
   background-color: #475569 !important;
 }
 
+/* Override de cores de texto em Hexadecimal e Tailwind */
+html.dark .text-\[\#323338\],
+html.dark [class*="text-[#323338]"] {
+  color: #ffffff !important;
+}
+
+html.dark .text-\[\#676879\],
+html.dark [class*="text-[#676879]"] {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-900,
 html.dark .text-slate-800,
-html.dark .text-slate-700,
-html.dark .text-slate-900 {
+html.dark .text-slate-700 {
   color: #f1f5f9 !important;
 }
 
 html.dark .text-slate-600,
 html.dark .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-400 {
   color: #94a3b8 !important;
 }
 
+/* Bordas */
 html.dark .border-slate-200,
 html.dark .border-slate-100,
-html.dark .border-slate-300 {
+html.dark .border-slate-300,
+html.dark [class*="border-slate-200"] {
   border-color: #334155 !important;
 }
 
-html.dark input,
+/* Hover em Modo Escuro */
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-slate-50:hover,
+html.dark [class*="hover:bg-[#f5f6f8]"]:hover,
+html.dark [class*="hover:bg-slate-100"]:hover {
+  background-color: #334155 !important;
+  color: #ffffff !important;
+}
+
+/* Entradas de Texto, Selects e Textareas */
+html.dark input[type="text"],
+html.dark input[type="search"],
 html.dark select,
 html.dark textarea {
   background-color: #1e293b !important;
-  color: #f8fafc !important;
+  color: #ffffff !important;
   border-color: #475569 !important;
 }
 
@@ -89,22 +123,24 @@ html.dark .divide-slate-200 > * + * {
   border-color: #334155 !important;
 }
 
+/* Tabelas e Modais */
 html.dark table th {
   background-color: #1e293b !important;
-  color: #cbd5e1 !important;
+  color: #e2e8f0 !important;
   border-color: #334155 !important;
 }
 
 html.dark table td {
   border-color: #334155 !important;
+  color: #f8fafc !important;
 }
 
 html.dark tr:hover {
-  background-color: rgba(51, 65, 85, 0.3) !important;
+  background-color: rgba(51, 65, 85, 0.4) !important;
 }
 
 html.dark .glass-panel {
-  background: rgba(30, 41, 59, 0.85) !important;
+  background: rgba(30, 41, 59, 0.95) !important;
 }
 
 @theme inline {
