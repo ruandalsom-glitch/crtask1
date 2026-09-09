@@ -24,6 +24,14 @@ export function StatusCell({ task }: { task: any }) {
 
   // Fechar o dropdown ao clicar fora
   useEffect(() => {
+    if (!isOpen) return;
+
+    const handleScrollOrResize = () => {
+      if (buttonRef.current) {
+        setRect(buttonRef.current.getBoundingClientRect());
+      }
+    };
+
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) && 
           buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
@@ -31,12 +39,14 @@ export function StatusCell({ task }: { task: any }) {
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', () => setIsOpen(false));
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', () => setIsOpen(false));
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
     };
-  }, []);
+  }, [isOpen]);
 
   const updateStatus = useMutation({
     mutationFn: async (newStatus: string) => {

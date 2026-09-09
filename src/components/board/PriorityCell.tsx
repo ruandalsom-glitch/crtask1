@@ -23,6 +23,14 @@ export function PriorityCell({ task }: { task: any }) {
   const colorClass = PRIORITY_COLORS[currentPriority] || PRIORITY_COLORS['Vazio'];
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    const handleScrollOrResize = () => {
+      if (buttonRef.current) {
+        setRect(buttonRef.current.getBoundingClientRect());
+      }
+    };
+
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) && 
           buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
@@ -30,12 +38,14 @@ export function PriorityCell({ task }: { task: any }) {
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', () => setIsOpen(false));
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', () => setIsOpen(false));
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
     };
-  }, []);
+  }, [isOpen]);
 
   const updatePriority = useMutation({
     mutationFn: async (newPriority: string) => {

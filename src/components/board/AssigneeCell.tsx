@@ -68,19 +68,31 @@ export function AssigneeCell({ task }: { task: any }) {
   }, [workspaceUsers, search]);
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    const handleScrollOrResize = () => {
+      if (buttonRef.current) {
+        setRect(buttonRef.current.getBoundingClientRect());
+      }
+    };
+
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) && 
           buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
+
     document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', () => setIsOpen(false));
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', () => setIsOpen(false));
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
     };
-  }, []);
+  }, [isOpen]);
 
   const handleOpen = (e: React.MouseEvent) => {
     if (isOpen) {
@@ -283,7 +295,7 @@ export function AssigneeCell({ task }: { task: any }) {
                   setSearch('');
                 }
               }}
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500"
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 font-medium outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
