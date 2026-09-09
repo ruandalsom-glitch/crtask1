@@ -51,8 +51,8 @@ DADOS BRUTOS EXTRAÍDOS DO SISTEMA:
 ${JSON.stringify(allTasks, null, 2)}
 `;
 
-    // Tentativa em cascata com temperatura baixa (0.1) para evitar alucinações de nomes/e-mails
-    const candidateModels = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
+    // Tentativa em cascata priorizando gemini-3.6-flash para analises detalhadas
+    const candidateModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
     let responseText = '';
     let lastError = null;
 
