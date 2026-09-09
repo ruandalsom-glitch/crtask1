@@ -38,47 +38,46 @@ export async function POST(req: Request) {
 
     const prompt = `Você é um Analista Sênior de Operações e Gestão de Projetos.
 
-Sua missão é analisar integralmente o Quadro Principal e o Calendário, cruzando todas as informações disponíveis para gerar um relatório executivo completo sobre as atividades da equipe.
+Sua missão é analisar integralmente e com extrema precisão os dados brutos de tarefas fornecidos no formato JSON abaixo.
 
 ${scopeInfo}
 
+REGRAS RÍGIDAS DE PRECISÃO E ANTI-ALUCINAÇÃO (OBRIGATÓRIAS):
+1. NUNCA invente, crie ou presuma e-mails, nomes, cargos ou setores fictícios que não existam EXPLICITAMENTE nos DADOS BRUTOS fornecidos abaixo.
+2. Referencie EXCLUSIVAMENTE os e-mails reais contidos no campo "assignee_email" das tarefas recebidas.
+3. Se tarefas não tiverem responsável (assignee_email nulo ou vazio), agrupe-as estritamente sob a categoria "Sem Colaborador Atribuído".
+4. Baseie 100% das contagens, métricas e análises nos dados reais da lista fornecida.
+
 INSTRUÇÕES DE ANÁLISE:
 1. Leia todas as tarefas do Quadro Principal (dados fornecidos abaixo).
-2. Leia todos os eventos, reuniões, entregas e compromissos do Calendário (itens com datas e tipo lembrete/reunião).
-3. Cruze as informações entre ambos para identificar:
-   * Atividades planejadas, em execução, concluídas.
-   * Possíveis divergências entre quadro e calendário.
-   * Sobrecarga de colaboradores ou baixa demanda.
-   * Entregas críticas próximas do prazo, gargalos operacionais e dependências.
-
-4. Para cada colaborador no escopo analisado, gere uma análise individual contendo:
-   - Nome/E-mail do colaborador
-   - Resumo Executivo (responsabilidades, objetivos).
+2. Para cada colaborador REAL identificado no escopo analisado, gere uma análise individual contendo:
+   - E-mail do colaborador real
+   - Resumo Executivo das suas tarefas.
    - Atividades em andamento (detalhada com status, prioridade, prazo).
-   - Agenda e compromissos (reuniões, entregas).
    - Análise de carga de trabalho (Baixa, Moderada, Alta, Crítica).
    - Riscos identificados.
    - Recomendações.
 
-5. Gere uma visão consolidada da equipe (RESUMO GERAL DA SEMANA e RESUMO GERAL DO MÊS).
-6. Crie uma seção de INSIGHTS GERENCIAIS (quem está sobrecarregado, capacidade ociosa, riscos, etc).
-7. Finalize com um DASHBOARD EXECUTIVO em formato de tabela Markdown com as colunas: Colaborador | Nº de Tarefas | Em Andamento | Concluídas | Reuniões | Prioridade Média | Risco.
-8. O relatório deve ser objetivo, analítico e gerencial. Explique o impacto das atividades.
-9. Caso existam informações conflitantes, destaque-as em "Inconsistências Encontradas".
-10. Formate usando Markdown, linguagem profissional e gerencial.
+3. Gere uma visão consolidada da equipe (RESUMO GERAL DA SEMANA e RESUMO GERAL DO MÊS).
+4. Crie uma seção de INSIGHTS GERENCIAIS (quem está sobrecarregado, capacidade ociosa, riscos).
+5. Finalize com um DASHBOARD EXECUTIVO em formato de tabela Markdown com as colunas: Colaborador | Total de Tarefas | Em Andamento | Concluídas | Prioridade Média | Risco.
+6. Formate usando Markdown com linguagem profissional e gerencial.
 
 DADOS BRUTOS EXTRAÍDOS DO SISTEMA:
 ${JSON.stringify(allTasks, null, 2)}
 `;
 
-    // Tentativa em cascata para evitar instabilidade dos servidores da Google
+    // Tentativa em cascata com temperatura baixa (0.1) para evitar alucinações de nomes/e-mails
     const candidateModels = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
     let responseText = '';
     let lastError = null;
 
     for (const modelName of candidateModels) {
       try {
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: { temperature: 0.1 }
+        });
         const result = await model.generateContent(prompt);
         responseText = result.response.text();
         if (responseText) break;
