@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { AssigneeCell } from './AssigneeCell';
-import { Search, PlusCircle, Trash2, CheckCircle2, RotateCcw, X, Clock, History, MessageSquare, Send } from 'lucide-react';
+import { Search, PlusCircle, Trash2, CheckCircle2, RotateCcw, X, Clock, History, MessageSquare, Send, AlertTriangle, Loader2, Check } from 'lucide-react';
 
 function getWeekNumber(d: Date) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -21,6 +21,14 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
   const [commentTaskId, setCommentTaskId] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState<string>('');
   const [isPostingComment, setIsPostingComment] = useState<boolean>(false);
+  const [isConfirmingReset, setIsConfirmingReset] = useState<boolean>(false);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
   const [newRoutine, setNewRoutine] = useState({
     title: '',
@@ -180,31 +188,45 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
   };
 
   const resetAllRoutines = async () => {
-    if (!canEditBoard) {
-      alert("Você não tem permissão para finalizar a semana neste quadro.");
-      return;
-    }
-    if (!confirm('Deseja finalizar esta semana? Isso limpará a tabela de rotinas, salvará os resultados e os comentários por dia no Histórico de Atividades, e reiniciará os comentários para a nova semana.')) return;
-    
-    if (tasks) {
-      for (const task of tasks) {
-        if (!task.is_routine) continue;
-        const r = task.routine_status || {};
-        
-        const hasData = daysOfWeek.some(d => r[d.key]);
+    if (!canEditBoard) return;
+    setIsResetting(true);
 
-        // Buscar comentários cadastrados para esta rotina
-        const { data: comments } = await supabase
-          .from('task_updates')
-          .select('id, content, author_email')
-          .eq('task_id', task.id)
-          .order('created_at', { ascending: true });
+    try {
+      const routineTasks = tasks?.filter((t: any) => t.is_routine) || [];
+      if (routineTasks.length === 0) {
+        setIsConfirmingReset(false);
+        setIsResetting(false);
+        return;
+      }
+
+      const routineTaskIds = routineTasks.map((t: any) => t.id);
+
+      // 1. Buscar TODOS os comentários das rotinas em UMA ÚNICA QUERY em lote
+      const { data: allComments } = await supabase
+        .from('task_updates')
+        .select('id, task_id, content, author_email')
+        .in('task_id', routineTaskIds)
+        .order('created_at', { ascending: true });
+
+      const commentsByTask: Record<string, any[]> = {};
+      (allComments || []).forEach(c => {
+        if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = [];
+        commentsByTask[c.task_id].push(c);
+      });
+
+      const currentWeek = getWeekNumber(new Date());
+      const logsToInsert: any[] = [];
+      const taskUpdatesToPerform: { id: string; routine_status: any }[] = [];
+
+      for (const task of routineTasks) {
+        const r = task.routine_status || {};
+        const hasData = daysOfWeek.some(d => r[d.key]);
+        const comments = commentsByTask[task.id] || [];
 
         let commentsSummary = '';
-        if (comments && comments.length > 0) {
-          // Group comments by day
+        if (comments.length > 0) {
           const grouped: Record<string, string[]> = {};
-          comments.forEach(c => {
+          comments.forEach((c: any) => {
             const parsed = parseComment(c.content);
             const author = c.author_email ? c.author_email.split('@')[0] : 'Usuário';
             if (!grouped[parsed.day]) grouped[parsed.day] = [];
@@ -217,35 +239,61 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
 
           commentsSummary = `\n\n💬 Comentários da Semana (por dia):\n${daySummaries}`;
         }
-        
-        if (hasData || (comments && comments.length > 0)) {
+
+        if (hasData || comments.length > 0) {
           const historyText = daysOfWeek.map(d => {
             if (r[d.key] === 'Feito') return `${d.label} (✅)`;
             if (r[d.key] === 'Pendente') return `${d.label} (❌)`;
             return `${d.label} (-)`;
           }).join(', ');
 
-          const currentWeek = getWeekNumber(new Date());
-          await supabase.from('activity_logs').insert([{
+          logsToInsert.push({
             task_id: task.id,
             user_email: userProfile?.email || 'Sistema (Fechamento)',
             action: `[${task.title}] Semana ${currentWeek} concluída. Resultado: ${historyText}${commentsSummary}`
-          }]);
+          });
 
           const newRoutine = { ...r };
           daysOfWeek.forEach(d => delete newRoutine[d.key]);
-          await supabase.from('tasks').update({ routine_status: newRoutine }).eq('id', task.id);
-
-          // Clear routine week comments after archiving
-          if (comments && comments.length > 0) {
-            await supabase.from('task_updates').delete().eq('task_id', task.id);
-          }
+          taskUpdatesToPerform.push({ id: task.id, routine_status: newRoutine });
         }
       }
-      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
-      alert('Semana finalizada! O resultado e os comentários organizados por dia foram salvos no Histórico de Atividades.');
+
+      // 2. Inserir todos os logs de atividade em UMA ÚNICA QUERY em lote!
+      if (logsToInsert.length > 0) {
+        const { error: logErr } = await supabase.from('activity_logs').insert(logsToInsert);
+        if (logErr) throw logErr;
+      }
+
+      // 3. Atualizar status das rotinas em paralelo!
+      if (taskUpdatesToPerform.length > 0) {
+        await Promise.all(
+          taskUpdatesToPerform.map(item =>
+            supabase.from('tasks').update({ routine_status: item.routine_status }).eq('id', item.id)
+          )
+        );
+      }
+
+      // 4. Excluir comentários em lote em UMA ÚNICA QUERY!
+      if (allComments && allComments.length > 0) {
+        await supabase.from('task_updates').delete().in('task_id', routineTaskIds);
+      }
+
+      // Invalidação das queries em paralelo para atualizar a interface instantaneamente
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tasks', boardId] }),
+        queryClient.invalidateQueries({ queryKey: ['routine_history'] })
+      ]);
+
+      setIsConfirmingReset(false);
+      showToast('Semana finalizada com sucesso! O histórico foi salvo instantaneamente.');
+    } catch (err: any) {
+      alert('Erro ao finalizar semana: ' + err.message);
+    } finally {
+      setIsResetting(false);
     }
   };
+
 
   const handleCreateRoutine = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -470,11 +518,11 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
 
         {canEditBoard && (
         <button 
-          onClick={resetAllRoutines}
-          className="flex items-center gap-2 text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded hover:bg-blue-50 transition-colors text-sm font-medium border border-slate-200 hover:border-blue-200 cursor-pointer"
+          onClick={() => setIsConfirmingReset(true)}
+          className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors text-sm font-medium border border-slate-200 dark:border-slate-700 hover:border-blue-200 cursor-pointer shadow-2xs"
           title="Salvar histórico e comentários nas atividades e limpar a semana"
         >
-          <RotateCcw className="w-4 h-4" /> Finalizar Semana
+          <RotateCcw className="w-4 h-4 text-blue-600 dark:text-blue-400" /> Finalizar Semana
         </button>
         )}
       </div>
@@ -749,6 +797,63 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
           </table>
         </div>
       </div>
+
+      {/* Modal Moderno de Confirmação para Finalizar Semana */}
+      {isConfirmingReset && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[150] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 max-w-md w-full p-6 text-center transform transition-all animate-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 bg-blue-50 dark:bg-blue-950/50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-100 dark:border-blue-900/50 text-blue-600 dark:text-blue-400">
+              <RotateCcw className={`w-7 h-7 ${isResetting ? 'animate-spin' : ''}`} />
+            </div>
+
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">
+              Finalizar Semana de Rotinas
+            </h3>
+
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
+              Deseja finalizar esta semana? As marcações da tabela serão limpas, e os resultados e comentários por dia serão <strong>salvos instantaneamente no histórico</strong>.
+            </p>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={isResetting}
+                onClick={() => setIsConfirmingReset(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={isResetting}
+                onClick={resetAllRoutines}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isResetting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <span>Finalizar Semana</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification Moderno */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-[200] bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl border border-slate-800 flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-300">
+          <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <Check className="w-4 h-4" />
+          </div>
+          <span className="text-sm font-medium">{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
+
