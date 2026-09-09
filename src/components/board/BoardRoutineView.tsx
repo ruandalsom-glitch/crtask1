@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { AssigneeCell } from './AssigneeCell';
-import { Search, PlusCircle, Trash2, CheckCircle2, RotateCcw, X, Clock, History } from 'lucide-react';
+import { Search, PlusCircle, Trash2, CheckCircle2, RotateCcw, X, Clock, History, MessageSquare, Send } from 'lucide-react';
 
 function getWeekNumber(d: Date) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -18,6 +18,10 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [historyTaskId, setHistoryTaskId] = useState<string | null>(null);
+  const [commentTaskId, setCommentTaskId] = useState<string | null>(null);
+  const [newCommentText, setNewCommentText] = useState<string>('');
+  const [isPostingComment, setIsPostingComment] = useState<boolean>(false);
+
   const [newRoutine, setNewRoutine] = useState({
     title: '',
     assignee_email: '',
@@ -86,6 +90,24 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     refetchInterval: 30000
   });
 
+  const activeCommentTask = tasks?.find((t: any) => t.id === commentTaskId);
+
+  // Buscar comentários para a rotina selecionada
+  const { data: routineComments, refetch: refetchRoutineComments } = useQuery({
+    queryKey: ['task_updates', commentTaskId],
+    queryFn: async () => {
+      if (!commentTaskId) return [];
+      const { data, error } = await supabase
+        .from('task_updates')
+        .select('*')
+        .eq('task_id', commentTaskId)
+        .order('created_at', { ascending: false });
+      if (error) return [];
+      return data || [];
+    },
+    enabled: !!commentTaskId
+  });
+
   const { data: activityLogs } = useQuery({
     queryKey: ['routine_history', historyTaskId],
     queryFn: async () => {
@@ -123,7 +145,6 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     }
     const currentRoutine = task.routine_status || {};
     
-    // Verifica se o dia é ativo para esta rotina
     const activeDays = currentRoutine.config_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
     if (!activeDays.includes(dayKey)) return;
 
@@ -146,18 +167,27 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
       alert("Você não tem permissão para finalizar a semana neste quadro.");
       return;
     }
-    if (!confirm('Deseja finalizar esta semana? Isso limpará a tabela e salvará o resultado no Histórico de Atividades de cada rotina.')) return;
+    if (!confirm('Deseja finalizar esta semana? Isso limpará a tabela de rotinas e salvará o resultado e os comentários no Histórico de Atividades.')) return;
     
     if (tasks) {
       for (const task of tasks) {
         if (!task.is_routine) continue;
         const r = task.routine_status || {};
         
-        // Verifica se teve algum preenchimento
         const hasData = daysOfWeek.some(d => r[d.key]);
+
+        // Buscar comentários cadastrados para esta rotina
+        const { data: comments } = await supabase
+          .from('task_updates')
+          .select('content, author_email')
+          .eq('task_id', task.id)
+          .order('created_at', { ascending: true });
+
+        const commentsSummary = (comments && comments.length > 0)
+          ? ` | 💬 Comentários da Semana: ` + comments.map(c => `"${c.content}" (${c.author_email ? c.author_email.split('@')[0] : 'Usuário'})`).join('; ')
+          : '';
         
-        if (hasData) {
-          // Salva histórico
+        if (hasData || (comments && comments.length > 0)) {
           const historyText = daysOfWeek.map(d => {
             if (r[d.key] === 'Feito') return `${d.label} (✅)`;
             if (r[d.key] === 'Pendente') return `${d.label} (❌)`;
@@ -167,18 +197,17 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
           const currentWeek = getWeekNumber(new Date());
           await supabase.from('activity_logs').insert([{
             task_id: task.id,
-            user_email: 'Sistema (Fechamento)',
-            action: `[${task.title}] Semana ${currentWeek} concluída. Resultado: ${historyText}`
+            user_email: userProfile?.email || 'Sistema (Fechamento)',
+            action: `[${task.title}] Semana ${currentWeek} concluída. Resultado: ${historyText}${commentsSummary}`
           }]);
 
-          // Limpa os dias mas mantém as configurações
           const newRoutine = { ...r };
           daysOfWeek.forEach(d => delete newRoutine[d.key]);
           await supabase.from('tasks').update({ routine_status: newRoutine }).eq('id', task.id);
         }
       }
       queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
-      alert('Semana finalizada! O histórico foi salvo nas Atividades de cada tarefa.');
+      alert('Semana finalizada! O resultado e os comentários foram salvos no Histórico de Atividades.');
     }
   };
 
@@ -216,6 +245,38 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     }
   };
 
+  const handlePostComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentTaskId || !newCommentText.trim()) return;
+    setIsPostingComment(true);
+
+    try {
+      const { error } = await supabase.from('task_updates').insert([
+        { 
+          task_id: commentTaskId, 
+          content: newCommentText.trim(),
+          author_email: userProfile?.email || 'Usuário'
+        }
+      ]);
+      if (error) throw error;
+
+      setNewCommentText('');
+      refetchRoutineComments();
+      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+    } catch (err: any) {
+      alert('Erro ao enviar comentário: ' + err.message);
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!confirm('Excluir este comentário?')) return;
+    await supabase.from('task_updates').delete().eq('id', commentId);
+    refetchRoutineComments();
+    queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+  };
+
   const toggleNewRoutineDay = (dayKey: string) => {
     setNewRoutine(prev => {
       const active = prev.activeDays.includes(dayKey);
@@ -239,7 +300,6 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   }).sort((a: any, b: any) => {
-    // Ordem fixa: posição -> data de criação -> ID
     if (a.position !== b.position) return (a.position || 0) - (b.position || 0);
     if (a.created_at !== b.created_at) return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     return a.id.localeCompare(b.id);
@@ -344,7 +404,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
           {canEditBoard && (
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-[14px] font-medium transition-colors shadow-sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-[14px] font-medium transition-colors shadow-sm cursor-pointer"
           >
             Nova Rotina
           </button>
@@ -367,21 +427,21 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
         {canEditBoard && (
         <button 
           onClick={resetAllRoutines}
-          className="flex items-center gap-2 text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded hover:bg-blue-50 transition-colors text-sm font-medium border border-slate-200 hover:border-blue-200"
-          title="Salvar histórico nas atividades e limpar a semana"
+          className="flex items-center gap-2 text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded hover:bg-blue-50 transition-colors text-sm font-medium border border-slate-200 hover:border-blue-200 cursor-pointer"
+          title="Salvar histórico e comentários nas atividades e limpar a semana"
         >
           <RotateCcw className="w-4 h-4" /> Finalizar Semana
         </button>
         )}
       </div>
 
-      {/* Modal de Histórico */}
+      {/* Modal de Histórico de Atividades */}
       {historyTaskId && (
         <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><History className="w-5 h-5 text-blue-600"/> Histórico da Rotina</h2>
-              <button onClick={() => setHistoryTaskId(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+              <button onClick={() => setHistoryTaskId(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-5 h-5"/></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
               {activityLogs && activityLogs.length > 0 ? (
@@ -397,7 +457,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                           {new Date(log.created_at).toLocaleString('pt-BR')}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-600">{log.action}</p>
+                      <p className="text-sm text-slate-600 whitespace-pre-wrap">{log.action}</p>
                     </div>
                   ))}
                 </div>
@@ -411,14 +471,82 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
         </div>
       )}
 
+      {/* Modal de Comentários da Rotina */}
+      {commentTaskId && (
+        <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-blue-600"/> 
+                Comentários: <span className="text-blue-600">{activeCommentTask?.title}</span>
+              </h2>
+              <button onClick={() => setCommentTaskId(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-50 space-y-4">
+              {routineComments && routineComments.length > 0 ? (
+                routineComments.map((comment: any) => (
+                  <div key={comment.id} className="bg-white p-4 rounded-xl shadow-2xs border border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-700">{comment.author_email}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-400">
+                          {new Date(comment.created_at).toLocaleString('pt-BR')}
+                        </span>
+                        {(userProfile?.email === comment.author_email || isLeaderOrAdmin) && (
+                          <button
+                            onClick={() => handleDeleteComment(comment.id)}
+                            className="text-slate-400 hover:text-red-500 p-0.5 rounded cursor-pointer"
+                            title="Excluir comentário"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{comment.content}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-slate-400 text-sm">
+                  Nenhum comentário cadastrado para esta rotina ainda.
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={handlePostComment} className="p-4 border-t border-slate-200 bg-white flex gap-2 shrink-0">
+              <input
+                type="text"
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                placeholder="Escreva um comentário sobre esta rotina..."
+                className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 outline-none focus:border-blue-500 bg-white"
+              />
+              <button
+                type="submit"
+                disabled={!newCommentText.trim() || isPostingComment}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                {isPostingComment ? 'Enviando...' : 'Enviar'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela de Rotinas */}
       <div className="flex-1 overflow-y-auto pb-24 pt-6 px-8">
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
           <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-[#676879] text-[14px]">
                 <th className="font-medium px-6 py-3 border-r border-slate-200 w-1/3">Tarefa da Rotina</th>
-                <th className="font-medium px-4 py-3 border-r border-slate-200 w-40 text-center">Horário</th>
+                <th className="font-medium px-4 py-3 border-r border-slate-200 w-36 text-center">Horário</th>
                 <th className="font-medium px-4 py-3 border-r border-slate-200 w-32 text-center">Responsável</th>
+                <th className="font-medium px-4 py-3 border-r border-slate-200 w-28 text-center">Comentários</th>
                 {daysOfWeek.map(day => (
                   <th key={day.key} className="font-medium px-2 py-3 border-r border-slate-200 text-center w-24">
                     {day.label}
@@ -449,7 +577,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                           <button 
                             onClick={() => setHistoryTaskId(task.id)}
                             className="opacity-0 group-hover/title:opacity-100 p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-100 rounded transition-colors absolute right-8"
-                            title="Ver histórico"
+                            title="Ver histórico de semanas"
                           >
                             <History className="w-[18px] h-[18px]" />
                           </button>
@@ -472,6 +600,20 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                       </td>
                       <td className="px-4 py-0 border-r border-slate-200 text-center relative">
                         <AssigneeCell task={task} />
+                      </td>
+                      <td className="px-4 py-0 border-r border-slate-200 text-center relative">
+                        <button
+                          onClick={() => setCommentTaskId(task.id)}
+                          className="relative p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-blue-600 cursor-pointer inline-flex items-center justify-center"
+                          title="Comentários da rotina"
+                        >
+                          <MessageSquare className="w-4 h-4 text-slate-500 hover:text-blue-600 transition-colors" />
+                          {task.task_updates?.length > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow-xs">
+                              {task.task_updates.length}
+                            </span>
+                          )}
+                        </button>
                       </td>
                       {daysOfWeek.map(day => {
                         const status = rConf[day.key];
@@ -502,7 +644,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-slate-400 text-sm">
+                  <td colSpan={9} className="text-center py-8 text-slate-400 text-sm">
                     Nenhuma rotina cadastrada neste quadro. Comece adicionando uma nova rotina!
                   </td>
                 </tr>
