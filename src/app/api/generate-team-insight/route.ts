@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 });
     }
 
-    const { allTasks } = await req.json();
+    const { allTasks, sectorName, assigneeEmail } = await req.json();
 
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json({ error: 'Chave da API do Gemini não configurada' }, { status: 500 });
@@ -28,9 +28,20 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
+    let scopeInfo = 'ESCOPO DE ANÁLISE: Visão Geral de Todos os Setores e Colaboradores.';
+    if (sectorName && assigneeEmail) {
+      scopeInfo = `ESCOPO DE ANÁLISE: Focado no Setor "${sectorName}" e especificamente no Colaborador "${assigneeEmail}".`;
+    } else if (sectorName) {
+      scopeInfo = `ESCOPO DE ANÁLISE: Focado exclusivamente no Setor "${sectorName}".`;
+    } else if (assigneeEmail) {
+      scopeInfo = `ESCOPO DE ANÁLISE: Focado exclusivamente no Colaborador "${assigneeEmail}".`;
+    }
+
     const prompt = `Você é um Analista Sênior de Operações e Gestão de Projetos.
 
 Sua missão é analisar integralmente o Quadro Principal e o Calendário, cruzando todas as informações disponíveis para gerar um relatório executivo completo sobre as atividades da equipe.
+
+${scopeInfo}
 
 INSTRUÇÕES DE ANÁLISE:
 1. Leia todas as tarefas do Quadro Principal (dados fornecidos abaixo).
@@ -41,8 +52,8 @@ INSTRUÇÕES DE ANÁLISE:
    * Sobrecarga de colaboradores ou baixa demanda.
    * Entregas críticas próximas do prazo, gargalos operacionais e dependências.
 
-4. Para cada colaborador, gere uma análise individual contendo:
-   - Nome do colaborador
+4. Para cada colaborador no escopo analisado, gere uma análise individual contendo:
+   - Nome/E-mail do colaborador
    - Resumo Executivo (responsabilidades, objetivos).
    - Atividades em andamento (detalhada com status, prioridade, prazo).
    - Agenda e compromissos (reuniões, entregas).

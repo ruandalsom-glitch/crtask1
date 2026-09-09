@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { ShieldAlert, BarChart3, ArrowLeft, PieChart as PieChartIcon, Sparkles } from 'lucide-react';
+import { ShieldAlert, BarChart3, ArrowLeft, PieChart as PieChartIcon, Sparkles, Filter, Copy, Check, FileText, User, Building2 } from 'lucide-react';
 import Link from 'next/link';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import ReactMarkdown from 'react-markdown';
@@ -12,6 +12,9 @@ import remarkGfm from 'remark-gfm';
 export default function ReportsPage() {
   const queryClient = useQueryClient();
   const [hasAccess, setHasAccess] = useState<boolean | null>(null);
+  const [selectedSector, setSelectedSector] = useState<string>('');
+  const [selectedAssignee, setSelectedAssignee] = useState<string>('');
+  const [copied, setCopied] = useState<boolean>(false);
 
   useEffect(() => {
     checkPermissions();
@@ -31,16 +34,38 @@ export default function ReportsPage() {
     }
   };
 
-  // Buscar todas as tarefas
-  const { data: allTasks, isLoading } = useQuery({
-    queryKey: ['admin_all_tasks'],
+  // Buscar todos os setores (workspaces)
+  const { data: workspaces } = useQuery({
+    queryKey: ['admin_workspaces_reports'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('tasks').select('id, title, status, priority, assignee_email, due_date, task_type, group_name');
+      const { data, error } = await supabase.from('workspaces').select('id, name').order('name');
       if (error) throw error;
       return data || [];
     },
     enabled: hasAccess === true
   });
+
+  // Buscar todas as tarefas com relacional boards -> workspace_id
+  const { data: allTasks, isLoading } = useQuery({
+    queryKey: ['admin_all_tasks'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, title, status, priority, assignee_email, due_date, task_type, group_name, board_id, boards(workspace_id, name)');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: hasAccess === true
+  });
+
+  // Lista de colaboradores únicos extraídos das tarefas
+  const uniqueAssignees = Array.from(
+    new Set(
+      allTasks?.flatMap((t: any) => 
+        t.assignee_email ? t.assignee_email.split(',').map((e: string) => e.trim()) : []
+      ) || []
+    )
+  ).filter(Boolean).sort();
 
   // Buscar último insight gerado
   const { data: latestInsight, isLoading: isLoadingInsight } = useQuery({
@@ -61,7 +86,7 @@ export default function ReportsPage() {
   });
 
   const generateInsight = useMutation({
-    mutationFn: async ({ allTasksData }: any) => {
+    mutationFn: async ({ allTasksData, sectorName, assigneeEmail }: { allTasksData: any[], sectorName?: string | null, assigneeEmail?: string | null }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/generate-team-insight', {
         method: 'POST',
@@ -69,7 +94,11 @@ export default function ReportsPage() {
           'Content-Type': 'application/json',
           ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
         },
-        body: JSON.stringify({ allTasks: allTasksData })
+        body: JSON.stringify({ 
+          allTasks: allTasksData,
+          sectorName,
+          assigneeEmail
+        })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
@@ -82,6 +111,189 @@ export default function ReportsPage() {
       alert('Erro ao gerar insight: ' + err.message + '\nVerifique se a GEMINI_API_KEY está configurada no .env.local');
     }
   });
+
+  const handleGenerateAiInsight = () => {
+    // Filtrar tarefas segundo o setor e colaborador selecionados
+    const filtered = (allTasks || []).filter((task: any) => {
+      if (selectedSector) {
+        const workspaceId = task.boards?.workspace_id;
+        if (workspaceId !== selectedSector) return false;
+      }
+      if (selectedAssignee) {
+        if (!task.assignee_email) return false;
+        const emails = task.assignee_email.split(',').map((e: string) => e.trim());
+        if (!emails.includes(selectedAssignee)) return false;
+      }
+      return true;
+    });
+
+    const sectorObj = workspaces?.find((w: any) => w.id === selectedSector);
+    generateInsight.mutate({
+      allTasksData: filtered,
+      sectorName: sectorObj?.name || null,
+      assigneeEmail: selectedAssignee || null
+    });
+  };
+
+  const handleCopyInsight = () => {
+    if (!latestInsight?.summary_text) return;
+    navigator.clipboard.writeText(latestInsight.summary_text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleExportAiPdf = () => {
+    if (!latestInsight?.summary_text) return;
+    
+    const sectorName = workspaces?.find((w: any) => w.id === selectedSector)?.name || 'Geral / Todos os Setores';
+    const assigneeLabel = selectedAssignee || 'Todos os Colaboradores';
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const contentElement = document.getElementById('ai-insight-content');
+    const innerHTML = contentElement ? contentElement.innerHTML : latestInsight.summary_text;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Relatório Executivo de Inteligência - CR Task</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+            body {
+              font-family: 'Inter', sans-serif;
+              margin: 0;
+              padding: 36px;
+              color: #0f172a;
+              background: #ffffff;
+            }
+            .header {
+              border-bottom: 2px solid #4f46e5;
+              padding-bottom: 16px;
+              margin-bottom: 20px;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+            }
+            .title {
+              font-size: 22px;
+              font-weight: 800;
+              color: #312e81;
+              margin: 0 0 6px 0;
+            }
+            .subtitle {
+              font-size: 13px;
+              color: #64748b;
+              margin: 0;
+            }
+            .meta {
+              font-size: 11px;
+              color: #64748b;
+              text-align: right;
+            }
+            .badge-container {
+              display: flex;
+              gap: 10px;
+              margin-bottom: 24px;
+            }
+            .badge {
+              background: #eef2ff;
+              color: #4338ca;
+              padding: 6px 14px;
+              border-radius: 8px;
+              font-size: 12px;
+              font-weight: 600;
+              border: 1px solid #c7d2fe;
+            }
+            .content {
+              font-size: 13.5px;
+              line-height: 1.75;
+              color: #1e293b;
+            }
+            h1, h2, h3, h4 {
+              color: #1e1b4b;
+              margin-top: 22px;
+              margin-bottom: 10px;
+            }
+            h1 { font-size: 19px; font-weight: 800; }
+            h2 { font-size: 16px; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
+            h3 { font-size: 14px; font-weight: 600; }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 16px 0;
+              font-size: 12.5px;
+            }
+            th, td {
+              border: 1px solid #cbd5e1;
+              padding: 8px 12px;
+              text-align: left;
+            }
+            th {
+              background-color: #312e81;
+              color: #ffffff;
+              font-weight: 700;
+            }
+            tr:nth-child(even) {
+              background-color: #f8fafc;
+            }
+            ul, ol {
+              padding-left: 20px;
+              margin: 8px 0;
+            }
+            li {
+              margin-bottom: 4px;
+            }
+            .footer {
+              margin-top: 40px;
+              padding-top: 16px;
+              border-top: 1px solid #e2e8f0;
+              font-size: 11px;
+              color: #94a3b8;
+              text-align: center;
+            }
+            @media print {
+              body { padding: 0; }
+              @page { margin: 1.5cm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1 class="title">✨ Relatório de Inteligência Operacional (IA)</h1>
+              <p class="subtitle">CR Task • Análise Executiva de Desempenho e Capacidade da Equipe</p>
+            </div>
+            <div class="meta">
+              <strong>Data de Geração:</strong><br />
+              ${new Date(latestInsight.created_at).toLocaleString('pt-BR')}
+            </div>
+          </div>
+
+          <div class="badge-container">
+            <span class="badge">📍 Setor: ${sectorName}</span>
+            <span class="badge">👤 Colaborador: ${assigneeLabel}</span>
+          </div>
+
+          <div class="content">
+            ${innerHTML}
+          </div>
+
+          <div class="footer">
+            CR Task System • Relatório Gerado via Inteligência Artificial Google Gemini
+          </div>
+
+          <script>
+            setTimeout(() => {
+              window.print();
+            }, 600);
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   if (hasAccess === null) return <div className="p-10 text-center text-slate-500 font-medium">Verificando permissões...</div>;
   if (hasAccess === false) return (
@@ -139,39 +351,123 @@ export default function ReportsPage() {
         </div>
       
       {isLoading ? (
-        <div className="text-slate-500">Carregando dados...</div>
+        <div className="text-slate-500 font-medium p-6">Carregando dados do sistema...</div>
       ) : (
         <div className="flex flex-col gap-8">
           
           {/* Sessão de Insights IA */}
-          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-2xl shadow-sm border border-indigo-100">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-indigo-600" />
-                Resumo Inteligente (IA)
-              </h2>
+          <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-slate-50 p-6 md:p-8 rounded-2xl shadow-xs border border-indigo-100">
+            
+            {/* Header da IA com Filtros */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 border-b border-indigo-100 pb-5">
+              <div>
+                <h2 className="text-xl font-extrabold text-indigo-950 flex items-center gap-2">
+                  <Sparkles className="w-6 h-6 text-indigo-600" />
+                  Resumo Inteligente da Equipe (IA)
+                </h2>
+                <p className="text-xs text-indigo-600/80 mt-1 font-medium">
+                  Selecione os filtros abaixo para gerar um relatório analítico personalizado por setor ou colaborador.
+                </p>
+              </div>
+
+              {/* Botão Gerar */}
               <button 
-                onClick={() => generateInsight.mutate({ allTasksData: allTasks })}
+                onClick={handleGenerateAiInsight}
                 disabled={generateInsight.isPending || allTasks?.length === 0}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer text-sm shrink-0"
               >
-                {generateInsight.isPending ? 'Analisando dados...' : 'Gerar Novo Resumo'}
+                <Sparkles className="w-4 h-4" />
+                {generateInsight.isPending ? 'Analisando dados com IA...' : 'Gerar Resumo por IA'}
               </button>
             </div>
+
+            {/* Barra de Filtros */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 bg-white/80 backdrop-blur-xs p-4 rounded-xl border border-indigo-100/80 shadow-2xs">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  Filtrar por Setor (Workspace)
+                </label>
+                <select
+                  value={selectedSector}
+                  onChange={(e) => setSelectedSector(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="">-- Todos os Setores (Geral) --</option>
+                  {workspaces?.map((ws: any) => (
+                    <option key={ws.id} value={ws.id}>{ws.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-indigo-600" />
+                  Filtrar por Colaborador
+                </label>
+                <select
+                  value={selectedAssignee}
+                  onChange={(e) => setSelectedAssignee(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="">-- Todos os Colaboradores --</option>
+                  {uniqueAssignees.map((email: string) => (
+                    <option key={email} value={email}>{email}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             
+            {/* Conteúdo do Relatório */}
             {latestInsight ? (
-              <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4">
-                <div className="prose prose-indigo max-w-none w-full">
+              <div className="bg-white p-6 rounded-xl border border-indigo-100 shadow-2xs">
+                
+                {/* Ações do Relatório (Copiar / PDF) */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+                  <span className="text-xs font-bold text-indigo-900 uppercase tracking-wider bg-indigo-50 px-3 py-1 rounded-md border border-indigo-100">
+                    Análise Concluída
+                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopyInsight}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Copiar texto do relatório"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                      {copied ? 'Copiado!' : 'Copiar Texto'}
+                    </button>
+
+                    <button
+                      onClick={handleExportAiPdf}
+                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer border border-indigo-200"
+                      title="Exportar como PDF visual formatado"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      Exportar PDF
+                    </button>
+                  </div>
+                </div>
+
+                {/* ReactMarkdown Formatado */}
+                <div 
+                  id="ai-insight-content"
+                  className="prose prose-indigo max-w-none w-full text-slate-700 text-sm md:text-base leading-relaxed space-y-4 [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:bg-indigo-950 [&_th]:text-white [&_th]:p-3 [&_th]:text-xs [&_th]:font-bold [&_th]:border [&_th]:border-indigo-900 [&_td]:p-2.5 [&_td]:text-xs [&_td]:border [&_td]:border-slate-200 [&_tr:nth-child(even)]:bg-indigo-50/40 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {latestInsight.summary_text}
                   </ReactMarkdown>
                 </div>
-                <p className="text-xs text-slate-400 mt-4 pt-4 border-t border-indigo-200/50">
-                  Última atualização: {new Date(latestInsight.created_at).toLocaleString('pt-BR')}
+
+                <p className="text-xs text-slate-400 mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <span>Última atualização: {new Date(latestInsight.created_at).toLocaleString('pt-BR')}</span>
+                  <span className="text-[11px] text-slate-400">Powered by Google Gemini</span>
                 </p>
               </div>
             ) : (
-              <p className="text-indigo-400 italic">Nenhum resumo gerado ainda. Clique no botão acima para a IA analisar a equipe.</p>
+              <p className="text-indigo-400 italic text-sm">
+                Nenhum resumo gerado ainda. Selecione os filtros acima e clique em "Gerar Resumo por IA".
+              </p>
             )}
           </div>
 
