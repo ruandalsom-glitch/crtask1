@@ -4,12 +4,13 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { UserPlus, X, Search, User, Mail, Image, Crown } from 'lucide-react';
+import { UserPlus, X, Search, User, Mail, Image, Crown, Building2 } from 'lucide-react';
 import { AssigneeViewMode } from './AssigneeViewToggle';
 
 export function AssigneeCell({ task }: { task: any }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedSectorId, setSelectedSectorId] = useState<string>('current');
   const [rect, setRect] = useState<DOMRect | null>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -39,33 +40,52 @@ export function AssigneeCell({ task }: { task: any }) {
     }
   };
 
-  const { data: workspaceUsers } = useQuery({
-    queryKey: ['workspace_users', task.board_id],
+  // Buscar todos os setores (workspaces)
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['all_workspaces'],
     queryFn: async () => {
-      let workspaceId = task.boards?.workspace_id;
-      if (!workspaceId && task.board_id) {
-        const { data: board } = await supabase.from('boards').select('workspace_id').eq('id', task.board_id).single();
-        workspaceId = board?.workspace_id;
-      }
-      
+      const { data } = await supabase.from('workspaces').select('id, name').order('name');
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000
+  });
+
+  // Buscar todos os perfis e membros dos setores
+  const { data: profilesData } = useQuery({
+    queryKey: ['all_profiles_and_members'],
+    queryFn: async () => {
       const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role');
-      if (!workspaceId) return profiles || [];
-
-      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', workspaceId);
-      const memberUserIds = new Set(members?.map(m => m.user_id) || []);
-
-      return (profiles || []).filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+      const { data: members } = await supabase.from('workspace_members').select('workspace_id, user_id');
+      return {
+        profiles: profiles || [],
+        members: members || []
+      };
     },
     staleTime: 5 * 60 * 1000
   });
 
   const teamMembers = useMemo(() => {
-    const list = workspaceUsers || [];
-    if (search.trim()) {
-      return list.filter(u => u.email.toLowerCase().includes(search.toLowerCase()));
+    const profiles = profilesData?.profiles || [];
+    const members = profilesData?.members || [];
+    let currentWorkspaceId = task.boards?.workspace_id;
+
+    let filteredProfiles = profiles;
+
+    if (selectedSectorId === 'current') {
+      if (currentWorkspaceId) {
+        const memberUserIds = new Set(members.filter((m: any) => m.workspace_id === currentWorkspaceId).map((m: any) => m.user_id));
+        filteredProfiles = profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+      }
+    } else if (selectedSectorId !== 'all') {
+      const memberUserIds = new Set(members.filter((m: any) => m.workspace_id === selectedSectorId).map((m: any) => m.user_id));
+      filteredProfiles = profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
     }
-    return list;
-  }, [workspaceUsers, search]);
+
+    if (search.trim()) {
+      return filteredProfiles.filter(u => u.email.toLowerCase().includes(search.toLowerCase()));
+    }
+    return filteredProfiles;
+  }, [profilesData, selectedSectorId, task, search]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -115,7 +135,7 @@ export function AssigneeCell({ task }: { task: any }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['workspace_users'] });
+      queryClient.invalidateQueries({ queryKey: ['all_profiles_and_members'] });
       setIsOpen(false);
     }
   });
@@ -179,7 +199,7 @@ export function AssigneeCell({ task }: { task: any }) {
     return (
       <div className="flex -space-x-2">
         {currentEmails.map((email: string, i: number) => {
-          const userProfile = workspaceUsers?.find((u: any) => u.email === email);
+          const userProfile = profilesData?.profiles?.find((u: any) => u.email === email);
           const avatarSrc = userProfile?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${email}`;
           return (
             <img 
@@ -257,10 +277,30 @@ export function AssigneeCell({ task }: { task: any }) {
             </div>
           </div>
 
+          {/* Seletor de Setor dos Colaboradores */}
+          <div className="mb-3 p-2 bg-blue-50/70 border border-blue-100 rounded-lg">
+            <div className="flex items-center justify-between mb-1.5 px-0.5">
+              <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1">
+                <Building2 className="w-3.5 h-3.5 text-blue-600" /> Filtrar por Setor
+              </span>
+            </div>
+            <select
+              value={selectedSectorId}
+              onChange={(e) => setSelectedSectorId(e.target.value)}
+              className="w-full text-xs border border-blue-200 rounded-md px-2.5 py-1.5 text-slate-800 bg-white focus:outline-none focus:border-blue-500 font-semibold cursor-pointer"
+            >
+              <option value="current">📍 Setor Atual (Este Quadro)</option>
+              <option value="all">🌐 Todos os Setores (Empresa Inteira)</option>
+              {allWorkspaces?.map((ws: any) => (
+                <option key={ws.id} value={ws.id}>🏢 {ws.name}</option>
+              ))}
+            </select>
+          </div>
+
           {currentEmails.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 mb-4">
               {currentEmails.map((email: string) => {
-                const userProfile = workspaceUsers?.find(u => u.email === email);
+                const userProfile = profilesData?.profiles?.find(u => u.email === email);
                 const avatarSrc = userProfile?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${email}`;
                 return (
                   <div key={email} className="flex items-center bg-slate-100 rounded-full pl-1 pr-3 py-1 gap-2 border border-slate-200">
