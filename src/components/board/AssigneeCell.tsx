@@ -50,6 +50,19 @@ export function AssigneeCell({ task }: { task: any }) {
     staleTime: 5 * 60 * 1000
   });
 
+  // Buscar workspace_id do quadro atual para filtrar o Setor Atual corretamente
+  const { data: boardWorkspaceId } = useQuery({
+    queryKey: ['board_workspace_id', task.board_id],
+    queryFn: async () => {
+      if (task.boards?.workspace_id) return task.boards.workspace_id;
+      if (!task.board_id) return null;
+      const { data } = await supabase.from('boards').select('workspace_id').eq('id', task.board_id).single();
+      return data?.workspace_id || null;
+    },
+    enabled: !!task.board_id,
+    staleTime: 10 * 60 * 1000
+  });
+
   // Buscar todos os perfis e membros dos setores
   const { data: profilesData } = useQuery({
     queryKey: ['all_profiles_and_members'],
@@ -64,10 +77,11 @@ export function AssigneeCell({ task }: { task: any }) {
     staleTime: 5 * 60 * 1000
   });
 
+  const currentWorkspaceId = task.boards?.workspace_id || boardWorkspaceId;
+
   const teamMembers = useMemo(() => {
     const profiles = profilesData?.profiles || [];
     const members = profilesData?.members || [];
-    let currentWorkspaceId = task.boards?.workspace_id;
 
     let filteredProfiles = profiles;
 
@@ -85,7 +99,7 @@ export function AssigneeCell({ task }: { task: any }) {
       return filteredProfiles.filter(u => u.email.toLowerCase().includes(search.toLowerCase()));
     }
     return filteredProfiles;
-  }, [profilesData, selectedSectorId, task, search]);
+  }, [profilesData, selectedSectorId, currentWorkspaceId, search]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -287,12 +301,12 @@ export function AssigneeCell({ task }: { task: any }) {
             <select
               value={selectedSectorId}
               onChange={(e) => setSelectedSectorId(e.target.value)}
-              className="w-full text-xs border border-blue-200 rounded-md px-2.5 py-1.5 text-slate-800 bg-white focus:outline-none focus:border-blue-500 font-semibold cursor-pointer"
+              className="w-full text-xs border border-slate-300 rounded-md px-2.5 py-1.5 text-slate-800 bg-white focus:outline-none focus:border-blue-500 font-medium cursor-pointer"
             >
-              <option value="current">📍 Setor Atual (Este Quadro)</option>
-              <option value="all">🌐 Todos os Setores (Empresa Inteira)</option>
+              <option value="current">Setor Atual (Este Quadro)</option>
+              <option value="all">Todos os Setores (Empresa Inteira)</option>
               {allWorkspaces?.map((ws: any) => (
-                <option key={ws.id} value={ws.id}>🏢 {ws.name}</option>
+                <option key={ws.id} value={ws.id}>{ws.name}</option>
               ))}
             </select>
           </div>
