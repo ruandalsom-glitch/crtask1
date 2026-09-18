@@ -34,29 +34,63 @@ export default function ReportsPage() {
     }
   };
 
-  // Buscar todos os setores (workspaces)
-  const { data: workspaces } = useQuery({
-    queryKey: ['admin_workspaces_reports'],
+  // Buscar os setores e perfil de permissão do usuário logado
+  const { data: userRoleProfile } = useQuery({
+    queryKey: ['user_role_profile_reports'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('workspaces').select('id, name').order('name');
-      if (error) throw error;
-      return data || [];
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data: profile } = await supabase.from('profiles').select('id, role').eq('id', user.id).single();
+      const { data: members } = await supabase.from('workspace_members').select('workspace_id').eq('user_id', user.id);
+      return {
+        userId: user.id,
+        role: profile?.role || 'user',
+        allowedWorkspaceIds: members?.map(m => m.workspace_id) || []
+      };
     },
     enabled: hasAccess === true
   });
 
-  // Buscar todas as tarefas com relacional boards -> workspace_id
+  // Buscar os setores (workspaces) permitidos
+  const { data: workspaces } = useQuery({
+    queryKey: ['admin_workspaces_reports', userRoleProfile],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('workspaces').select('id, name').order('name');
+      if (error) throw error;
+      if (userRoleProfile?.role === 'admin') {
+        return data || [];
+      } else {
+        const allowed = new Set(userRoleProfile?.allowedWorkspaceIds || []);
+        return (data || []).filter(w => allowed.has(w.id));
+      }
+    },
+    enabled: hasAccess === true && !!userRoleProfile
+  });
+
+  // Buscar as tarefas de acordo com os setores permitidos
   const { data: allTasks, isLoading } = useQuery({
-    queryKey: ['admin_all_tasks'],
+    queryKey: ['admin_all_tasks', userRoleProfile],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tasks')
         .select('id, title, status, priority, assignee_email, due_date, task_type, group_name, board_id, boards(workspace_id, name)');
       if (error) throw error;
-      return data || [];
+      if (userRoleProfile?.role === 'admin') {
+        return data || [];
+      } else {
+        const allowed = new Set(userRoleProfile?.allowedWorkspaceIds || []);
+        return (data || []).filter((t: any) => t.boards?.workspace_id && allowed.has(t.boards.workspace_id));
+      }
     },
-    enabled: hasAccess === true
+    enabled: hasAccess === true && !!userRoleProfile
   });
+
+  // Garante a pré-seleção do setor do líder
+  useEffect(() => {
+    if (workspaces && workspaces.length > 0 && (!selectedSector || !workspaces.find((w: any) => w.id === selectedSector))) {
+      setSelectedSector(workspaces[0].id);
+    }
+  }, [workspaces, selectedSector]);
 
   // Tarefas filtradas pelo setor selecionado
   const tasksInSelectedSector = selectedSector

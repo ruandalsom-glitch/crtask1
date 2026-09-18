@@ -53,19 +53,28 @@ export default function AdminPage() {
   const isLeader = userRole === 'leader';
   const hasAccess = isAdmin || isLeader;
 
-  // 1. Puxar Workspaces (Todos se for Admin, apenas o próprio se for Líder)
+  // 1. Puxar Workspaces (Todos se for Admin, apenas os próprios se for Líder)
   const { data: workspaces } = useQuery({
     queryKey: ['admin_workspaces', userRole],
     queryFn: async () => {
       const { data, error } = await supabase.from('workspaces').select('*').order('created_at');
       if (error) throw error;
-      if (isLeader && leaderWorkspaceIds.length > 0) {
-        return data.filter(w => leaderWorkspaceIds.includes(w.id));
+      if (userRole === 'leader') {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data: members } = await supabase.from('workspace_members').select('workspace_id').eq('user_id', user?.id);
+        const allowedIds = new Set(members?.map(m => m.workspace_id) || []);
+        return (data || []).filter(w => allowedIds.has(w.id));
       }
       return data || [];
     },
     enabled: hasAccess
   });
+
+  useEffect(() => {
+    if (workspaces && workspaces.length > 0 && (!selectedWorkspace || !workspaces.find(w => w.id === selectedWorkspace))) {
+      setSelectedWorkspace(workspaces[0].id);
+    }
+  }, [workspaces, selectedWorkspace]);
 
   // 2. Puxar todos os Perfis (Usuários)
   const { data: profiles } = useQuery({
