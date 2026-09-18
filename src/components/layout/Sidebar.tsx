@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare } from 'lucide-react';
+import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
@@ -23,6 +23,17 @@ export function Sidebar() {
       const { data: { user } } = await supabase.auth.getUser();
       return user;
     },
+    staleTime: 5 * 60 * 1000
+  });
+
+  const { data: userRole } = useQuery({
+    queryKey: ['sidebar_user_role', userProfile?.id],
+    queryFn: async () => {
+      if (!userProfile?.id) return null;
+      const { data } = await supabase.from('profiles').select('role').eq('id', userProfile.id).single();
+      return data?.role || 'user';
+    },
+    enabled: !!userProfile?.id,
     staleTime: 5 * 60 * 1000
   });
 
@@ -141,11 +152,21 @@ export function Sidebar() {
         <div className="p-4 flex-1 overflow-y-auto">
           <Link 
             href="/my-work"
-            className={`flex items-center gap-2 p-2 rounded-md cursor-pointer mb-6 transition-colors w-full ${pathname === '/my-work' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-slate-700 hover:bg-slate-100'}`}
+            className={`flex items-center gap-2 p-2 rounded-md cursor-pointer mb-2 transition-colors w-full ${pathname === '/my-work' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-slate-700 hover:bg-slate-100'}`}
           >
-            <CheckSquare className="w-5 h-5 shrink-0" />
+            <CheckSquare className="w-5 h-5 shrink-0 text-blue-600" />
             <span className="text-[14px]">Minhas Tarefas</span>
           </Link>
+
+          {(userRole === 'admin' || userRole === 'leader') && (
+            <Link 
+              href="/admin"
+              className={`flex items-center gap-2 p-2 rounded-md cursor-pointer mb-6 transition-colors w-full ${pathname === '/admin' ? 'bg-purple-100 text-purple-700 font-bold' : 'text-slate-700 hover:bg-slate-100'}`}
+            >
+              <ShieldCheck className="w-5 h-5 shrink-0 text-purple-600" />
+              <span className="text-[14px] font-semibold">{userRole === 'admin' ? 'Painel de Administração' : 'Gestão do Setor'}</span>
+            </Link>
+          )}
 
           <div className="flex items-center justify-between text-slate-500 hover:bg-slate-100 p-2 rounded-md cursor-pointer mb-2 transition-colors group shrink-0">
             <div className="flex items-center gap-2">

@@ -238,14 +238,16 @@ export function UserProfile() {
               </span>
             </button>
             
-            {profile?.role === 'admin' && (
+            {(profile?.role === 'admin' || profile?.role === 'leader') && (
               <>
                 <a 
                   href="/admin"
                   className="flex items-center gap-3 w-full p-2 hover:bg-blue-50 hover:text-blue-700 rounded-lg text-sm text-slate-700 transition-colors mt-1 border-t border-slate-100"
                 >
                   <ShieldCheck className="w-4 h-4 text-blue-600" />
-                  <span className="font-semibold text-blue-700">Painel de Administração</span>
+                  <span className="font-semibold text-blue-700">
+                    {profile?.role === 'admin' ? 'Painel de Administração' : 'Gestão do Setor'}
+                  </span>
                 </a>
                 <a 
                   href="/admin/reports"
