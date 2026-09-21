@@ -10,7 +10,7 @@ import { AssigneeCell } from './AssigneeCell';
 import { AssigneeViewToggle } from './AssigneeViewToggle';
 import { Reactions } from './Reactions';
 import { UpdateContent } from './UpdateContent';
-import { PlusCircle, Trash2, MessageSquare, X, Paperclip, Activity, Copy, Download, Archive, MoreHorizontal, MessageCirclePlus, AlertCircle, CheckCircle2, Search, UserPlus, Sparkles, FileText, Calendar, Eye, EyeOff } from 'lucide-react';
+import { PlusCircle, Trash2, MessageSquare, X, Paperclip, Activity, Copy, Download, Archive, MoreHorizontal, MessageCirclePlus, AlertCircle, CheckCircle2, Search, UserPlus, Sparkles, FileText, Calendar, Eye, EyeOff, CheckSquare } from 'lucide-react';
 
 const TimelineBar = ({ progress, color }: { progress: number, color: string }) => (
   <div className="flex items-center w-full">
@@ -51,6 +51,8 @@ export function BoardTableView({ boardId }: { boardId: string }) {
   const [filterPriority, setFilterPriority] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState<string | null>(null);
   const [filterSpecificDate, setFilterSpecificDate] = useState<string>('');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   const [priorityFilterOpen, setPriorityFilterOpen] = useState(false);
   const [dateFilterOpen, setDateFilterOpen] = useState(false);
@@ -344,6 +346,28 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     );
   };
 
+  const toggleSelectGroup = (groupTasksList: any[]) => {
+    const groupIds = (groupTasksList || []).map((t: any) => t.id);
+    const isAllSelected = groupTasksList.length > 0 && groupTasksList.every((t: any) => selectedTasks.includes(t.id));
+
+    if (isAllSelected) {
+      setSelectedTasks(prev => prev.filter(id => !groupIds.includes(id)));
+    } else {
+      setSelectedTasks(prev => Array.from(new Set([...prev, ...groupIds])));
+    }
+  };
+
+  const toggleSelectAllBoardTasks = () => {
+    const allFilteredIds = filteredTasks?.map((t: any) => t.id) || [];
+    const isAllBoardSelected = allFilteredIds.length > 0 && allFilteredIds.every((id: string) => selectedTasks.includes(id));
+
+    if (isAllBoardSelected) {
+      setSelectedTasks([]);
+    } else {
+      setSelectedTasks(allFilteredIds);
+    }
+  };
+
   useEffect(() => {
     if (tasks && !taskDetailsOpen) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -585,7 +609,12 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     if (task.task_type === 'Lembrete') return false; // Lembretes ficam APENAS no Calendário
     if (filterStatus && task.status !== filterStatus) return false;
     if (filterPriority && task.priority !== filterPriority) return false;
-    if (filterSpecificDate) {
+    if (filterStartDate || filterEndDate) {
+      if (!task.due_date) return false;
+      const taskDateStr = task.due_date.split('T')[0];
+      if (filterStartDate && taskDateStr < filterStartDate) return false;
+      if (filterEndDate && taskDateStr > filterEndDate) return false;
+    } else if (filterSpecificDate) {
       if (!task.due_date) return false;
       const taskDateStr = task.due_date.split('T')[0];
       if (taskDateStr !== filterSpecificDate) return false;
@@ -705,7 +734,15 @@ export function BoardTableView({ boardId }: { boardId: string }) {
               <thead>
                 <tr className="border-b border-slate-200 text-[#676879] text-[13px] bg-slate-50/50">
                   <th className="w-2 p-0"></th>
-                  <th className="w-10 text-center p-0 border-r border-slate-200"></th>
+                  <th className="w-10 text-center p-0 border-r border-slate-200 relative">
+                    <input 
+                      type="checkbox" 
+                      checked={groupTasks && groupTasks.length > 0 && groupTasks.every((t: any) => selectedTasks.includes(t.id))}
+                      onChange={() => toggleSelectGroup(groupTasks)}
+                      className="w-4 h-4 rounded border-slate-300 cursor-pointer accent-blue-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" 
+                      title={groupTasks && groupTasks.length > 0 && groupTasks.every((t: any) => selectedTasks.includes(t.id)) ? "Desmarcar todas do grupo" : "Selecionar todas do grupo"}
+                    />
+                  </th>
                   <th className="font-semibold px-4 py-2 border-r border-slate-200 text-left min-w-[380px]">Item / Tarefa</th>
                   <th className="w-12 text-center p-0 border-r border-slate-200"></th>
                   <th className="font-semibold px-3 py-2 border-r border-slate-200 w-36 text-center">Responsável</th>
@@ -912,6 +949,23 @@ export function BoardTableView({ boardId }: { boardId: string }) {
           />
         </div>
 
+        <button 
+          onClick={toggleSelectAllBoardTasks}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[14px] transition-colors shadow-sm cursor-pointer ${
+            filteredTasks && filteredTasks.length > 0 && filteredTasks.every((t: any) => selectedTasks.includes(t.id))
+              ? 'bg-blue-600 border-blue-600 text-white font-medium'
+              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+          title="Selecionar ou desmarcar todas as tarefas"
+        >
+          <CheckSquare className="w-4 h-4" />
+          <span>
+            {filteredTasks && filteredTasks.length > 0 && filteredTasks.every((t: any) => selectedTasks.includes(t.id))
+              ? 'Desmarcar Todas'
+              : 'Selecionar Todas'}
+          </span>
+        </button>
+
         <div className="relative">
           <button 
             onClick={() => { setStatusFilterOpen(!statusFilterOpen); setPriorityFilterOpen(false); setDateFilterOpen(false); }}
@@ -970,19 +1024,30 @@ export function BoardTableView({ boardId }: { boardId: string }) {
           <button 
             onClick={() => { setDateFilterOpen(!dateFilterOpen); setStatusFilterOpen(false); setPriorityFilterOpen(false); }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[14px] transition-colors shadow-sm cursor-pointer ${
-              (filterDate || filterSpecificDate) ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              (filterDate || filterSpecificDate || filterStartDate || filterEndDate) ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            Prazo {filterSpecificDate ? `: ${filterSpecificDate.split('-').reverse().join('/')}` : filterDate ? `: ${filterDate}` : ''}
+            Prazo {
+              (filterStartDate || filterEndDate) 
+                ? `: ${filterStartDate ? filterStartDate.split('-').reverse().join('/') : '...'} a ${filterEndDate ? filterEndDate.split('-').reverse().join('/') : '...'}` 
+                : filterSpecificDate ? `: ${filterSpecificDate.split('-').reverse().join('/')}` 
+                : filterDate ? `: ${filterDate}` : ''
+            }
           </button>
 
           {dateFilterOpen && (
-            <div className="absolute top-full left-0 mt-2 w-60 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between mb-2.5 px-1">
                 <span className="text-xs font-bold text-slate-500">Filtrar por Prazo</span>
-                {(filterDate || filterSpecificDate) && (
+                {(filterDate || filterSpecificDate || filterStartDate || filterEndDate) && (
                   <button
-                    onClick={() => { setFilterDate(null); setFilterSpecificDate(''); setDateFilterOpen(false); }}
+                    onClick={() => { 
+                      setFilterDate(null); 
+                      setFilterSpecificDate(''); 
+                      setFilterStartDate('');
+                      setFilterEndDate('');
+                      setDateFilterOpen(false); 
+                    }}
                     className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
                   >
                     Limpar
@@ -1006,6 +1071,8 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                       } else {
                         setFilterDate(dateOpt.name);
                         setFilterSpecificDate('');
+                        setFilterStartDate('');
+                        setFilterEndDate('');
                       }
                       setDateFilterOpen(false); 
                     }}
@@ -1033,9 +1100,43 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                   onChange={(e) => {
                     setFilterSpecificDate(e.target.value);
                     setFilterDate(null);
+                    setFilterStartDate('');
+                    setFilterEndDate('');
                   }}
                   className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 bg-white focus:outline-none focus:border-blue-500 font-medium"
                 />
+              </div>
+
+              {/* Seletor de Intervalo de Datas (De X a Y) */}
+              <div className="border-t border-slate-100 pt-2.5 mt-2.5">
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1.5 px-1">
+                  Intervalo (De / Até):
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => {
+                      setFilterStartDate(e.target.value);
+                      setFilterDate(null);
+                      setFilterSpecificDate('');
+                    }}
+                    className="w-1/2 text-[11px] border border-slate-300 rounded-lg px-2 py-1 text-slate-800 bg-white focus:outline-none focus:border-blue-500 font-medium"
+                    placeholder="De"
+                  />
+                  <span className="text-xs text-slate-400">à</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => {
+                      setFilterEndDate(e.target.value);
+                      setFilterDate(null);
+                      setFilterSpecificDate('');
+                    }}
+                    className="w-1/2 text-[11px] border border-slate-300 rounded-lg px-2 py-1 text-slate-800 bg-white focus:outline-none focus:border-blue-500 font-medium"
+                    placeholder="Até"
+                  />
+                </div>
               </div>
             </div>
           )}
