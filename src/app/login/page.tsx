@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true); // Controla se estamos no modo Login ou Cadastro
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login'); // Controla: Login, Cadastro ou Esqueci a Senha
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
@@ -20,7 +20,7 @@ export default function LoginPage() {
     setError('');
     setSuccessMsg('');
 
-    if (isLogin) {
+    if (mode === 'login') {
       // -------------------- FLUXO DE LOGIN --------------------
       localStorage.clear();
       sessionStorage.clear();
@@ -35,7 +35,7 @@ export default function LoginPage() {
       } else {
         window.location.href = '/'; // Deixa a página inicial decidir para qual quadro enviar
       }
-    } else {
+    } else if (mode === 'signup') {
       // ------------------ FLUXO DE CRIAR CONTA ------------------
       const { error: signUpError } = await supabase.auth.signUp({
         email,
@@ -46,8 +46,21 @@ export default function LoginPage() {
         setError(signUpError.message);
       } else {
         setSuccessMsg('Conta criada com sucesso! Você já pode fazer o login.');
-        setIsLogin(true); // Joga a pessoa de volta pro form de login
+        setMode('login'); // Joga a pessoa de volta pro form de login
         setPassword('');
+      }
+      setLoading(false);
+    } else if (mode === 'forgot') {
+      // ---------------- FLUXO DE ESQUECI A SENHA ----------------
+      const redirectUrl = `${window.location.origin}/reset-password`;
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl,
+      });
+
+      if (resetError) {
+        setError(resetError.message || 'Erro ao enviar e-mail de recuperação.');
+      } else {
+        setSuccessMsg('E-mail de recuperação enviado! Verifique sua caixa de entrada e spam.');
       }
       setLoading(false);
     }
@@ -74,7 +87,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Lado Direito - Login Form */}
+      {/* Lado Direito - Login / Registro / Esqueci Senha Form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center bg-white p-8 sm:p-12">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex justify-center mb-8">
@@ -84,21 +97,25 @@ export default function LoginPage() {
           </div>
           
           <h2 className="text-3xl font-extrabold text-gray-900 mb-2 tracking-tight">
-            {isLogin ? 'Bem-vindo(a) de volta' : 'Criar nova credencial'}
+            {mode === 'login' ? 'Bem-vindo(a) de volta' : mode === 'signup' ? 'Criar nova credencial' : 'Recuperar Senha'}
           </h2>
           <p className="text-gray-500 mb-8 font-medium">
-            {isLogin ? 'Insira suas credenciais corporativas para acessar o painel.' : 'Preencha os dados abaixo para solicitar acesso.'}
+            {mode === 'login' 
+              ? 'Insira suas credenciais corporativas para acessar o painel.' 
+              : mode === 'signup' 
+                ? 'Preencha os dados abaixo para solicitar acesso.'
+                : 'Informe seu e-mail cadastrado para receber o link de redefinição.'}
           </p>
 
           {error && (
             <div className="mb-6 p-4 bg-red-50 text-red-700 text-sm font-medium rounded-xl border border-red-100 flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               {error}
             </div>
           )}
           {successMsg && (
             <div className="mb-6 p-4 bg-green-50 text-green-700 text-sm font-medium rounded-xl border border-green-100 flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               {successMsg}
             </div>
           )}
@@ -118,47 +135,81 @@ export default function LoginPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
-                Senha de Acesso
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3.5 bg-gray-50 rounded-xl border border-gray-200 text-gray-900 focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all"
-                placeholder="••••••••"
-                required
-              />
-            </div>
+            {mode !== 'forgot' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide">
+                    Senha de Acesso
+                  </label>
+                  {mode === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('forgot');
+                        setError('');
+                        setSuccessMsg('');
+                      }}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                    >
+                      Esqueci a senha
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3.5 bg-gray-50 rounded-xl border border-gray-200 text-gray-900 focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={loading}
-              className="mt-4 w-full bg-[#0a0a0a] hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg shadow-gray-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed hover:-translate-y-0.5"
+              className="mt-4 w-full bg-[#0a0a0a] hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg shadow-gray-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed hover:-translate-y-0.5 cursor-pointer"
             >
               {loading 
-                ? 'Autenticando...' 
-                : isLogin 
+                ? 'Processando...' 
+                : mode === 'login' 
                   ? 'Acessar Painel' 
-                  : 'Registrar Credencial'}
+                  : mode === 'signup'
+                    ? 'Registrar Credencial'
+                    : 'Enviar Link de Recuperação'}
             </button>
           </form>
 
           <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-            <p className="text-sm text-gray-500 font-medium">
-              {isLogin ? 'Sem acesso ao sistema?' : 'Já possui credencial?'}
+            {mode === 'forgot' ? (
               <button 
+                type="button"
                 onClick={() => {
-                  setIsLogin(!isLogin);
+                  setMode('login');
                   setError('');
                   setSuccessMsg('');
                 }} 
-                className="ml-2 font-bold text-black hover:text-gray-700 hover:underline outline-none transition-colors"
+                className="font-bold text-sm text-black hover:text-gray-700 hover:underline outline-none transition-colors"
               >
-                {isLogin ? 'Solicite sua conta' : 'Fazer Login'}
+                &larr; Voltar para o Login
               </button>
-            </p>
+            ) : (
+              <p className="text-sm text-gray-500 font-medium">
+                {mode === 'login' ? 'Sem acesso ao sistema?' : 'Já possui credencial?'}
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setMode(mode === 'login' ? 'signup' : 'login');
+                    setError('');
+                    setSuccessMsg('');
+                  }} 
+                  className="ml-2 font-bold text-black hover:text-gray-700 hover:underline outline-none transition-colors"
+                >
+                  {mode === 'login' ? 'Solicite sua conta' : 'Fazer Login'}
+                </button>
+              </p>
+            )}
           </div>
           
           <div className="mt-12 text-center text-xs font-semibold text-gray-400 uppercase tracking-widest">
