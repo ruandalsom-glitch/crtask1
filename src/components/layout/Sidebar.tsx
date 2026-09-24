@@ -7,6 +7,11 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 
+function normalizeStr(str?: string | null): string {
+  if (!str) return '';
+  return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
 export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -84,21 +89,21 @@ export function Sidebar() {
         return data;
       }
 
-      // Usuários comuns (role === 'user') visualizam APENAS o seu próprio quadro
-      const userFirstName = userProfile?.email?.split('@')[0]?.split('.')[0]?.toLowerCase() || '';
-      const userEmail = userProfile?.email?.toLowerCase() || '';
+      // Usuários comuns (role === 'user') visualizam APENAS o seu próprio quadro com suporte a acentos
+      const normUserFirstName = normalizeStr(userProfile?.email?.split('@')[0]?.split('.')[0]);
+      const normUserEmail = normalizeStr(userProfile?.email);
 
       const userBoards = data.filter((board: any) => {
-        const boardNameLower = board.name.toLowerCase().trim();
+        const normBoardName = normalizeStr(board.name);
         return (
-          boardNameLower === userFirstName ||
-          boardNameLower.includes(userFirstName) ||
-          userEmail.includes(boardNameLower) ||
-          userFirstName.includes(boardNameLower)
+          normBoardName === normUserFirstName ||
+          normBoardName.includes(normUserFirstName) ||
+          normUserFirstName.includes(normBoardName) ||
+          normUserEmail.includes(normBoardName)
         );
       });
 
-      return userBoards.length > 0 ? userBoards : data;
+      return userBoards.length > 0 ? userBoards : [];
     },
     enabled: !!activeWorkspaceId && !!userProfile?.id,
     staleTime: 5 * 60 * 1000

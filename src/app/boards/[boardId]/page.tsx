@@ -9,6 +9,11 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
+function normalizeStr(str?: string | null): string {
+  if (!str) return '';
+  return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
   const router = useRouter();
@@ -36,16 +41,16 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         return { allowed: true, board };
       }
 
-      // 2. Usuários comuns (role === 'user'): verifica se é o próprio quadro (ex: 'Leticia' para leticia.rocha@...)
-      const userFirstName = user.email?.split('@')[0]?.split('.')[0]?.toLowerCase() || '';
-      const userEmail = user.email?.toLowerCase() || '';
-      const boardNameLower = board.name.toLowerCase().trim();
+      // 2. Usuários comuns (role === 'user'): verifica se é o próprio quadro (ex: 'Letícia' / 'Leticia' para leticia.rocha@...)
+      const normUserFirstName = normalizeStr(user.email?.split('@')[0]?.split('.')[0]);
+      const normUserEmail = normalizeStr(user.email);
+      const normBoardName = normalizeStr(board.name);
 
       const isOwnBoard = 
-        boardNameLower === userFirstName || 
-        boardNameLower.includes(userFirstName) || 
-        userEmail.includes(boardNameLower) ||
-        userFirstName.includes(boardNameLower);
+        normBoardName === normUserFirstName || 
+        normBoardName.includes(normUserFirstName) || 
+        normUserFirstName.includes(normBoardName) ||
+        normUserEmail.includes(normBoardName);
 
       if (isOwnBoard) {
         return { allowed: true, board };
