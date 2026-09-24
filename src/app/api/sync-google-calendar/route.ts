@@ -18,12 +18,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'URL inválida. O link deve começar com https://' }, { status: 400 });
     }
 
-    const res = await fetch(cleanUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-      next: { revalidate: 60 }, // Cache de 1 minuto
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // Timeout de 6 segundos max
+    let res: Response;
+
+    try {
+      res = await fetch(cleanUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        signal: controller.signal,
+        next: { revalidate: 60 }, // Cache de 1 minuto
+      });
+    } catch (fetchErr: any) {
+      if (fetchErr.name === 'AbortError') {
+        return NextResponse.json({ error: 'Tempo de resposta excedido ao conectar com a Google Agenda.' }, { status: 504 });
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
       return NextResponse.json({ error: `Falha ao buscar a agenda do Google (Status ${res.status}). Verifique se a URL do iCal está correta.` }, { status: 400 });
