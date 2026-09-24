@@ -5,6 +5,7 @@ import { BoardTableView } from '@/components/board/BoardTableView';
 import { BoardKanbanView } from '@/components/board/BoardKanbanView';
 import { BoardCalendarView } from '@/components/board/BoardCalendarView';
 import { BoardRoutineView } from '@/components/board/BoardRoutineView';
+import { BoardShiftView } from '@/components/board/BoardShiftView';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
@@ -13,7 +14,7 @@ import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina'>('tabela');
+  const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala'>('tabela');
 
   const { data: accessCheck, isLoading } = useQuery({
     queryKey: ['board_access_check', boardId],
@@ -183,6 +184,17 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
               Rotinas Diárias
             </button>
+
+            <button 
+              onClick={() => setActiveTab('escala')}
+              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                activeTab === 'escala' 
+                  ? 'border-blue-600 text-blue-600' 
+                  : 'border-transparent text-[#676879] hover:text-[#323338]'
+              }`}
+            >
+              Escala
+            </button>
           </div>
 
           <div className="flex items-center gap-4 text-[13px] text-[#676879] mb-2 font-medium">
@@ -206,6 +218,8 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
           <BoardKanbanView boardId={boardId} isReadOnly={isReadOnly} />
         ) : activeTab === 'rotina' ? (
           <BoardRoutineView boardId={boardId} isReadOnly={isReadOnly} />
+        ) : activeTab === 'escala' ? (
+          <BoardShiftView boardId={boardId} isReadOnly={isReadOnly} />
         ) : (
           <BoardCalendarView boardId={boardId} isReadOnly={isReadOnly} />
         )}
