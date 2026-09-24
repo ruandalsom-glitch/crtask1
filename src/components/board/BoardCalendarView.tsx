@@ -202,7 +202,10 @@ export function BoardCalendarView({ boardId }: { boardId: string }) {
     const savedUrl = localStorage.getItem(`gcal_url_${boardId}`) || localStorage.getItem('gcal_url_global') || '';
     if (savedUrl) {
       setGoogleCalendarUrl(savedUrl);
-      syncGoogleCalendar(savedUrl);
+      const timer = setTimeout(() => {
+        syncGoogleCalendar(savedUrl);
+      }, 50);
+      return () => clearTimeout(timer);
     }
   }, [boardId]);
 

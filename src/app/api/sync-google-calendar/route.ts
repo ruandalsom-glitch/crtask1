@@ -44,7 +44,17 @@ export async function POST(req: NextRequest) {
     }
 
     const icsText = await res.text();
-    const events = parseIcsContent(icsText);
+    const allEvents = parseIcsContent(icsText);
+
+    // Filtra para manter apenas eventos relevantes (-30 dias no passado até +90 dias no futuro)
+    const now = new Date();
+    const pastLimit = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const futureLimit = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const events = allEvents.filter(evt => {
+      if (!evt.due_date) return false;
+      return evt.due_date >= pastLimit && evt.due_date <= futureLimit;
+    }).slice(0, 150);
 
     return NextResponse.json({ success: true, count: events.length, events });
   } catch (err: any) {
