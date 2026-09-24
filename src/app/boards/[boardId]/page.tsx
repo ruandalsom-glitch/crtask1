@@ -20,23 +20,30 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { allowed: false, reason: 'unauthenticated' };
 
-      const { data: board } = await supabase.from('boards').select('id, name, workspace_id').eq('id', boardId).single();
+      // Executa as consultas de permissão em paralelo para velocidade máxima
+      const [boardRes, profileRes, membershipsRes] = await Promise.all([
+        supabase.from('boards').select('id, name, workspace_id').eq('id', boardId).single(),
+        supabase.from('profiles').select('role').eq('id', user.id).single(),
+        supabase.from('workspace_members').select('workspace_id').eq('user_id', user.id)
+      ]);
+
+      const board = boardRes.data;
       if (!board) return { allowed: false, reason: 'not_found' };
 
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      const profile = profileRes.data;
       if (profile?.role === 'admin') {
         return { allowed: true, board };
       }
 
-      const { data: userMemberships } = await supabase.from('workspace_members').select('workspace_id').eq('user_id', user.id);
-      const allowedWorkspaceIds = userMemberships?.map(m => m.workspace_id) || [];
-
+      const allowedWorkspaceIds = membershipsRes.data?.map(m => m.workspace_id) || [];
       if (!allowedWorkspaceIds.includes(board.workspace_id)) {
         return { allowed: false, reason: 'unauthorized', board };
       }
 
       return { allowed: true, board };
-    }
+    },
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000
   });
 
   if (isLoading) {

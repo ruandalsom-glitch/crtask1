@@ -19,27 +19,22 @@ export default function Home() {
           return;
         }
 
-        // 1. Busca perfil do usuário
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
+        // 1. Busca perfil do usuário e associações em paralelo para máxima performance
+        const [profileRes, allWorkspacesRes, membersRes] = await Promise.all([
+          supabase.from('profiles').select('role').eq('id', user.id).single(),
+          supabase.from('workspaces').select('*').order('created_at'),
+          supabase.from('workspace_members').select('workspaces(*)').eq('user_id', user.id)
+        ]);
 
+        const profile = profileRes.data;
         let allowedWorkspaces: any[] = [];
 
         if (profile?.role === 'admin') {
           // Admin tem acesso a todos os setores
-          const { data } = await supabase.from('workspaces').select('*').order('created_at');
-          allowedWorkspaces = data || [];
+          allowedWorkspaces = allWorkspacesRes.data || [];
         } else {
           // Usuários/Líderes possuem acesso APENAS aos setores vinculados em workspace_members
-          const { data } = await supabase
-            .from('workspace_members')
-            .select('workspaces(*)')
-            .eq('user_id', user.id);
-          
-          allowedWorkspaces = data?.map((d: any) => d.workspaces).filter(Boolean) || [];
+          allowedWorkspaces = membersRes.data?.map((d: any) => d.workspaces).filter(Boolean) || [];
         }
 
         if (allowedWorkspaces.length === 0) {
