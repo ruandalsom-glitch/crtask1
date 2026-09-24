@@ -6,11 +6,7 @@ import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare, ShieldChec
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-
-function normalizeStr(str?: string | null): string {
-  if (!str) return '';
-  return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-}
+import { canUserAccessBoard } from '@/lib/privacy';
 
 export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -79,31 +75,36 @@ export function Sidebar() {
   const { data: boards, isLoading: isLoadingBoards } = useQuery({
     queryKey: ['sidebar_boards', activeWorkspaceId, userProfile?.id, userRole],
     queryFn: async () => {
-      if (!activeWorkspaceId) return [];
-      const { data, error } = await supabase.from('boards').select('*').eq('workspace_id', activeWorkspaceId).order('created_at');
-      if (error) throw error;
-      if (!data) return [];
+      if (!activeWorkspaceId || !userProfile?.id) return [];
+
+      const [boardsRes, workspaceRes, profilesRes] = await Promise.all([
+        supabase.from('boards').select('*').eq('workspace_id', activeWorkspaceId).order('created_at'),
+        supabase.from('workspaces').select('visibility_mode').eq('id', activeWorkspaceId).maybeSingle(),
+        supabase.from('profiles').select('email, role')
+      ]);
+
+      if (boardsRes.error) throw boardsRes.error;
+      const data = boardsRes.data || [];
+      const visibilityMode = workspaceRes.data?.visibility_mode || 'own_only';
+      const profiles = profilesRes.data || [];
 
       // Administradores e Líderes visualizam TODOS os quadros do setor
       if (userRole === 'admin' || userRole === 'leader') {
         return data;
       }
 
-      // Usuários comuns (role === 'user') visualizam APENAS o seu próprio quadro com suporte a acentos
-      const normUserFirstName = normalizeStr(userProfile?.email?.split('@')[0]?.split('.')[0]);
-      const normUserEmail = normalizeStr(userProfile?.email);
+      // Usuários comuns (role === 'user'): filtra quadros segundo o modo de visibilidade do setor
+      const allowedBoards = data.filter((board: any) =>
+        canUserAccessBoard({
+          boardName: board.name,
+          userEmail: userProfile.email || '',
+          userRole: userRole,
+          visibilityMode,
+          profiles
+        })
+      );
 
-      const userBoards = data.filter((board: any) => {
-        const normBoardName = normalizeStr(board.name);
-        return (
-          normBoardName === normUserFirstName ||
-          normBoardName.includes(normUserFirstName) ||
-          normUserFirstName.includes(normBoardName) ||
-          normUserEmail.includes(normBoardName)
-        );
-      });
-
-      return userBoards.length > 0 ? userBoards : [];
+      return allowedBoards;
     },
     enabled: !!activeWorkspaceId && !!userProfile?.id,
     staleTime: 5 * 60 * 1000

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { canUserAccessBoard } from '@/lib/privacy';
 
 export default function Home() {
   const router = useRouter();
@@ -19,21 +20,20 @@ export default function Home() {
           return;
         }
 
-        // 1. Busca perfil do usuário e associações em paralelo para máxima performance
-        const [profileRes, allWorkspacesRes, membersRes] = await Promise.all([
+        // 1. Busca perfil do usuário, setores e perfis gerais para permissão
+        const [profileRes, allWorkspacesRes, membersRes, profilesRes] = await Promise.all([
           supabase.from('profiles').select('role').eq('id', user.id).single(),
           supabase.from('workspaces').select('*').order('created_at'),
-          supabase.from('workspace_members').select('workspaces(*)').eq('user_id', user.id)
+          supabase.from('workspace_members').select('workspaces(*)').eq('user_id', user.id),
+          supabase.from('profiles').select('email, role')
         ]);
 
         const profile = profileRes.data;
         let allowedWorkspaces: any[] = [];
 
         if (profile?.role === 'admin') {
-          // Admin tem acesso a todos os setores
           allowedWorkspaces = allWorkspacesRes.data || [];
         } else {
-          // Usuários/Líderes possuem acesso APENAS aos setores vinculados em workspace_members
           allowedWorkspaces = membersRes.data?.map((d: any) => d.workspaces).filter(Boolean) || [];
         }
 
@@ -52,23 +52,34 @@ export default function Home() {
           localStorage.setItem(storageKey, activeWorkspace.id);
         }
 
-        // Garante compatibilidade
         localStorage.setItem('monday_active_workspace', activeWorkspace.id);
 
-        // 3. Busca os quadros APENAS do setor ativo permitido
+        // 3. Busca quadros do setor ativo
         const { data: boards, error: boardsError } = await supabase
           .from('boards')
-          .select('id')
+          .select('id, name')
           .eq('workspace_id', activeWorkspace.id)
-          .order('created_at')
-          .limit(1);
+          .order('created_at');
 
         if (boardsError) throw boardsError;
 
-        if (boards && boards.length > 0) {
-          router.push(`/boards/${boards[0].id}`);
+        const profiles = profilesRes.data || [];
+        const visibilityMode = activeWorkspace.visibility_mode || 'own_only';
+
+        const allowedBoards = (boards || []).filter(board =>
+          canUserAccessBoard({
+            boardName: board.name,
+            userEmail: user.email || '',
+            userRole: profile?.role,
+            visibilityMode,
+            profiles
+          })
+        );
+
+        if (allowedBoards.length > 0) {
+          router.push(`/boards/${allowedBoards[0].id}`);
         } else {
-          setError(`O seu setor (${activeWorkspace.name}) ainda não possui quadros criados. Peça ao líder ou administrador para criar um quadro.`);
+          setError(`Você não possui quadros visíveis no seu setor (${activeWorkspace.name}). Caso ache que isso é um engano, entre em contato com o seu líder.`);
           setLoading(false);
         }
       } catch (err: any) {

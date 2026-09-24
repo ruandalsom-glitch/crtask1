@@ -8,11 +8,7 @@ import { BoardRoutineView } from '@/components/board/BoardRoutineView';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
-
-function normalizeStr(str?: string | null): string {
-  if (!str) return '';
-  return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-}
+import { canUserAccessBoard } from '@/lib/privacy';
 
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
@@ -26,41 +22,42 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       if (!user) return { allowed: false, reason: 'unauthenticated' };
 
       // Executa as consultas de permissão em paralelo para velocidade máxima
-      const [boardRes, profileRes, membershipsRes] = await Promise.all([
+      const [boardRes, profileRes, profilesRes] = await Promise.all([
         supabase.from('boards').select('id, name, workspace_id').eq('id', boardId).single(),
         supabase.from('profiles').select('role').eq('id', user.id).single(),
-        supabase.from('workspace_members').select('workspace_id').eq('user_id', user.id)
+        supabase.from('profiles').select('email, role')
       ]);
 
       const board = boardRes.data;
       if (!board) return { allowed: false, reason: 'not_found' };
 
+      // Buscar visibilidade do workspace
+      const { data: workspaceRes } = await supabase
+        .from('workspaces')
+        .select('visibility_mode')
+        .eq('id', board.workspace_id)
+        .maybeSingle();
+
+      const visibilityMode = workspaceRes?.visibility_mode || 'own_only';
       const profile = profileRes.data;
-      // 1. Administradores e Líderes possuem acesso total a todos os quadros do setor
-      if (profile?.role === 'admin' || profile?.role === 'leader') {
+      const profiles = profilesRes.data || [];
+
+      const allowed = canUserAccessBoard({
+        boardName: board.name,
+        userEmail: user.email || '',
+        userRole: profile?.role,
+        visibilityMode,
+        profiles
+      });
+
+      if (allowed) {
         return { allowed: true, board };
       }
 
-      // 2. Usuários comuns (role === 'user'): verifica se é o próprio quadro (ex: 'Letícia' / 'Leticia' para leticia.rocha@...)
-      const normUserFirstName = normalizeStr(user.email?.split('@')[0]?.split('.')[0]);
-      const normUserEmail = normalizeStr(user.email);
-      const normBoardName = normalizeStr(board.name);
-
-      const isOwnBoard = 
-        normBoardName === normUserFirstName || 
-        normBoardName.includes(normUserFirstName) || 
-        normUserFirstName.includes(normBoardName) ||
-        normUserEmail.includes(normBoardName);
-
-      if (isOwnBoard) {
-        return { allowed: true, board };
-      }
-
-      // 3. Usuário comum tentando acessar o quadro de OUTRO colega do setor
       return { allowed: false, reason: 'private_board', board };
     },
-    staleTime: 10 * 60 * 1000,
-    gcTime: 30 * 60 * 1000
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000
   });
 
   if (isLoading) {
@@ -83,7 +80,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">Acesso Restrito ao Setor</h2>
           <p className="text-slate-600 text-sm leading-relaxed mb-6">
-            Você não possui permissão para visualizar quadros deste setor. Redirecionando para o seu setor autorizado...
+            Você não possui permissão para visualizar este quadro conforme a política de privacidade configurada no seu setor. Redirecionando...
           </p>
           <button 
             onClick={() => router.push('/')}
@@ -163,7 +160,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
 
           <div className="flex items-center gap-4 text-[13px] text-[#676879] mb-2 font-medium">
             <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 rounded transition-colors">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 005.656-5.656l-1.1 1.1"/></svg>
               Integrar
             </button>
             <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 rounded transition-colors">

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2 } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminPage() {
@@ -76,6 +76,17 @@ export default function AdminPage() {
     }
   }, [workspaces, selectedWorkspace]);
 
+  // 1.5 Puxar Workspace selecionado com suporte a modo de visibilidade
+  const { data: currentWorkspace } = useQuery({
+    queryKey: ['admin_current_workspace', selectedWorkspace],
+    queryFn: async () => {
+      if (!selectedWorkspace) return null;
+      const { data } = await supabase.from('workspaces').select('*').eq('id', selectedWorkspace).single();
+      return data;
+    },
+    enabled: !!selectedWorkspace && hasAccess
+  });
+
   // 2. Puxar todos os Perfis (Usuários)
   const { data: profiles } = useQuery({
     queryKey: ['admin_profiles'],
@@ -114,7 +125,35 @@ export default function AdminPage() {
     }
   });
 
-  // 4. Adicionar/Alocar Usuário ao Workspace (Remove de qualquer outro setor anterior para não-admins para garantir 1 setor por usuário)
+  // 4. Atualizar Modo de Privacidade do Setor
+  const updateVisibilityMode = useMutation({
+    mutationFn: async (mode: string) => {
+      if (!selectedWorkspace) return;
+      const { error } = await supabase
+        .from('workspaces')
+        .update({ visibility_mode: mode })
+        .eq('id', selectedWorkspace);
+
+      if (error) {
+        if (error.message?.includes('visibility_mode') || error.code === '42703' || error.code === 'PGRST204') {
+          throw new Error('A coluna visibility_mode ainda não foi criada no banco de dados. Execute a instrução "migration_workspace_visibility.sql" no Supabase SQL Editor.');
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin_workspaces'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_current_workspace'] });
+      queryClient.invalidateQueries({ queryKey: ['sidebar_boards'] });
+      queryClient.invalidateQueries({ queryKey: ['board_access_check'] });
+      alert('Configuração de privacidade dos quadros atualizada com sucesso!');
+    },
+    onError: (err: any) => {
+      alert('Erro ao atualizar privacidade: ' + err.message);
+    }
+  });
+
+  // 5. Adicionar/Alocar Usuário ao Workspace
   const addMember = useMutation({
     mutationFn: async () => {
       if (!selectedWorkspace || !selectedUser) return;
@@ -140,7 +179,7 @@ export default function AdminPage() {
     }
   });
 
-  // 4.5 Remover Usuário do Workspace
+  // 5.5 Remover Usuário do Workspace
   const removeMember = useMutation({
     mutationFn: async ({ workspace_id, user_id }: { workspace_id: string, user_id: string }) => {
       const { error } = await supabase.from('workspace_members').delete().match({ workspace_id, user_id });
@@ -151,7 +190,7 @@ export default function AdminPage() {
     }
   });
 
-  // 5. Mudar permissão de usuário (Apenas Admin)
+  // 6. Mudar permissão de usuário (Apenas Admin)
   const toggleRole = useMutation({
     mutationFn: async ({ userId, newRole }: { userId: string, newRole: string }) => {
       if (!isAdmin) throw new Error("Apenas administradores podem alterar funções de usuários.");
@@ -177,6 +216,7 @@ export default function AdminPage() {
   }
 
   const selectedWorkspaceName = workspaces?.find(w => w.id === selectedWorkspace)?.name || 'Seu Setor';
+  const activeVisibilityMode = currentWorkspace?.visibility_mode || 'own_only';
 
   return (
     <div className="w-full h-full overflow-y-auto bg-slate-50 p-6 md:p-10">
@@ -189,7 +229,7 @@ export default function AdminPage() {
                 {isAdmin ? 'Painel de Administração Global' : `Gestão do Setor: ${selectedWorkspaceName}`}
               </h1>
               <p className="text-sm text-slate-500">
-                {isAdmin ? 'Gerencie todos os setores, aloque membros e defina permissões.' : 'Aloque membros e gerencie a equipe vinculada ao seu setor.'}
+                {isAdmin ? 'Gerencie todos os setores, aloque membros, configure privacidade e defina permissões.' : 'Aloque membros e configure regras de privacidade dos quadros do seu setor.'}
               </p>
             </div>
           </div>
@@ -336,12 +376,101 @@ export default function AdminPage() {
             )}
           </div>
 
-          {/* Bloco 3: Controle de Permissões Globais (Apenas Admin) */}
+          {/* Bloco 3: Regras de Privacidade e Visibilidade de Quadros no Setor */}
+          {selectedWorkspace && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-purple-600" />
+                  Privacidade dos Quadros no Setor: "{selectedWorkspaceName}"
+                </h2>
+                <span className="text-xs px-3 py-1 rounded-full font-bold bg-purple-50 text-purple-700 border border-purple-200 self-start md:self-auto">
+                  Configuração de Visibilidade
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mb-6">
+                Defina como os membros comuns (`user`) enxergam os quadros dos colegas e dos líderes neste setor.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Opção 1: own_only */}
+                <div 
+                  onClick={() => updateVisibilityMode.mutate('own_only')}
+                  className={`p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    activeVisibilityMode === 'own_only'
+                      ? 'border-blue-600 bg-blue-50/60 shadow-xs ring-2 ring-blue-600/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="p-2.5 bg-blue-100 text-blue-700 rounded-xl"><Lock className="w-5 h-5" /></span>
+                      {activeVisibilityMode === 'own_only' && (
+                        <span className="text-[10px] font-extrabold bg-blue-600 text-white px-2.5 py-0.5 rounded-full">ATIVO</span>
+                      )}
+                    </div>
+                    <h3 className="font-bold text-slate-800 text-sm mb-1.5">Apenas Próprio Quadro</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Cada usuário comum acessa estritamente seu próprio quadro. Líderes continuam visualizando todos os quadros.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Opção 2: all_except_leaders */}
+                <div 
+                  onClick={() => updateVisibilityMode.mutate('all_except_leaders')}
+                  className={`p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    activeVisibilityMode === 'all_except_leaders'
+                      ? 'border-purple-600 bg-purple-50/60 shadow-xs ring-2 ring-purple-600/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="p-2.5 bg-purple-100 text-purple-700 rounded-xl"><UserCheck className="w-5 h-5" /></span>
+                      {activeVisibilityMode === 'all_except_leaders' && (
+                        <span className="text-[10px] font-extrabold bg-purple-600 text-white px-2.5 py-0.5 rounded-full">ATIVO</span>
+                      )}
+                    </div>
+                    <h3 className="font-bold text-slate-800 text-sm mb-1.5">Todos Menos Líderes</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Usuários enxergam os quadros de todos os colegas do setor, <strong>exceto os quadros pertencentes aos Líderes</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Opção 3: all_vs_all */}
+                <div 
+                  onClick={() => updateVisibilityMode.mutate('all_vs_all')}
+                  className={`p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    activeVisibilityMode === 'all_vs_all'
+                      ? 'border-emerald-600 bg-emerald-50/60 shadow-xs ring-2 ring-emerald-600/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl"><Globe className="w-5 h-5" /></span>
+                      {activeVisibilityMode === 'all_vs_all' && (
+                        <span className="text-[10px] font-extrabold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full">ATIVO</span>
+                      )}
+                    </div>
+                    <h3 className="font-bold text-slate-800 text-sm mb-1.5">Todos x Todos</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Visibilidade total no setor. Todos os usuários enxergam e navegam entre os quadros de todos os membros.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bloco 4: Controle de Funções e Permissões Globais (Apenas Admin) */}
           {isAdmin && (
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
               <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
                 <Users className="w-5 h-5 text-indigo-600" />
-                3. Controle de Funções e Permissões Globais
+                4. Controle de Funções e Permissões Globais
               </h2>
               <p className="text-xs text-slate-500 mb-4">
                 Defina o papel de cada usuário no sistema (Administrador, Líder de Setor ou Usuário Padrão).
