@@ -93,12 +93,12 @@ export function Sidebar() {
         return (
           boardNameLower === userFirstName ||
           boardNameLower.includes(userFirstName) ||
-          userEmail.includes(boardNameLower)
+          userEmail.includes(boardNameLower) ||
+          userFirstName.includes(boardNameLower)
         );
       });
 
-      // Se por algum motivo o nome não bater exatamente, retorna o primeiro quadro para não deixar em branco
-      return userBoards.length > 0 ? userBoards : [data[0]];
+      return userBoards.length > 0 ? userBoards : data;
     },
     enabled: !!activeWorkspaceId && !!userProfile?.id,
     staleTime: 5 * 60 * 1000

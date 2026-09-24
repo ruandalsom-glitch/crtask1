@@ -31,18 +31,12 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       if (!board) return { allowed: false, reason: 'not_found' };
 
       const profile = profileRes.data;
-      // Administradores e Líderes possuem acesso total a todos os quadros do setor
+      // 1. Administradores e Líderes possuem acesso total a todos os quadros do setor
       if (profile?.role === 'admin' || profile?.role === 'leader') {
         return { allowed: true, board };
       }
 
-      // Verifica se o usuário possui acesso ao setor
-      const allowedWorkspaceIds = membershipsRes.data?.map(m => m.workspace_id) || [];
-      if (!allowedWorkspaceIds.includes(board.workspace_id)) {
-        return { allowed: false, reason: 'unauthorized', board };
-      }
-
-      // Usuários comuns (role === 'user') possuem acesso APENAS ao seu próprio quadro
+      // 2. Usuários comuns (role === 'user'): verifica se é o próprio quadro (ex: 'Leticia' para leticia.rocha@...)
       const userFirstName = user.email?.split('@')[0]?.split('.')[0]?.toLowerCase() || '';
       const userEmail = user.email?.toLowerCase() || '';
       const boardNameLower = board.name.toLowerCase().trim();
@@ -50,13 +44,15 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const isOwnBoard = 
         boardNameLower === userFirstName || 
         boardNameLower.includes(userFirstName) || 
-        userEmail.includes(boardNameLower);
+        userEmail.includes(boardNameLower) ||
+        userFirstName.includes(boardNameLower);
 
-      if (!isOwnBoard) {
-        return { allowed: false, reason: 'private_board', board };
+      if (isOwnBoard) {
+        return { allowed: true, board };
       }
 
-      return { allowed: true, board };
+      // 3. Usuário comum tentando acessar o quadro de OUTRO colega do setor
+      return { allowed: false, reason: 'private_board', board };
     },
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000
