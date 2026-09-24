@@ -15,3 +15,16 @@ CREATE TABLE IF NOT EXISTS public.operational_shifts (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   created_by UUID REFERENCES auth.users(id)
 );
+
+-- Habilita RLS (Row Level Security)
+ALTER TABLE public.operational_shifts ENABLE ROW LEVEL SECURITY;
+
+-- Politicas de permissao
+CREATE POLICY "Permitir leitura para usuarios autenticados" 
+  ON public.operational_shifts FOR SELECT 
+  USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Permitir edicao para usuarios autenticados" 
+  ON public.operational_shifts FOR ALL 
+  USING (auth.role() = 'authenticated');
+
