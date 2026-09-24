@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 import { DndContext, DragEndEvent, DragStartEvent, useDraggable, useDroppable, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { StatusCell } from './StatusCell';
@@ -23,6 +23,22 @@ const PRIORITIES = ['Alta', 'Média', 'Baixa', 'Vazio'];
 const STATUSES = ['Feito', 'Trabalhando', 'Travado', 'Pendente', 'Não iniciado'];
 
 function TaskChip({ task, onClick, isOverlay = false }: any) {
+  if (task.isGoogleCalendar) {
+    return (
+      <div 
+        onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+        className="flex items-center gap-1.5 text-[11px] px-2 py-1 cursor-pointer truncate rounded-md font-medium shadow-sm transition-all bg-blue-50 text-blue-900 border border-blue-200 hover:bg-blue-100"
+        title={`Google Agenda: ${task.title}${task.due_time ? ` - ${task.due_time}` : ''}`}
+      >
+        <span className="text-xs shrink-0">📅</span>
+        {task.due_time && (
+          <span className="font-bold text-blue-700 shrink-0 bg-blue-100 px-1 rounded-sm">{task.due_time}</span>
+        )}
+        <span className="truncate font-semibold">{task.title}</span>
+      </div>
+    );
+  }
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
     data: { task }
@@ -148,6 +164,59 @@ export function BoardCalendarView({ boardId }: { boardId: string }) {
   const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+
+  // Estados da Integração Google Agenda
+  const [googleCalendarUrl, setGoogleCalendarUrl] = useState<string>('');
+  const [googleModalOpen, setGoogleModalOpen] = useState(false);
+  const [googleSyncLoading, setGoogleSyncLoading] = useState(false);
+  const [googleEvents, setGoogleEvents] = useState<any[]>([]);
+  const [googleSyncError, setGoogleSyncError] = useState('');
+
+  const syncGoogleCalendar = async (urlToSync: string) => {
+    if (!urlToSync) {
+      setGoogleEvents([]);
+      return;
+    }
+    setGoogleSyncLoading(true);
+    setGoogleSyncError('');
+    try {
+      const res = await fetch('/api/sync-google-calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlToSync })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setGoogleSyncError(data.error || 'Erro ao sincronizar Google Agenda.');
+      } else {
+        setGoogleEvents(data.events || []);
+      }
+    } catch (err: any) {
+      setGoogleSyncError(err?.message || 'Erro de conexão com o servidor.');
+    } finally {
+      setGoogleSyncLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const savedUrl = localStorage.getItem(`gcal_url_${boardId}`) || localStorage.getItem('gcal_url_global') || '';
+    if (savedUrl) {
+      setGoogleCalendarUrl(savedUrl);
+      syncGoogleCalendar(savedUrl);
+    }
+  }, [boardId]);
+
+  const handleSaveGoogleUrl = (url: string) => {
+    const clean = url.trim();
+    setGoogleCalendarUrl(clean);
+    if (clean) {
+      localStorage.setItem(`gcal_url_${boardId}`, clean);
+      syncGoogleCalendar(clean);
+    } else {
+      localStorage.removeItem(`gcal_url_${boardId}`);
+      setGoogleEvents([]);
+    }
+  };
 
   // Busca de Tarefas
   const { data: rawTasks } = useQuery({
@@ -333,13 +402,21 @@ export function BoardCalendarView({ boardId }: { boardId: string }) {
     }
   });
 
-  const filteredTasks = rawTasks?.filter((task: any) => {
-    if (task.is_private && !isLeaderOrAdmin && task.assignee_email !== userProfile?.email) return false;
-    if (task.is_routine) return false;
-    if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (filterStatus && task.status !== filterStatus) return false;
+  const filteredGoogleEvents = googleEvents.filter((evt: any) => {
+    if (searchQuery && !evt.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
-  }) || [];
+  });
+
+  const filteredTasks = [
+    ...(rawTasks?.filter((task: any) => {
+      if (task.is_private && !isLeaderOrAdmin && task.assignee_email !== userProfile?.email) return false;
+      if (task.is_routine) return false;
+      if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (filterStatus && task.status !== filterStatus) return false;
+      return true;
+    }) || []),
+    ...filteredGoogleEvents
+  ];
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -655,6 +732,22 @@ export function BoardCalendarView({ boardId }: { boardId: string }) {
             </div>
           )}
         </div>
+
+        <button 
+          onClick={() => setGoogleModalOpen(true)} 
+          className={`h-8 px-3 rounded-full flex items-center gap-2 text-xs font-semibold transition-all cursor-pointer border shadow-sm ${
+            googleCalendarUrl ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+          title="Sincronizar eventos com a Google Agenda"
+        >
+          <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
+          <span>Google Agenda</span>
+          {googleEvents.length > 0 && (
+            <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+              {googleEvents.length}
+            </span>
+          )}
+        </button>
 
         <div className="flex-1"></div>
 
@@ -1419,6 +1512,175 @@ export function BoardCalendarView({ boardId }: { boardId: string }) {
             </div>
           </div>
         </>
+      )}
+
+      {/* Modal de Configuração do Google Agenda */}
+      {googleModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-md">
+                  📅
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">Sincronizar Google Agenda</h3>
+                  <p className="text-xs text-slate-500 font-medium">Exiba seus compromissos no calendário do sistema</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setGoogleModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Passo a passo */}
+              <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-4 text-xs text-blue-900 space-y-2">
+                <p className="font-bold text-blue-950 flex items-center gap-1.5">
+                  <span>💡</span> Como pegar seu link no Google Agenda (em 3 cliques):
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-700 font-medium pl-1">
+                  <li>Acesse o <a href="https://calendar.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">Google Agenda</a> no seu navegador.</li>
+                  <li>Na barra lateral esquerda, clique em <strong className="text-slate-900">⋮ (Opções)</strong> ao lado da sua agenda &gt; <strong className="text-slate-900">Configurações e Compartilhamento</strong>.</li>
+                  <li>Role até a seção <strong className="text-slate-900">"Integrar agenda"</strong> e copie o <strong className="text-blue-700 font-semibold">Endereço secreto em formato iCal</strong>.</li>
+                </ol>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Link iCal da Google Agenda (.ics):
+                </label>
+                <input 
+                  type="url"
+                  placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+                  value={googleCalendarUrl}
+                  onChange={(e) => setGoogleCalendarUrl(e.target.value)}
+                  className="w-full text-xs px-3.5 py-3 border border-slate-300 rounded-xl outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono text-slate-800 bg-white"
+                />
+              </div>
+
+              {googleSyncError && (
+                <div className="p-3 bg-red-50 text-red-700 text-xs font-medium rounded-xl border border-red-200 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                  <span>{googleSyncError}</span>
+                </div>
+              )}
+
+              {googleEvents.length > 0 && !googleSyncError && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 text-xs font-medium rounded-xl border border-emerald-200 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{googleEvents.length} compromisso(s) sincronizado(s) com sucesso!</span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+              {googleCalendarUrl && (
+                <button
+                  type="button"
+                  onClick={() => handleSaveGoogleUrl('')}
+                  className="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors cursor-pointer"
+                >
+                  Desconectar Agenda
+                </button>
+              )}
+              <div className="flex items-center gap-2 ml-auto">
+                <button 
+                  type="button"
+                  onClick={() => setGoogleModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  Fechar
+                </button>
+                <button 
+                  type="button"
+                  disabled={googleSyncLoading}
+                  onClick={() => handleSaveGoogleUrl(googleCalendarUrl)}
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md transition-all disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                >
+                  {googleSyncLoading ? 'Sincronizando...' : 'Salvar e Sincronizar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Detalhes do Evento do Google Agenda */}
+      {taskDetailsOpen?.isGoogleCalendar && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">📅</span>
+                <div>
+                  <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">Compromisso Google Agenda</span>
+                  <h3 className="text-base font-bold text-slate-900 leading-snug">{taskDetailsOpen.title}</h3>
+                </div>
+              </div>
+              <button 
+                onClick={() => setTaskDetailsOpen(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-slate-900">Data e Horário</div>
+                  <div className="text-slate-600">
+                    {taskDetailsOpen.due_date ? taskDetailsOpen.due_date.split('-').reverse().join('/') : 'Data não informada'}
+                    {taskDetailsOpen.due_time && ` às ${taskDetailsOpen.due_time}`}
+                    {taskDetailsOpen.end_time && ` - ${taskDetailsOpen.end_time}`}
+                  </div>
+                </div>
+              </div>
+
+              {taskDetailsOpen.location && (
+                <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <span className="text-sm shrink-0">📍</span>
+                  <div>
+                    <div className="font-bold text-slate-900">Localização</div>
+                    <div className="text-slate-600">{taskDetailsOpen.location}</div>
+                  </div>
+                </div>
+              )}
+
+              {taskDetailsOpen.notes && (
+                <div className="space-y-1">
+                  <div className="font-bold text-slate-900">Descrição / Notas:</div>
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 whitespace-pre-wrap text-slate-600 font-mono text-[11px]">
+                    {taskDetailsOpen.notes}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+              <a 
+                href="https://calendar.google.com" 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+              >
+                Abrir no Google Agenda &rarr;
+              </a>
+              <button 
+                type="button"
+                onClick={() => setTaskDetailsOpen(null)}
+                className="px-4 py-2 text-xs font-bold bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
