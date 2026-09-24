@@ -31,13 +31,29 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       if (!board) return { allowed: false, reason: 'not_found' };
 
       const profile = profileRes.data;
-      if (profile?.role === 'admin') {
+      // Administradores e Líderes possuem acesso total a todos os quadros do setor
+      if (profile?.role === 'admin' || profile?.role === 'leader') {
         return { allowed: true, board };
       }
 
+      // Verifica se o usuário possui acesso ao setor
       const allowedWorkspaceIds = membershipsRes.data?.map(m => m.workspace_id) || [];
       if (!allowedWorkspaceIds.includes(board.workspace_id)) {
         return { allowed: false, reason: 'unauthorized', board };
+      }
+
+      // Usuários comuns (role === 'user') possuem acesso APENAS ao seu próprio quadro
+      const userFirstName = user.email?.split('@')[0]?.split('.')[0]?.toLowerCase() || '';
+      const userEmail = user.email?.toLowerCase() || '';
+      const boardNameLower = board.name.toLowerCase().trim();
+
+      const isOwnBoard = 
+        boardNameLower === userFirstName || 
+        boardNameLower.includes(userFirstName) || 
+        userEmail.includes(boardNameLower);
+
+      if (!isOwnBoard) {
+        return { allowed: false, reason: 'private_board', board };
       }
 
       return { allowed: true, board };

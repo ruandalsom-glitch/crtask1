@@ -72,14 +72,36 @@ export function Sidebar() {
   }, [workspaces, userProfile?.id]);
 
   const { data: boards, isLoading: isLoadingBoards } = useQuery({
-    queryKey: ['sidebar_boards', activeWorkspaceId],
+    queryKey: ['sidebar_boards', activeWorkspaceId, userProfile?.id, userRole],
     queryFn: async () => {
       if (!activeWorkspaceId) return [];
       const { data, error } = await supabase.from('boards').select('*').eq('workspace_id', activeWorkspaceId).order('created_at');
       if (error) throw error;
-      return data;
+      if (!data) return [];
+
+      // Administradores e Líderes visualizam TODOS os quadros do setor
+      if (userRole === 'admin' || userRole === 'leader') {
+        return data;
+      }
+
+      // Usuários comuns (role === 'user') visualizam APENAS o seu próprio quadro
+      const userFirstName = userProfile?.email?.split('@')[0]?.split('.')[0]?.toLowerCase() || '';
+      const userEmail = userProfile?.email?.toLowerCase() || '';
+
+      const userBoards = data.filter((board: any) => {
+        const boardNameLower = board.name.toLowerCase().trim();
+        return (
+          boardNameLower === userFirstName ||
+          boardNameLower.includes(userFirstName) ||
+          userEmail.includes(boardNameLower)
+        );
+      });
+
+      // Se por algum motivo o nome não bater exatamente, retorna o primeiro quadro para não deixar em branco
+      return userBoards.length > 0 ? userBoards : [data[0]];
     },
-    enabled: !!activeWorkspaceId
+    enabled: !!activeWorkspaceId && !!userProfile?.id,
+    staleTime: 5 * 60 * 1000
   });
 
   const activeWorkspaceName = workspaces?.find(w => w.id === activeWorkspaceId)?.name || workspaces?.[0]?.name || 'Carregando...';
