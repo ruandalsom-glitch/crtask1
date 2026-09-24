@@ -6,16 +6,17 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   Calendar, ChevronLeft, ChevronRight, Plus, Search, Filter, 
   Trash2, Edit, User, MapPin, Clock, CheckCircle2, AlertCircle, 
-  HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check
+  HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check,
+  Settings, MessageSquare, Send, Layers, Sparkles
 } from 'lucide-react';
 
 const SHIFTS_DEFAULT = [
-  { name: 'Manhã', time: '08:00 - 12:00', icon: '☀️', color: 'from-blue-500 to-cyan-500' },
-  { name: 'Tarde', time: '12:00 - 18:00', icon: '🌤️', color: 'from-amber-500 to-orange-500' },
-  { name: 'Noite', time: '18:00 - 23:00', icon: '🌙', color: 'from-indigo-600 to-purple-600' },
+  { id: 'm', name: 'MANHÃ', time: '08:00 - 12:00', icon: '☀️', color: 'sky' },
+  { id: 't', name: 'TARDE', time: '12:00 - 18:00', icon: '🌤️', color: 'amber' },
+  { id: 'n', name: 'NOITE', time: '18:00 - 23:00', icon: '🌙', color: 'indigo' },
 ];
 
-const REGIONS_DEFAULT = ['Sumarezinho', 'Aldeota', 'Recreio', 'Barra', 'Campo Grande', 'Meireles'];
+const REGIONS_DEFAULT = ['Matriz', 'Aldeota', 'Barra', 'Campo'];
 const TYPES_DEFAULT = ['Dedicado', 'Apoio', 'Nuvem'];
 const STATUSES_DEFAULT = ['Confirmado', 'Pendente', 'Vaga'];
 
@@ -40,12 +41,17 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
 
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedShiftDetails, setSelectedShiftDetails] = useState<any | null>(null);
   const [editingShift, setEditingShift] = useState<any | null>(null);
 
+  // Comentários do Modal de Detalhes
+  const [newCommentText, setNewCommentText] = useState('');
+
   // Estado do Formulário de Escala em Lote (Múltiplas Datas e Múltiplas Pessoas)
-  const [formShiftName, setFormShiftName] = useState('Manhã');
+  const [formShiftName, setFormShiftName] = useState('MANHÃ');
   const [formShiftTime, setFormShiftTime] = useState('08:00 - 12:00');
-  const [formRegionName, setFormRegionName] = useState('Sumarezinho');
+  const [formRegionName, setFormRegionName] = useState('Matriz');
   const [formOperatorType, setFormOperatorType] = useState('Dedicado');
   const [formStatus, setFormStatus] = useState('Confirmado');
   const [formNotes, setFormNotes] = useState('');
@@ -58,25 +64,17 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   const [customOperatorName, setCustomOperatorName] = useState('');
 
   // 1. Busca dados do Usuário Atual
-  const { data: userProfile } = useQuery({
+  const { data: currentUser } = useQuery({
     queryKey: ['current_user'],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      return user;
+      if (!user) return null;
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      return { ...user, profile };
     }
   });
 
-  // 2. Busca Perfis do Setor / Org
-  const { data: profiles } = useQuery({
-    queryKey: ['profiles_for_shifts'],
-    queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('id, email, role').order('email');
-      return data || [];
-    },
-    staleTime: 5 * 60 * 1000
-  });
-
-  // 3. Busca o workspace_id do quadro
+  // 2. Busca o workspace_id do quadro
   const { data: boardData } = useQuery({
     queryKey: ['board_workspace_shift', boardId],
     queryFn: async () => {
@@ -86,7 +84,95 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     staleTime: 10 * 60 * 1000
   });
 
-  // 4. Busca as Escalas do Banco de Dados
+  // 3. Busca Perfis e Filtra por Integrantes do Setor (Workspace)
+  const { data: teamMembers } = useQuery({
+    queryKey: ['sector_members_for_shift', boardData?.workspace_id],
+    queryFn: async () => {
+      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role').order('email');
+      if (!profiles) return [];
+      if (!boardData?.workspace_id) return profiles;
+
+      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardData.workspace_id);
+      const memberUserIds = new Set((members || []).map((m: any) => m.user_id));
+
+      // Retorna administradores e membros pertencentes ao setor
+      return profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+    },
+    staleTime: 5 * 60 * 1000
+  });
+
+  // 4. Configurações da Escala do Quadro (Turnos, Regiões e Tipos Fixos/Customizáveis)
+  const { data: shiftSettings } = useQuery({
+    queryKey: ['operational_shift_settings', boardId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('operational_shift_settings')
+        .select('*')
+        .eq('board_id', boardId)
+        .maybeSingle();
+
+      if (error || !data) {
+        return {
+          shifts: SHIFTS_DEFAULT,
+          regions: REGIONS_DEFAULT,
+          operator_types: TYPES_DEFAULT
+        };
+      }
+
+      return {
+        shifts: data.shifts || SHIFTS_DEFAULT,
+        regions: data.regions || REGIONS_DEFAULT,
+        operator_types: data.operator_types || TYPES_DEFAULT
+      };
+    }
+  });
+
+  const availableShifts = shiftSettings?.shifts || SHIFTS_DEFAULT;
+  const availableRegions = shiftSettings?.regions || REGIONS_DEFAULT;
+  const availableTypes = shiftSettings?.operator_types || TYPES_DEFAULT;
+
+  // Estados locais para edição de Configurações
+  const [settingsShifts, setSettingsShifts] = useState(availableShifts);
+  const [settingsRegions, setSettingsRegions] = useState(availableRegions);
+  const [settingsTypes, setSettingsTypes] = useState(availableTypes);
+  const [newRegionText, setNewRegionText] = useState('');
+  const [newTypeText, setNewTypeText] = useState('');
+  const [newShiftName, setNewShiftName] = useState('');
+  const [newShiftTime, setNewShiftTime] = useState('');
+
+  // Open Settings Modal helper
+  const handleOpenSettings = () => {
+    setSettingsShifts(availableShifts);
+    setSettingsRegions(availableRegions);
+    setSettingsTypes(availableTypes);
+    setIsSettingsOpen(true);
+  };
+
+  // Mutation para Salvar Configurações
+  const saveSettingsMutation = useMutation({
+    mutationFn: async () => {
+      if (isReadOnly) throw new Error("Acesso restrito");
+      const { error } = await supabase
+        .from('operational_shift_settings')
+        .upsert({
+          board_id: boardId,
+          shifts: settingsShifts,
+          regions: settingsRegions,
+          operator_types: settingsTypes,
+          updated_at: new Date().toISOString()
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['operational_shift_settings', boardId] });
+      setIsSettingsOpen(false);
+    },
+    onError: (err: any) => {
+      alert("Erro ao salvar configurações da escala: " + err.message);
+    }
+  });
+
+  // 5. Busca as Escalas do Banco de Dados
   const { data: rawShifts, isLoading: isLoadingShifts } = useQuery({
     queryKey: ['operational_shifts', boardId, selectedDate],
     queryFn: async () => {
@@ -98,10 +184,52 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         .order('region_name');
 
       if (error) {
-        console.warn("Tabela operational_shifts pode não existir ainda no Supabase:", error);
+        console.warn("Tabela operational_shifts pode não existir ainda:", error);
         return [];
       }
       return data || [];
+    }
+  });
+
+  // 6. Busca os Comentários da Escala Selecionada
+  const { data: shiftComments, refetch: refetchComments } = useQuery({
+    queryKey: ['operational_shift_comments', selectedShiftDetails?.id],
+    queryFn: async () => {
+      if (!selectedShiftDetails?.id) return [];
+      const { data, error } = await supabase
+        .from('operational_shift_comments')
+        .select('*')
+        .eq('shift_id', selectedShiftDetails.id)
+        .order('created_at', { ascending: true });
+
+      if (error) return [];
+      return data || [];
+    },
+    enabled: !!selectedShiftDetails?.id
+  });
+
+  // Mutation para Adicionar Comentário
+  const addCommentMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedShiftDetails?.id || !newCommentText.trim()) return;
+      const userName = currentUser?.profile?.email?.split('@')[0] || currentUser?.email?.split('@')[0] || 'Usuário';
+      const userAvatar = currentUser?.profile?.avatar_url || null;
+
+      const { error } = await supabase
+        .from('operational_shift_comments')
+        .insert([{
+          shift_id: selectedShiftDetails.id,
+          user_id: currentUser?.id,
+          user_name: userName,
+          user_avatar: userAvatar,
+          content: newCommentText.trim()
+        }]);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setNewCommentText('');
+      refetchComments();
     }
   });
 
@@ -116,6 +244,31 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     const d = new Date(`${selectedDate}T00:00:00`);
     return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
   }, [selectedDate]);
+
+  // Map de Perfis por ID para rápido acesso ao avatar_url e email
+  const memberProfileMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (teamMembers || []).forEach((p: any) => {
+      map.set(p.id, p);
+    });
+    return map;
+  }, [teamMembers]);
+
+  // Helper para obter Avatar do Usuário
+  const getUserAvatar = (userId: string | null, userName: string) => {
+    if (userId && memberProfileMap.has(userId)) {
+      const p = memberProfileMap.get(userId);
+      if (p.avatar_url) return p.avatar_url;
+    }
+    return null;
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return 'OP';
+    const parts = name.trim().split(/[\s@_.]+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  };
 
   // Filtra as escalas conforme os critérios da tela
   const shiftsForSelectedDate = useMemo(() => {
@@ -143,72 +296,57 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       if (isReadOnly) throw new Error("Acesso restrito");
       if (formDates.length === 0) throw new Error("Selecione pelo menos uma data.");
 
-      // Determinar pessoas a inserir
       let peopleToInsert: Array<{ name: string; userId: string | null }> = [];
 
       if (formStatus === 'Vaga') {
         peopleToInsert = [{ name: 'VAGA / Nenhum operador', userId: null }];
+      } else if (formSelectedPeople.length > 0) {
+        peopleToInsert = formSelectedPeople.map(pId => {
+          const profile = memberProfileMap.get(pId);
+          const name = profile ? (profile.email.split('@')[0].toUpperCase()) : 'Operador';
+          return { name, userId: pId };
+        });
+      } else if (customOperatorName.trim()) {
+        peopleToInsert = [{ name: customOperatorName.trim().toUpperCase(), userId: null }];
       } else {
-        if (formSelectedPeople.length > 0) {
-          peopleToInsert = formSelectedPeople.map(email => {
-            const p = profiles?.find(prof => prof.email === email);
-            const shortName = email.split('@')[0].replace('.', ' ');
-            return { name: shortName.toUpperCase(), userId: p?.id || null };
-          });
-        }
-        if (customOperatorName.trim()) {
-          peopleToInsert.push({ name: customOperatorName.trim(), userId: null });
-        }
+        throw new Error("Selecione pelo menos uma pessoa do setor ou digite um nome.");
       }
 
-      if (peopleToInsert.length === 0) {
-        throw new Error("Selecione pelo menos uma pessoa ou marque como Vaga.");
-      }
-
-      // Monta inserções em lote (Combinando todas as datas x todas as pessoas)
-      const records: any[] = [];
-      for (const dStr of formDates) {
-        for (const person of peopleToInsert) {
-          records.push({
+      const rowsToInsert = [];
+      for (const d of formDates) {
+        for (const p of peopleToInsert) {
+          rowsToInsert.push({
             board_id: boardId,
             workspace_id: boardData?.workspace_id || null,
-            shift_date: dStr,
+            shift_date: d,
             shift_name: formShiftName,
             shift_time: formShiftTime,
             region_name: formRegionName,
-            operator_name: person.name,
-            operator_user_id: person.userId,
+            operator_user_id: p.userId,
+            operator_name: p.name,
             operator_type: formOperatorType,
             status: formStatus,
-            notes: formNotes || null,
-            created_by: userProfile?.id || null
+            notes: formNotes,
+            created_by: currentUser?.id || null
           });
         }
       }
 
-      const { data, error } = await supabase.from('operational_shifts').insert(records).select();
-      if (error) {
-        if (error.message?.includes('operational_shifts') || error.code === '42703' || error.code === 'PGRST204') {
-          throw new Error('A tabela operational_shifts ainda não foi criada. Execute o arquivo "migration_operational_shifts.sql" no Supabase SQL Editor.');
-        }
-        throw error;
-      }
-      return data;
+      const { error } = await supabase.from('operational_shifts').insert(rowsToInsert);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operational_shifts', boardId] });
       setIsModalOpen(false);
-      setCustomOperatorName('');
-      setFormNotes('');
-      setFormSelectedPeople([]);
+      resetForm();
     },
     onError: (err: any) => {
       alert("Erro ao lançar escala: " + err.message);
     }
   });
 
-  // Deletar Escala
-  const deleteShift = useMutation({
+  // Excluir Escala
+  const deleteShiftMutation = useMutation({
     mutationFn: async (shiftId: string) => {
       if (isReadOnly) throw new Error("Acesso restrito");
       const { error } = await supabase.from('operational_shifts').delete().eq('id', shiftId);
@@ -216,572 +354,991 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operational_shifts', boardId] });
+      setSelectedShiftDetails(null);
     }
   });
 
-  // Atualizar Status Rápido
-  const updateShiftStatus = useMutation({
-    mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
+  // Atualizar Escala Existente
+  const updateShiftMutation = useMutation({
+    mutationFn: async (shiftData: any) => {
       if (isReadOnly) throw new Error("Acesso restrito");
-      const { error } = await supabase.from('operational_shifts').update({ status: newStatus }).eq('id', id);
+      const { error } = await supabase
+        .from('operational_shifts')
+        .update({
+          shift_name: shiftData.shift_name,
+          shift_time: shiftData.shift_time,
+          region_name: shiftData.region_name,
+          operator_type: shiftData.operator_type,
+          status: shiftData.status,
+          notes: shiftData.notes,
+          operator_name: shiftData.operator_name,
+          operator_user_id: shiftData.operator_user_id
+        })
+        .eq('id', shiftData.id);
+
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operational_shifts', boardId] });
+      setEditingShift(null);
+      if (selectedShiftDetails) {
+        setSelectedShiftDetails((prev: any) => ({ ...prev, ...editingShift }));
+      }
     }
   });
 
-  // Auxiliares para cálculo de datas em lote no modal
-  const addPresetDates = (preset: 'today' | 'week' | 'next7') => {
-    const today = new Date();
-    if (preset === 'today') {
-      setFormDates([today.toISOString().split('T')[0]]);
-    } else if (preset === 'next7') {
-      const dates: string[] = [];
-      for (let i = 0; i < 7; i++) {
-        const d = new Date();
-        d.setDate(today.getDate() + i);
-        dates.push(d.toISOString().split('T')[0]);
-      }
-      setFormDates(dates);
-    } else if (preset === 'week') {
-      // Segunda a Sexta da semana atual
-      const dates: string[] = [];
-      const currentDay = today.getDay();
-      const distanceToMon = currentDay === 0 ? -6 : 1 - currentDay;
-      const monday = new Date(today);
-      monday.setDate(today.getDate() + distanceToMon);
-
-      for (let i = 0; i < 5; i++) {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + i);
-        dates.push(d.toISOString().split('T')[0]);
-      }
-      setFormDates(dates);
-    }
+  const resetForm = () => {
+    setFormShiftName(availableShifts[0]?.name || 'MANHÃ');
+    setFormShiftTime(availableShifts[0]?.time || '08:00 - 12:00');
+    setFormRegionName(availableRegions[0] || 'Matriz');
+    setFormOperatorType(availableTypes[0] || 'Dedicado');
+    setFormStatus('Confirmado');
+    setFormNotes('');
+    setFormDates([selectedDate]);
+    setFormSelectedPeople([]);
+    setCustomOperatorName('');
   };
 
   const toggleFormDate = (dStr: string) => {
-    setFormDates(prev => 
-      prev.includes(dStr) ? prev.filter(d => d !== dStr) : [...prev, dStr]
-    );
+    if (formDates.includes(dStr)) {
+      if (formDates.length > 1) setFormDates(formDates.filter(d => d !== dStr));
+    } else {
+      setFormDates([...formDates, dStr].sort());
+    }
   };
 
-  const toggleFormPerson = (email: string) => {
-    setFormSelectedPeople(prev =>
-      prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]
-    );
+  const toggleFormPerson = (pId: string) => {
+    if (formSelectedPeople.includes(pId)) {
+      setFormSelectedPeople(formSelectedPeople.filter(id => id !== pId));
+    } else {
+      setFormSelectedPeople([...formSelectedPeople, pId]);
+    }
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-slate-900 text-slate-100 overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-50 text-slate-800">
       
-      {/* Header Superior & Controles da Escala */}
-      <div className="p-6 border-b border-slate-800 bg-slate-950/70 flex flex-col gap-5 shrink-0">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* TOOLBAR SUPERIOR DA ESCALA (Design Claro Clean) */}
+      <div className="bg-white border-b border-slate-200 px-8 py-4 flex flex-wrap items-center justify-between gap-4 shadow-sm z-10">
+        
+        {/* Título & Seleção de Data */}
+        <div className="flex items-center gap-6">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-black text-white tracking-tight">Escala Operacional</h2>
-              <span className="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 font-bold px-2.5 py-0.5 rounded-full">
-                {shiftsForSelectedDate.length} {shiftsForSelectedDate.length === 1 ? 'Escala' : 'Escalas'}
+              <h2 className="text-xl font-bold text-slate-800 tracking-tight">Escala Operacional</h2>
+              <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full border border-blue-200">
+                {shiftsForSelectedDate.length} Escalas
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Visualize, planeje e gerencie a alocação de operadores por turno e região em tempo real.
+            <p className="text-xs text-slate-500 mt-0.5">
+              Planejamento e alocação de equipes por turno e região em tempo real.
             </p>
           </div>
 
-          {/* Seletor de Data & Botão Adicionar */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Seletor de Data */}
-            <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1 shadow-sm">
-              <button 
-                onClick={() => changeDate(-1)} 
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                title="Dia anterior"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              
-              <div className="flex items-center gap-2 px-3">
-                <Calendar className="w-4 h-4 text-blue-400" />
-                <input 
-                  type="date" 
-                  value={selectedDate} 
-                  onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
-                />
-              </div>
-
-              <button 
-                onClick={() => changeDate(1)} 
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                title="Próximo dia"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-
-              <button 
-                onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} 
-                className="ml-1 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-              >
-                Hoje
-              </button>
+          {/* Navegador de Data */}
+          <div className="flex items-center bg-slate-100 border border-slate-200 rounded-lg p-1 text-xs">
+            <button onClick={() => changeDate(-1)} className="p-1.5 hover:bg-white rounded transition-colors text-slate-600">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            <div className="flex items-center gap-1.5 px-3 font-semibold text-slate-700 capitalize">
+              <Calendar className="w-3.5 h-3.5 text-blue-600" />
+              <span>{formattedSelectedDateText}</span>
             </div>
 
-            {/* Alternador de Abas de Visão (Quadro, Lista, Timeline) */}
-            <div className="flex bg-slate-900 border border-slate-700 rounded-xl p-1">
-              <button 
-                onClick={() => setViewTab('quadro')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${viewTab === 'quadro' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" /> Quadro
-              </button>
-              <button 
-                onClick={() => setViewTab('lista')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${viewTab === 'lista' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                <List className="w-3.5 h-3.5" /> Lista
-              </button>
-              <button 
-                onClick={() => setViewTab('timeline')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${viewTab === 'timeline' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                <BarChart2 className="w-3.5 h-3.5" /> Timeline
-              </button>
-            </div>
+            <button onClick={() => changeDate(1)} className="p-1.5 hover:bg-white rounded transition-colors text-slate-600">
+              <ChevronRight className="w-4 h-4" />
+            </button>
 
-            {/* Botão + Escalar (Lançar Escala) */}
-            {!isReadOnly && (
-              <button 
-                onClick={() => {
-                  setFormDates([selectedDate]);
-                  setIsModalOpen(true);
-                }}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition-colors shadow-lg cursor-pointer shrink-0"
-              >
-                <Plus className="w-4 h-4" /> Escalar Operadores
-              </button>
-            )}
+            <button 
+              onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} 
+              className="ml-1 px-2.5 py-1 bg-white hover:bg-slate-200 text-slate-700 font-medium rounded text-[11px] shadow-xs border border-slate-200 transition-colors"
+            >
+              Hoje
+            </button>
           </div>
         </div>
 
-        {/* Linha de Filtros Rápidos */}
-        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-800/80">
-          {/* Busca */}
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input 
-              type="text" 
-              placeholder="Pesquisar por nome, região ou turno..." 
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-4 py-1.5 text-xs text-slate-200 outline-none focus:border-blue-500 transition-colors"
-            />
+        {/* Botões de Ação e Alternância de Visão */}
+        <div className="flex items-center gap-3">
+          
+          {/* Botão Configurações da Escala (Para Líderes / Admins) */}
+          {!isReadOnly && (
+            <button
+              onClick={handleOpenSettings}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
+              title="Configurar Turnos e Bases do Setor"
+            >
+              <Settings className="w-3.5 h-3.5 text-slate-500" />
+              <span>Opções de Escala</span>
+            </button>
+          )}
+
+          {/* Selector de Modo de Visualização */}
+          <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setViewTab('quadro')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewTab === 'quadro' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Quadro</span>
+            </button>
+
+            <button
+              onClick={() => setViewTab('lista')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewTab === 'lista' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Lista</span>
+            </button>
+
+            <button
+              onClick={() => setViewTab('timeline')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewTab === 'timeline' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <BarChart2 className="w-3.5 h-3.5" />
+              <span>Timeline</span>
+            </button>
           </div>
 
+          {/* Botão de Lançar Escala */}
+          {!isReadOnly && (
+            <button
+              onClick={() => { resetForm(); setIsModalOpen(true); }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Escalar Operadores</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* BARRA DE FILTROS SECUNDÁRIA */}
+      <div className="bg-white border-b border-slate-200 px-8 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-3 flex-1 min-w-[240px] max-w-md">
+          <div className="relative w-full">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Pesquisar por colaborador, região ou turno..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Filtro Turno */}
-          <select 
-            value={filterShift} 
-            onChange={e => setFilterShift(e.target.value)}
-            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-medium outline-none focus:border-blue-500 cursor-pointer"
+          <select
+            value={filterShift}
+            onChange={(e) => setFilterShift(e.target.value)}
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-700 text-xs focus:outline-none focus:border-blue-500 cursor-pointer"
           >
-            <option value="all">Todos os turnos</option>
-            {SHIFTS_DEFAULT.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+            <option value="all">Todos os Turnos</option>
+            {availableShifts.map((s: any) => (
+              <option key={s.name} value={s.name}>{s.name}</option>
+            ))}
           </select>
 
           {/* Filtro Região */}
-          <select 
-            value={filterRegion} 
-            onChange={e => setFilterRegion(e.target.value)}
-            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-medium outline-none focus:border-blue-500 cursor-pointer"
+          <select
+            value={filterRegion}
+            onChange={(e) => setFilterRegion(e.target.value)}
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-700 text-xs focus:outline-none focus:border-blue-500 cursor-pointer"
           >
             <option value="all">Todas as regiões</option>
-            {REGIONS_DEFAULT.map(r => <option key={r} value={r}>{r}</option>)}
+            {availableRegions.map((r: string) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
           </select>
 
           {/* Filtro Tipo */}
-          <select 
-            value={filterType} 
-            onChange={e => setFilterType(e.target.value)}
-            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-medium outline-none focus:border-blue-500 cursor-pointer"
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-700 text-xs focus:outline-none focus:border-blue-500 cursor-pointer"
           >
             <option value="all">Todos os tipos</option>
-            {TYPES_DEFAULT.map(t => <option key={t} value={t}>{t}</option>)}
+            {availableTypes.map((t: string) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
           </select>
 
-          {/* Toggle Apenas Vagas */}
-          <button 
+          {/* Toggle Vagas */}
+          <button
             onClick={() => setOnlyVacancies(!onlyVacancies)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${onlyVacancies ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'}`}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+              onlyVacancies 
+                ? 'bg-amber-100 text-amber-800 border-amber-300 font-bold' 
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+            }`}
           >
-            {onlyVacancies ? '✓ Mostrando apenas vagas' : 'Mostrar apenas vagas'}
+            Mostrar apenas vagas
           </button>
         </div>
       </div>
 
-      {/* Conteúdo Principal (Quadro, Lista ou Timeline) */}
-      <div className="flex-1 overflow-y-auto p-6">
+      {/* ÁREA DE CONTEÚDO PRINCIPAL (TEMA CLARO CLEAN) */}
+      <div className="flex-1 overflow-auto p-8">
         
-        {/* Visão 1: Quadro (Colunas de Turno x Cards de Região) */}
+        {/* VISÃO 1: QUADRO (CARDS MATRICIAIS POR TURNO) */}
         {viewTab === 'quadro' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
-            {SHIFTS_DEFAULT.map(shiftDef => {
-              const shiftItems = shiftsForSelectedDate.filter(s => s.shift_name === shiftDef.name);
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+            {availableShifts.map((shiftDef: any) => {
+              const shiftItems = shiftsForSelectedDate.filter((s: any) => s.shift_name === shiftDef.name);
 
               return (
-                <div key={shiftDef.name} className="flex flex-col bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden shadow-md">
+                <div key={shiftDef.name} className="flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  
                   {/* Cabeçalho do Turno */}
-                  <div className={`p-4 bg-gradient-to-r ${shiftDef.color} text-white flex items-center justify-between shadow-sm`}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{shiftDef.icon}</span>
+                  <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="text-xl">{shiftDef.icon || '⏱️'}</div>
                       <div>
-                        <h3 className="font-extrabold text-sm uppercase tracking-wider">{shiftDef.name}</h3>
-                        <p className="text-[11px] opacity-90 font-medium">{shiftDef.time}</p>
+                        <h3 className="font-bold text-slate-800 text-sm tracking-wide">{shiftDef.name}</h3>
+                        <p className="text-[11px] text-slate-500 font-medium">{shiftDef.time}</p>
                       </div>
                     </div>
-                    <span className="text-xs bg-white/20 px-2.5 py-0.5 rounded-full font-extrabold backdrop-blur-xs">
+                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center">
                       {shiftItems.length}
                     </span>
                   </div>
 
-                  {/* Lista de Regiões dentro do Turno */}
-                  <div className="p-4 flex-1 overflow-y-auto space-y-4">
+                  {/* Lista de Escalas do Turno */}
+                  <div className="p-4 flex flex-col gap-3 min-h-[300px]">
                     {shiftItems.length === 0 ? (
-                      <div className="text-center py-10 text-slate-500 text-xs italic border border-dashed border-slate-800 rounded-xl">
-                        Nenhuma escala lançada neste turno.
+                      <div className="flex flex-col items-center justify-center my-auto py-12 text-slate-400 border border-dashed border-slate-200 rounded-lg">
+                        <User className="w-8 h-8 mb-2 stroke-1 opacity-50" />
+                        <span className="text-xs">Nenhuma escala neste turno.</span>
                       </div>
                     ) : (
-                      shiftItems.map(item => (
-                        <div 
-                          key={item.id} 
-                          className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-4 shadow-sm transition-all relative group"
-                        >
-                          {/* Região */}
-                          <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
-                              <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                              <span>{item.region_name}</span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              {/* Tipo */}
-                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                                item.operator_type === 'Dedicado' 
-                                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' 
-                                  : item.operator_type === 'Apoio'
-                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                  : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                              }`}>
+                      shiftItems.map((item: any) => {
+                        const avatarUrl = getUserAvatar(item.operator_user_id, item.operator_name);
+                        
+                        return (
+                          <div 
+                            key={item.id}
+                            onClick={() => setSelectedShiftDetails(item)}
+                            className="p-3.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-blue-300 rounded-lg transition-all cursor-pointer group shadow-2xs"
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-2.5">
+                              <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold">
+                                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{item.region_name}</span>
+                              </div>
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
                                 {item.operator_type}
                               </span>
-
-                              {/* Menu Excluir se não for read-only */}
-                              {!isReadOnly && (
-                                <button 
-                                  onClick={() => deleteShift.mutate(item.id)} 
-                                  className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-opacity p-1 cursor-pointer"
-                                  title="Remover escala"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Operador & Status */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-blue-600/30 border border-blue-500/40 text-blue-400 font-extrabold text-xs flex items-center justify-center shrink-0">
-                                {item.operator_name.slice(0, 2).toUpperCase()}
-                              </div>
-                              <div className="overflow-hidden">
-                                <h4 className="text-xs font-bold text-white truncate max-w-[130px]">{item.operator_name}</h4>
-                                {item.notes && <p className="text-[10px] text-slate-400 truncate">{item.notes}</p>}
-                              </div>
                             </div>
 
-                            {/* Badge de Status Alternável */}
-                            <button 
-                              onClick={() => {
-                                if (isReadOnly) return;
-                                const nextStatus = item.status === 'Confirmado' ? 'Pendente' : item.status === 'Pendente' ? 'Vaga' : 'Confirmado';
-                                updateShiftStatus.mutate({ id: item.id, newStatus: nextStatus });
-                              }}
-                              className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all ${
-                                item.status === 'Confirmado'
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                  : item.status === 'Pendente'
-                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                              } ${!isReadOnly ? 'cursor-pointer hover:scale-105' : 'cursor-default'}`}
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                              {item.status}
-                            </button>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2.5">
+                                {/* Foto de Perfil ou Iniciais */}
+                                {avatarUrl ? (
+                                  <img 
+                                    src={avatarUrl} 
+                                    alt={item.operator_name} 
+                                    className="w-8 h-8 rounded-full object-cover border border-slate-300 shadow-xs" 
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+                                    {getInitials(item.operator_name)}
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="font-bold text-slate-800 text-xs block group-hover:text-blue-600 transition-colors">
+                                    {item.operator_name}
+                                  </span>
+                                  {item.notes && (
+                                    <span className="text-[11px] text-slate-500 line-clamp-1 flex items-center gap-1 mt-0.5">
+                                      <MessageSquare className="w-3 h-3 text-slate-400 shrink-0" />
+                                      {item.notes}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                                item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                'bg-rose-50 text-rose-700 border-rose-200'
+                              }`}>
+                                {item.status}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
+
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* Visão 2: Lista / Tabela Detalhada */}
+        {/* VISÃO 2: LISTA (TABELA CLEAN) */}
         {viewTab === 'lista' && (
-          <div className="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden shadow-md">
-            <table className="w-full text-left border-collapse">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table className="w-full text-left text-xs text-slate-700 border-collapse">
               <thead>
-                <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                  <th className="p-4">Data</th>
-                  <th className="p-4">Região</th>
-                  <th className="p-4">Turno / Horário</th>
-                  <th className="p-4">Operador</th>
-                  <th className="p-4">Tipo</th>
-                  <th className="p-4">Status</th>
-                  {!isReadOnly && <th className="p-4 text-right">Ações</th>}
+                <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase tracking-wider text-[11px]">
+                  <th className="py-3 px-4">Operador</th>
+                  <th className="py-3 px-4">Turno</th>
+                  <th className="py-3 px-4">Horário</th>
+                  <th className="py-3 px-4">Região / Base</th>
+                  <th className="py-3 px-4">Tipo</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Observações / Tarefas</th>
+                  <th className="py-3 px-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80 text-xs">
+              <tbody className="divide-y divide-slate-100">
                 {shiftsForSelectedDate.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-500 italic">
+                    <td colSpan={8} className="py-12 text-center text-slate-400">
                       Nenhuma escala encontrada para os filtros selecionados.
                     </td>
                   </tr>
                 ) : (
-                  shiftsForSelectedDate.map(item => (
-                    <tr key={item.id} className="hover:bg-slate-900/50 transition-colors">
-                      <td className="p-4 text-slate-300 font-bold">{item.shift_date}</td>
-                      <td className="p-4 font-bold text-white flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        {item.region_name}
-                      </td>
-                      <td className="p-4">
-                        <span className="font-semibold text-slate-200">{item.shift_name}</span>
-                        <span className="text-[11px] text-slate-400 block">{item.shift_time}</span>
-                      </td>
-                      <td className="p-4 font-bold text-white">{item.operator_name}</td>
-                      <td className="p-4">
-                        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                          {item.operator_type}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${
-                          item.status === 'Confirmado'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : item.status === 'Pendente'
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        }`}>
-                          {item.status}
-                        </span>
-                      </td>
-                      {!isReadOnly && (
-                        <td className="p-4 text-right">
-                          <button 
-                            onClick={() => deleteShift.mutate(item.id)}
-                            className="text-slate-500 hover:text-red-400 p-1.5 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                  shiftsForSelectedDate.map((item: any) => {
+                    const avatarUrl = getUserAvatar(item.operator_user_id, item.operator_name);
+
+                    return (
+                      <tr 
+                        key={item.id} 
+                        onClick={() => setSelectedShiftDetails(item)}
+                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3 px-4 font-bold text-slate-800">
+                          <div className="flex items-center gap-2.5">
+                            {avatarUrl ? (
+                              <img src={avatarUrl} alt={item.operator_name} className="w-7 h-7 rounded-full object-cover border border-slate-200" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center">
+                                {getInitials(item.operator_name)}
+                              </div>
+                            )}
+                            <span>{item.operator_name}</span>
+                          </div>
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        <td className="py-3 px-4 font-semibold text-slate-700">{item.shift_name}</td>
+                        <td className="py-3 px-4 text-slate-500">{item.shift_time || '-'}</td>
+                        <td className="py-3 px-4 font-medium text-slate-700">{item.region_name}</td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                            {item.operator_type}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                            item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-rose-50 text-rose-700 border-rose-200'
+                          }`}>
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
+                          {item.notes || '-'}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {!isReadOnly && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Deseja remover esta escala?")) {
+                                  deleteShiftMutation.mutate(item.id);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                              title="Excluir Escala"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* Visão 3: Timeline (Linha do Tempo Visual) */}
+        {/* VISÃO 3: TIMELINE (LINHA DO TEMPO CLEAN) */}
         {viewTab === 'timeline' && (
-          <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 shadow-md">
-            <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-400" /> Linha do Tempo dos Operadores ({formattedSelectedDateText})
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-6">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-blue-600" />
+              <span>Distribuição de Operadores por Turno ({formattedSelectedDateText})</span>
             </h3>
-            <div className="space-y-4">
-              {shiftsForSelectedDate.map(item => (
-                <div key={item.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="min-w-[180px]">
-                    <h4 className="text-xs font-bold text-white">{item.operator_name}</h4>
-                    <p className="text-[11px] text-slate-400">{item.region_name} • {item.operator_type}</p>
+
+            <div className="flex flex-col gap-6">
+              {availableShifts.map((shiftDef: any) => {
+                const shiftItems = shiftsForSelectedDate.filter((s: any) => s.shift_name === shiftDef.name);
+
+                return (
+                  <div key={shiftDef.name} className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                      <span>{shiftDef.name} ({shiftDef.time})</span>
+                      <span className="text-slate-500 font-normal">{shiftItems.length} Operadores Alocados</span>
+                    </div>
+
+                    <div className="w-full bg-slate-100 h-12 rounded-lg border border-slate-200 p-1.5 flex items-center gap-2 overflow-x-auto">
+                      {shiftItems.length === 0 ? (
+                        <span className="text-xs text-slate-400 italic px-3">Nenhum operador alocado</span>
+                      ) : (
+                        shiftItems.map((item: any) => {
+                          const avatarUrl = getUserAvatar(item.operator_user_id, item.operator_name);
+                          
+                          return (
+                            <div 
+                              key={item.id}
+                              onClick={() => setSelectedShiftDetails(item)}
+                              className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs font-bold flex items-center gap-2 shrink-0 cursor-pointer hover:bg-blue-700 transition-colors shadow-xs"
+                            >
+                              {avatarUrl ? (
+                                <img src={avatarUrl} alt={item.operator_name} className="w-5 h-5 rounded-full object-cover border border-white/40" />
+                              ) : (
+                                <span className="w-5 h-5 rounded-full bg-white/20 text-white font-bold text-[10px] flex items-center justify-center">
+                                  {getInitials(item.operator_name)}
+                                </span>
+                              )}
+                              <span>{item.operator_name}</span>
+                              <span className="opacity-80 text-[10px] font-normal">({item.region_name})</span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
-                  
-                  {/* Barra da Timeline */}
-                  <div className="flex-1 h-6 bg-slate-800 rounded-full overflow-hidden relative flex items-center px-3 border border-slate-700">
-                    <div 
-                      className={`h-full absolute left-0 top-0 rounded-full bg-gradient-to-r ${
-                        item.shift_name === 'Manhã' ? 'from-blue-500 to-cyan-500 w-1/3' : item.shift_name === 'Tarde' ? 'from-amber-500 to-orange-500 left-1/3 w-1/3' : 'from-indigo-600 to-purple-600 left-2/3 w-1/3'
-                      }`}
-                    ></div>
-                    <span className="relative z-10 text-[10px] font-extrabold text-white shadow-xs">
-                      {item.shift_name} ({item.shift_time})
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
+
       </div>
 
-      {/* MODAL: Formulário de Lançamento em Lote (Múltiplos Dias e Múltiplas Pessoas) */}
+      {/* MODAL 1: LANÇAR ESCALA EM LOTE (Múltiplas Datas e Pessoas do Setor) */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 text-slate-100 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
-              <div>
-                <h3 className="text-lg font-black text-white">Escalar Operadores</h3>
-                <p className="text-xs text-slate-400">Lance escalas para múltiplos dias e múltiplas pessoas de uma só vez.</p>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 max-w-xl w-full p-6 shadow-xl flex flex-col gap-5 my-8">
+            
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-800 text-base">Escalar Operadores do Setor</h3>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">
+              <button onClick={() => setIsModalOpen(false)} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-5">
+            <div className="flex flex-col gap-4 text-xs">
               
-              {/* 1. Seleção de Múltiplos Dias */}
+              {/* Seleção de Múltiplas Datas */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-blue-400 uppercase tracking-wider">1. Selecionar Dias da Escala</label>
-                  <div className="flex gap-1.5">
-                    <button onClick={() => addPresetDates('today')} className="text-[10px] bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-slate-300">Hoje</button>
-                    <button onClick={() => addPresetDates('week')} className="text-[10px] bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-slate-300">Seg-Sex</button>
-                    <button onClick={() => addPresetDates('next7')} className="text-[10px] bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-slate-300">Próx 7 dias</button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 mb-2">
-                  <input 
+                <label className="block font-bold text-slate-700 mb-1.5">
+                  1. Datas da Escala <span className="text-slate-400 font-normal">(Selecione um ou mais dias)</span>
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
                     type="date"
-                    onChange={(e) => e.target.value && toggleFormDate(e.target.value)}
-                    className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-blue-500"
-                  />
-                  <span className="text-xs text-slate-400">Clique para adicionar data personalizada</span>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-950/60 border border-slate-800 rounded-xl">
-                  {formDates.map(d => (
-                    <span key={d} className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                      {d}
-                      <button onClick={() => toggleFormDate(d)} className="hover:text-red-400"><X className="w-3 h-3" /></button>
-                    </span>
-                  ))}
-                  {formDates.length === 0 && <span className="text-xs text-slate-500 italic">Nenhuma data selecionada</span>}
-                </div>
-              </div>
-
-              {/* 2. Seleção de Múltiplas Pessoas */}
-              <div>
-                <label className="block text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">2. Selecionar Operador(es)</label>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 bg-slate-950/60 border border-slate-800 rounded-xl">
-                    {profiles?.map(p => {
-                      const isSelected = formSelectedPeople.includes(p.email);
-                      return (
-                        <div 
-                          key={p.id}
-                          onClick={() => toggleFormPerson(p.email)}
-                          className={`p-2 rounded-lg text-xs font-medium cursor-pointer border flex items-center justify-between transition-colors ${isSelected ? 'bg-blue-600/30 border-blue-500 text-white font-bold' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'}`}
-                        >
-                          <span className="truncate">{p.email.split('@')[0]}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-400" />}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <input 
-                    type="text" 
-                    placeholder="Ou digite um nome externo (ex: Gabriel GABS CR)"
-                    value={customOperatorName}
-                    onChange={e => setCustomOperatorName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* 3. Turno & Horário */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Turno</label>
-                  <select 
-                    value={formShiftName}
-                    onChange={e => {
-                      setFormShiftName(e.target.value);
-                      const matched = SHIFTS_DEFAULT.find(s => s.name === e.target.value);
-                      if (matched) setFormShiftTime(matched.time);
+                    value={selectedDate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val && !formDates.includes(val)) {
+                        setFormDates([...formDates, val].sort());
+                      }
                     }}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                  >
-                    {SHIFTS_DEFAULT.map(s => <option key={s.name} value={s.name}>{s.name} ({s.time})</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Região / Base</label>
-                  <select 
-                    value={formRegionName}
-                    onChange={e => setFormRegionName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                  >
-                    {REGIONS_DEFAULT.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {formDates.map(d => (
+                      <span key={d} className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold rounded-full border border-blue-200 flex items-center gap-1">
+                        {d.split('-').reverse().slice(0,2).join('/')}
+                        {formDates.length > 1 && (
+                          <button onClick={() => toggleFormDate(d)} className="hover:text-rose-600">
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* 4. Tipo de Operador e Status */}
+              {/* Turno & Região */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Tipo de Operador</label>
-                  <select 
-                    value={formOperatorType}
-                    onChange={e => setFormOperatorType(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                  <label className="block font-bold text-slate-700 mb-1">Turno</label>
+                  <select
+                    value={formShiftName}
+                    onChange={(e) => {
+                      const selectedName = e.target.value;
+                      setFormShiftName(selectedName);
+                      const found = availableShifts.find((s: any) => s.name === selectedName);
+                      if (found?.time) setFormShiftTime(found.time);
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
                   >
-                    {TYPES_DEFAULT.map(t => <option key={t} value={t}>{t}</option>)}
+                    {availableShifts.map((s: any) => (
+                      <option key={s.name} value={s.name}>{s.name} ({s.time})</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Status Inicial</label>
-                  <select 
-                    value={formStatus}
-                    onChange={e => setFormStatus(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                  <label className="block font-bold text-slate-700 mb-1">Região / Base</label>
+                  <select
+                    value={formRegionName}
+                    onChange={(e) => setFormRegionName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
                   >
-                    {STATUSES_DEFAULT.map(st => <option key={st} value={st}>{st}</option>)}
+                    {availableRegions.map((r: string) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Botões de Ação */}
-              <div className="flex items-center justify-end gap-3 border-t border-slate-800 pt-4 mt-6">
-                <button 
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
+              {/* Seleção de Colaboradores (Exclusivos do Setor) */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">
+                  2. Colaboradores do Setor <span className="text-slate-400 font-normal">(Marque as pessoas para lançar)</span>
+                </label>
+                <div className="max-h-40 overflow-y-auto border border-slate-200 bg-slate-50 rounded-md p-2 flex flex-col gap-1">
+                  {(teamMembers || []).length === 0 ? (
+                    <span className="text-xs text-slate-400 p-2 text-center">Nenhum colaborador encontrado no setor.</span>
+                  ) : (
+                    (teamMembers || []).map((p: any) => {
+                      const isChecked = formSelectedPeople.includes(p.id);
+                      const name = p.email.split('@')[0].toUpperCase();
 
-                <button 
-                  onClick={() => createBulkShifts.mutate()}
-                  disabled={createBulkShifts.isPending}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold transition-colors cursor-pointer disabled:opacity-50 shadow-lg"
-                >
-                  {createBulkShifts.isPending ? 'Lançando...' : `Lançar Escalas (${formDates.length * (formSelectedPeople.length || 1)})`}
-                </button>
+                      return (
+                        <label 
+                          key={p.id}
+                          className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
+                            isChecked ? 'bg-blue-50 border border-blue-200 text-blue-900 font-bold' : 'hover:bg-white text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            {p.avatar_url ? (
+                              <img src={p.avatar_url} alt={name} className="w-6 h-6 rounded-full object-cover border border-slate-200" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                                {getInitials(name)}
+                              </div>
+                            )}
+                            <span>{name}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">({p.email})</span>
+                          </div>
+
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleFormPerson(p.id)}
+                            className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                          />
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Ou Digitar Nome Manual */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ou Digite Nome Manual / Terceiro</label>
+                <input
+                  type="text"
+                  placeholder="Nome do operador (caso não esteja no setor)..."
+                  value={customOperatorName}
+                  onChange={(e) => setCustomOperatorName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Tipo de Operador & Status */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tipo de Operador</label>
+                  <select
+                    value={formOperatorType}
+                    onChange={(e) => setFormOperatorType(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
+                  >
+                    {availableTypes.map((t: string) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Status</label>
+                  <select
+                    value={formStatus}
+                    onChange={(e) => setFormStatus(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
+                  >
+                    {STATUSES_DEFAULT.map((st: string) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Observações e Tarefas */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Detalhamento de Tarefas / Instruções do Turno</label>
+                <textarea
+                  rows={2}
+                  placeholder="Descreva as tarefas ou avisos importantes para este turno..."
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                />
               </div>
 
             </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => createBulkShifts.mutate()}
+                disabled={createBulkShifts.isPending}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm flex items-center gap-1.5"
+              >
+                {createBulkShifts.isPending ? 'Gravando...' : 'Confirmar Lançamento'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: DETALHES DA ESCALA & COMENTÁRIOS / TAREFAS DO TURNO */}
+      {selectedShiftDetails && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 max-w-lg w-full p-6 shadow-xl flex flex-col gap-5 my-8">
+            
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                {getUserAvatar(selectedShiftDetails.operator_user_id, selectedShiftDetails.operator_name) ? (
+                  <img 
+                    src={getUserAvatar(selectedShiftDetails.operator_user_id, selectedShiftDetails.operator_name)!} 
+                    alt={selectedShiftDetails.operator_name} 
+                    className="w-10 h-10 rounded-full object-cover border border-slate-300 shadow-xs" 
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold text-sm flex items-center justify-center shadow-xs">
+                    {getInitials(selectedShiftDetails.operator_name)}
+                  </div>
+                )}
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">{selectedShiftDetails.operator_name}</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {selectedShiftDetails.shift_name} ({selectedShiftDetails.shift_time}) - {selectedShiftDetails.region_name}
+                  </p>
+                </div>
+              </div>
+
+              <button onClick={() => setSelectedShiftDetails(null)} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Detalhes Técnicos do Turno */}
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Tipo</span>
+                <span className="font-semibold text-slate-800">{selectedShiftDetails.operator_type}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>
+                <span className="font-bold text-blue-700">{selectedShiftDetails.status}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Data</span>
+                <span className="font-semibold text-slate-800">{selectedShiftDetails.shift_date}</span>
+              </div>
+            </div>
+
+            {/* Instruções / Tarefas */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                Tarefas e Instruções do Turno
+              </span>
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-700">
+                {selectedShiftDetails.notes || 'Nenhuma instrução específica informada.'}
+              </div>
+            </div>
+
+            {/* SEÇÃO DE COMENTÁRIOS DA ESCALA */}
+            <div className="flex flex-col gap-3 pt-2 border-t border-slate-100">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                Comentários e Atualizações ({shiftComments?.length || 0})
+              </span>
+
+              {/* Lista de Comentários */}
+              <div className="max-h-48 overflow-y-auto flex flex-col gap-2.5 p-1">
+                {(shiftComments || []).length === 0 ? (
+                  <span className="text-xs text-slate-400 italic text-center py-4">Nenhum comentário cadastrado ainda.</span>
+                ) : (
+                  shiftComments?.map((c: any) => (
+                    <div key={c.id} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-xs flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          {c.user_avatar ? (
+                            <img src={c.user_avatar} alt={c.user_name} className="w-5 h-5 rounded-full object-cover" />
+                          ) : (
+                            <div className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
+                              {getInitials(c.user_name)}
+                            </div>
+                          )}
+                          <span className="font-bold text-slate-800">{c.user_name}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(c.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-slate-700 pl-6">{c.content}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Campo de Enviar Novo Comentário */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Escreva um comentário ou atualização sobre a tarefa..."
+                  value={newCommentText}
+                  onChange={(e) => setNewCommentText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      addCommentMutation.mutate();
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  onClick={() => addCommentMutation.mutate()}
+                  disabled={addCommentMutation.isPending || !newCommentText.trim()}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-md text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+              {!isReadOnly ? (
+                <button
+                  onClick={() => {
+                    if (confirm("Remover esta escala do dia?")) {
+                      deleteShiftMutation.mutate(selectedShiftDetails.id);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir Escala
+                </button>
+              ) : <div />}
+
+              <button
+                onClick={() => setSelectedShiftDetails(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: CONFIGURAR OPÇÕES DE ESCALA DO SETOR (Turnos e Bases Fixas) */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 max-w-lg w-full p-6 shadow-xl flex flex-col gap-5 my-8">
+            
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-800 text-base">Configurações de Escala do Setor</h3>
+              </div>
+              <button onClick={() => setIsSettingsOpen(false)} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-5 text-xs">
+              
+              {/* Turnos Fixos */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Turnos do Setor</label>
+                <div className="flex flex-col gap-2 mb-2">
+                  {settingsShifts.map((s: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-md">
+                      <div className="font-bold text-slate-800">{s.name} <span className="font-normal text-slate-500">({s.time})</span></div>
+                      <button
+                        onClick={() => setSettingsShifts(settingsShifts.filter((_: any, i: number) => i !== idx))}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Nome (Ex: MANHÃ)"
+                    value={newShiftName}
+                    onChange={(e) => setNewShiftName(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Horário (Ex: 08:00 - 12:00)"
+                    value={newShiftTime}
+                    onChange={(e) => setNewShiftTime(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newShiftName.trim()) {
+                        setSettingsShifts([...settingsShifts, { name: newShiftName.trim().toUpperCase(), time: newShiftTime.trim() || '08:00 - 18:00' }]);
+                        setNewShiftName('');
+                        setNewShiftTime('');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+
+              {/* Regiões / Bases Fixas */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Bases / Regiões Operacionais</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {settingsRegions.map((r: string, idx: number) => (
+                    <span key={idx} className="px-2.5 py-1 bg-slate-100 border border-slate-200 font-bold rounded-full text-slate-700 flex items-center gap-1">
+                      {r}
+                      <button onClick={() => setSettingsRegions(settingsRegions.filter((_: string, i: number) => i !== idx))} className="hover:text-rose-600">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Nova Base/Região (Ex: Matriz, Aldeota)..."
+                    value={newRegionText}
+                    onChange={(e) => setNewRegionText(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newRegionText.trim() && !settingsRegions.includes(newRegionText.trim())) {
+                        setSettingsRegions([...settingsRegions, newRegionText.trim()]);
+                        setNewRegionText('');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+
+              {/* Tipos de Operação */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Tipos de Operador / Funções</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {settingsTypes.map((t: string, idx: number) => (
+                    <span key={idx} className="px-2.5 py-1 bg-slate-100 border border-slate-200 font-bold rounded-full text-slate-700 flex items-center gap-1">
+                      {t}
+                      <button onClick={() => setSettingsTypes(settingsTypes.filter((_: string, i: number) => i !== idx))} className="hover:text-rose-600">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Novo tipo (Ex: Dedicado, Apoio)..."
+                    value={newTypeText}
+                    onChange={(e) => setNewTypeText(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newTypeText.trim() && !settingsTypes.includes(newTypeText.trim())) {
+                        setSettingsTypes([...settingsTypes, newTypeText.trim()]);
+                        setNewTypeText('');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => saveSettingsMutation.mutate()}
+                disabled={saveSettingsMutation.isPending}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm"
+              >
+                {saveSettingsMutation.isPending ? 'Salvando...' : 'Salvar Configurações'}
+              </button>
+            </div>
+
           </div>
         </div>
       )}
