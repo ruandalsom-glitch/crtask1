@@ -25,7 +25,7 @@ export default function Home() {
           supabase.from('profiles').select('role').eq('id', user.id).single(),
           supabase.from('workspaces').select('*').order('created_at'),
           supabase.from('workspace_members').select('workspaces(*)').eq('user_id', user.id),
-          supabase.from('profiles').select('email, role')
+          supabase.from('profiles').select('id, email, role')
         ]);
 
         const profile = profileRes.data;
@@ -57,7 +57,7 @@ export default function Home() {
         // 3. Busca quadros do setor ativo
         const { data: boards, error: boardsError } = await supabase
           .from('boards')
-          .select('id, name')
+          .select('id, name, created_by')
           .eq('workspace_id', activeWorkspace.id)
           .order('created_at');
 
@@ -68,8 +68,8 @@ export default function Home() {
 
         const allowedBoards = (boards || []).filter(board =>
           canUserAccessBoard({
-            boardName: board.name,
-            userEmail: user.email || '',
+            board: { name: board.name, created_by: board.created_by },
+            user: { id: user.id, email: user.email || '' },
             userRole: profile?.role,
             visibilityMode,
             profiles

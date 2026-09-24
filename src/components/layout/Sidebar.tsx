@@ -78,9 +78,9 @@ export function Sidebar() {
       if (!activeWorkspaceId || !userProfile?.id) return [];
 
       const [boardsRes, workspaceRes, profilesRes] = await Promise.all([
-        supabase.from('boards').select('*').eq('workspace_id', activeWorkspaceId).order('created_at'),
+        supabase.from('boards').select('id, name, workspace_id, created_by').eq('workspace_id', activeWorkspaceId).order('created_at'),
         supabase.from('workspaces').select('visibility_mode').eq('id', activeWorkspaceId).maybeSingle(),
-        supabase.from('profiles').select('email, role')
+        supabase.from('profiles').select('id, email, role')
       ]);
 
       if (boardsRes.error) throw boardsRes.error;
@@ -96,8 +96,8 @@ export function Sidebar() {
       // Usuários comuns (role === 'user'): filtra quadros segundo o modo de visibilidade do setor
       const allowedBoards = data.filter((board: any) =>
         canUserAccessBoard({
-          boardName: board.name,
-          userEmail: userProfile.email || '',
+          board: { name: board.name, created_by: board.created_by },
+          user: { id: userProfile.id, email: userProfile.email || '' },
           userRole: userRole,
           visibilityMode,
           profiles
@@ -205,10 +205,25 @@ export function Sidebar() {
               onClick={async () => {
                 const name = prompt('Nome do novo quadro:');
                 if (name && activeWorkspaceId) {
-                  const { data, error } = await supabase.from('boards').insert([{ name, workspace_id: activeWorkspaceId }]).select();
-                  if (!error && data) {
+                  const { data: { user } } = await supabase.auth.getUser();
+                  
+                  let insertResult = await supabase
+                    .from('boards')
+                    .insert([{ name, workspace_id: activeWorkspaceId, created_by: user?.id }])
+                    .select();
+
+                  if (insertResult.error && insertResult.error.message?.includes('created_by')) {
+                    insertResult = await supabase
+                      .from('boards')
+                      .insert([{ name, workspace_id: activeWorkspaceId }])
+                      .select();
+                  }
+
+                  if (!insertResult.error && insertResult.data && insertResult.data.length > 0) {
                     queryClient.invalidateQueries({ queryKey: ['sidebar_boards', activeWorkspaceId] });
-                    router.push(`/boards/${data[0].id}`);
+                    router.push(`/boards/${insertResult.data[0].id}`);
+                  } else if (insertResult.error) {
+                    alert('Erro ao criar quadro: ' + insertResult.error.message);
                   }
                 } else if (!activeWorkspaceId) {
                   alert('Selecione um setor primeiro!');
