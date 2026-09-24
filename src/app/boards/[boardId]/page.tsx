@@ -8,7 +8,7 @@ import { BoardRoutineView } from '@/components/board/BoardRoutineView';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
-import { canUserAccessBoard } from '@/lib/privacy';
+import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
 
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
@@ -51,10 +51,16 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       });
 
       if (allowed) {
-        return { allowed: true, board };
+        const isOwnBoard = isBoardOwnedByUser(
+          { name: board.name, created_by: board.created_by },
+          { id: user.id, email: user.email || '' }
+        );
+        const canEdit = profile?.role === 'admin' || profile?.role === 'leader' || isOwnBoard;
+
+        return { allowed: true, canEdit, board };
       }
 
-      return { allowed: false, reason: 'private_board', board };
+      return { allowed: false, canEdit: false, reason: 'private_board', board };
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000
@@ -94,13 +100,34 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   }
 
   const boardName = accessCheck?.board?.name || 'Panorama do projeto';
+  const isReadOnly = accessCheck?.canEdit === false;
 
   return (
     <div className="flex flex-col h-full w-full">
+      {/* Banner de Modo de Leitura */}
+      {isReadOnly && (
+        <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5 flex items-center justify-between text-xs font-semibold text-amber-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="p-1 bg-amber-200/60 rounded text-amber-900">👁️</span>
+            <span><strong>Modo de Leitura:</strong> Você está visualizando o quadro de um colega do setor. A criação e alteração de tarefas são restritas ao proprietário do quadro e líderes.</span>
+          </div>
+          <span className="px-2.5 py-1 bg-amber-100 border border-amber-300 rounded-full text-[10px] font-bold uppercase tracking-wider text-amber-900">
+            Apenas Visualização
+          </span>
+        </div>
+      )}
+
       {/* Header do Quadro */}
       <div className="flex flex-col border-b border-slate-200 px-8 pt-8 pb-0 gap-6 bg-white z-20 shrink-0">
         <div className="flex justify-between items-start">
-          <h1 className="text-[36px] md:text-[42px] font-bold text-[#323338] tracking-tight">{boardName}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-[36px] md:text-[42px] font-bold text-[#323338] tracking-tight">{boardName}</h1>
+            {isReadOnly && (
+              <span className="text-xs bg-slate-100 text-slate-600 font-bold px-3 py-1 rounded-full border border-slate-200">
+                Apenas Leitura
+              </span>
+            )}
+          </div>
           <button className="p-2 hover:bg-slate-100 rounded text-slate-500">
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M6 12a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
           </button>
@@ -160,7 +187,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
 
           <div className="flex items-center gap-4 text-[13px] text-[#676879] mb-2 font-medium">
             <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 rounded transition-colors">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 005.656-5.656l-1.1 1.1"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
               Integrar
             </button>
             <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 rounded transition-colors">
@@ -174,13 +201,13 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       {/* Renderização Condicional do Conteúdo */}
       <div className="flex-1 overflow-auto">
         {activeTab === 'tabela' ? (
-          <BoardTableView boardId={boardId} />
+          <BoardTableView boardId={boardId} isReadOnly={isReadOnly} />
         ) : activeTab === 'kanban' ? (
-          <BoardKanbanView boardId={boardId} />
+          <BoardKanbanView boardId={boardId} isReadOnly={isReadOnly} />
         ) : activeTab === 'rotina' ? (
-          <BoardRoutineView boardId={boardId} />
+          <BoardRoutineView boardId={boardId} isReadOnly={isReadOnly} />
         ) : (
-          <BoardCalendarView boardId={boardId} />
+          <BoardCalendarView boardId={boardId} isReadOnly={isReadOnly} />
         )}
       </div>
     </div>

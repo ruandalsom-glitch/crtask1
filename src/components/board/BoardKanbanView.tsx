@@ -25,7 +25,7 @@ import { AssigneeViewToggle } from './AssigneeViewToggle';
 
 const STATUSES = ['Pendente', 'Trabalhando', 'Travado', 'Feito'];
 
-export function BoardKanbanView({ boardId }: { boardId: string }) {
+export function BoardKanbanView({ boardId, isReadOnly }: { boardId: string; isReadOnly?: boolean }) {
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   
@@ -177,13 +177,10 @@ export function BoardKanbanView({ boardId }: { boardId: string }) {
   const boardName = boardInfo?.name || '';
   const isGeneralBoard = boardName.toLowerCase().includes('projeto') || boardName.toLowerCase().includes('panorama') || boardName.toLowerCase().includes('geral');
   const isBoardOwner = userProfile?.email?.toLowerCase().includes(boardName.toLowerCase().trim());
-  const canEditBoard = isLeaderOrAdmin || isGeneralBoard || isBoardOwner || !boardName;
+  const canEditBoard = !isReadOnly;
 
   const canDeleteTask = (task: any) => {
-    if (isLeaderOrAdmin) return true;
-    if (canEditBoard && task.assignee_email === userProfile?.email) return true;
-    if (isBoardOwner) return true;
-    return false;
+    return !isReadOnly;
   };
 
   const updateTaskStatus = useMutation({

@@ -13,7 +13,7 @@ function getWeekNumber(d: Date) {
   return Math.ceil(( ( (date.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
 }
 
-export function BoardRoutineView({ boardId }: { boardId: string }) {
+export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isReadOnly?: boolean }) {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -75,7 +75,7 @@ export function BoardRoutineView({ boardId }: { boardId: string }) {
     }
   });
 
-  const canEditBoard = true;
+  const canEditBoard = !isReadOnly;
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['tasks', boardId],

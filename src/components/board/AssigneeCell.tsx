@@ -7,7 +7,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { UserPlus, X, Search, User, Mail, Image, Crown, Building2 } from 'lucide-react';
 import { AssigneeViewMode } from './AssigneeViewToggle';
 
-export function AssigneeCell({ task }: { task: any }) {
+export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedSectorId, setSelectedSectorId] = useState<string>('current');
@@ -129,6 +129,7 @@ export function AssigneeCell({ task }: { task: any }) {
   }, [isOpen]);
 
   const handleOpen = (e: React.MouseEvent) => {
+    if (disabled) return;
     if (isOpen) {
       setIsOpen(false);
       return;

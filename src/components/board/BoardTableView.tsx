@@ -37,7 +37,7 @@ const PriorityStars = ({ rating, onChange }: { rating: number, onChange: (newRat
   </div>
 );
 
-export function BoardTableView({ boardId }: { boardId: string }) {
+export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isReadOnly?: boolean }) {
   const queryClient = useQueryClient();
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState<any | null>(null);
@@ -150,10 +150,10 @@ export function BoardTableView({ boardId }: { boardId: string }) {
     }
   });
 
-  const canEditBoard = true;
+  const canEditBoard = !isReadOnly;
 
   const canDeleteTask = (task: any) => {
-    return true; // Qualquer usuário no quadro pode excluir ou gerenciar tarefas
+    return !isReadOnly;
   };
 
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -815,10 +815,10 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                         </div>
                       </td>
                       <td className="px-4 py-0 border-r border-slate-200 text-center relative group/assignee">
-                        <AssigneeCell task={task} />
+                        <AssigneeCell task={task} disabled={isReadOnly} />
                       </td>
                       <td className="p-0 border-r border-slate-200 relative z-10">
-                        <StatusCell task={task} />
+                        <StatusCell task={task} disabled={isReadOnly} />
                       </td>
                       <td className="px-4 py-0 border-r border-slate-200">
                         <TimelineBar 
@@ -837,19 +837,21 @@ export function BoardTableView({ boardId }: { boardId: string }) {
                            <span className={`text-[13px] ${getDueStatus(task.due_date, task.status) === 'overdue' && task.status !== 'Feito' ? 'text-red-500 font-medium' : 'text-[#323338]'} ${task.status === 'Feito' ? 'line-through text-slate-400' : ''}`}>
                              {formatDate(task.due_date) || '-'}
                            </span>
-                           <input 
-                             type="date" 
-                             defaultValue={task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : ''}
-                             onChange={(e) => updateTask.mutate({ id: task.id, updates: { due_date: e.target.value } })}
-                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-hack"
-                           />
+                           {!isReadOnly && (
+                             <input 
+                               type="date" 
+                               defaultValue={task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : ''}
+                               onChange={(e) => updateTask.mutate({ id: task.id, updates: { due_date: e.target.value } })}
+                               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-hack"
+                             />
+                           )}
                         </div>
                       </td>
                       <td className="p-0 border-r border-slate-200 text-center">
-                        <PriorityCell task={task} />
+                        <PriorityCell task={task} disabled={isReadOnly} />
                       </td>
                       <td className="p-0 border-r border-slate-200 text-center">
-                        <EffortCell task={task} />
+                        <EffortCell task={task} disabled={isReadOnly} />
                       </td>
                       <td className="px-4 py-0 border-r border-slate-200 text-center hover:bg-slate-50 cursor-pointer group/file relative h-full">
                         <label className="flex items-center justify-center h-[42px] w-full cursor-pointer">

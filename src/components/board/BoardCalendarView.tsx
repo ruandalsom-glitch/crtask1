@@ -131,7 +131,7 @@ function DayCell({ dayObj, tasks, isToday, onTaskClick, onAddClick }: any) {
   );
 }
 
-export function BoardCalendarView({ boardId }: { boardId: string }) {
+export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; isReadOnly?: boolean }) {
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [taskDetailsOpen, setTaskDetailsOpen] = useState<any | null>(null);
@@ -272,10 +272,10 @@ export function BoardCalendarView({ boardId }: { boardId: string }) {
     }
   });
 
-  const canEditBoard = true;
+  const canEditBoard = !isReadOnly;
 
   const canDeleteTask = (task: any) => {
-    return true;
+    return !isReadOnly;
   };
 
   const [drawerTab, setDrawerTab] = useState<'updates'|'files'|'activity'>('updates');

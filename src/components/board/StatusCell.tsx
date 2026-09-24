@@ -12,7 +12,7 @@ const STATUS_COLORS: Record<string, string> = {
   'Pendente': 'bg-[#c4c4c4]',
 };
 
-export function StatusCell({ task }: { task: any }) {
+export function StatusCell({ task, disabled }: { task: any; disabled?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -50,6 +50,7 @@ export function StatusCell({ task }: { task: any }) {
 
   const updateStatus = useMutation({
     mutationFn: async (newStatus: string) => {
+      if (disabled) return;
       const updates: any = { status: newStatus };
       if (newStatus === 'Feito') {
         updates.group_name = 'Concluído';
@@ -70,6 +71,7 @@ export function StatusCell({ task }: { task: any }) {
   });
 
   const handleOpen = (e: React.MouseEvent) => {
+    if (disabled) return;
     if (buttonRef.current) {
       setRect(buttonRef.current.getBoundingClientRect());
     }
@@ -81,7 +83,8 @@ export function StatusCell({ task }: { task: any }) {
       <button
         ref={buttonRef}
         onClick={handleOpen}
-        className={`w-full h-full min-h-[36px] flex items-center justify-center text-white font-medium text-[13px] shadow-sm hover:opacity-90 transition-opacity ${colorClass}`}
+        disabled={disabled}
+        className={`w-full h-full min-h-[36px] flex items-center justify-center text-white font-medium text-[13px] shadow-sm transition-opacity ${disabled ? 'cursor-default' : 'hover:opacity-90 cursor-pointer'} ${colorClass}`}
         style={{ textShadow: '0px 1px 1px rgba(0,0,0,0.1)' }}
       >
         <span className="truncate px-2">{currentStatus}</span>
