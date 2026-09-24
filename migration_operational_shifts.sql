@@ -36,8 +36,12 @@ CREATE TABLE IF NOT EXISTS public.operational_shift_settings (
   ]'::jsonb,
   regions JSONB DEFAULT '["Matriz", "Aldeota", "Barra", "Campo"]'::jsonb,
   operator_types JSONB DEFAULT '["Dedicado", "Apoio", "Nuvem"]'::jsonb,
+  statuses JSONB DEFAULT '["Confirmado", "Pendente", "Vaga"]'::jsonb,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.operational_shift_settings ADD COLUMN IF NOT EXISTS statuses JSONB DEFAULT '["Confirmado", "Pendente", "Vaga"]'::jsonb;
+
 
 ALTER TABLE public.operational_shift_settings ENABLE ROW LEVEL SECURITY;
 

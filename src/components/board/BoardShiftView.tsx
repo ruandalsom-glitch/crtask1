@@ -7,7 +7,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Plus, Search, Filter, 
   Trash2, Edit, User, MapPin, Clock, CheckCircle2, AlertCircle, 
   HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check,
-  Settings, MessageSquare, Send, Layers, Sparkles
+  Settings, MessageSquare, Send, Layers, Sparkles, CalendarDays, RefreshCw
 } from 'lucide-react';
 
 const SHIFTS_DEFAULT = [
@@ -48,21 +48,6 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   // Comentários do Modal de Detalhes
   const [newCommentText, setNewCommentText] = useState('');
 
-  // Estado do Formulário de Escala em Lote (Múltiplas Datas e Múltiplas Pessoas)
-  const [formShiftName, setFormShiftName] = useState('MANHÃ');
-  const [formShiftTime, setFormShiftTime] = useState('08:00 - 12:00');
-  const [formRegionName, setFormRegionName] = useState('Matriz');
-  const [formOperatorType, setFormOperatorType] = useState('Dedicado');
-  const [formStatus, setFormStatus] = useState('Confirmado');
-  const [formNotes, setFormNotes] = useState('');
-  
-  // Múltiplas Datas Selecionadas no Modal
-  const [formDates, setFormDates] = useState<string[]>([selectedDate]);
-
-  // Múltiplas Pessoas Selecionadas no Modal
-  const [formSelectedPeople, setFormSelectedPeople] = useState<string[]>([]);
-  const [customOperatorName, setCustomOperatorName] = useState('');
-
   // 1. Busca dados do Usuário Atual
   const { data: currentUser } = useQuery({
     queryKey: ['current_user'],
@@ -101,7 +86,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     staleTime: 5 * 60 * 1000
   });
 
-  // 4. Configurações da Escala do Quadro (Turnos, Regiões e Tipos Fixos/Customizáveis)
+  // 4. Configurações da Escala do Quadro (Turnos, Regiões, Tipos e Status Fixos/Customizáveis)
   const { data: shiftSettings } = useQuery({
     queryKey: ['operational_shift_settings', boardId],
     queryFn: async () => {
@@ -115,14 +100,16 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         return {
           shifts: SHIFTS_DEFAULT,
           regions: REGIONS_DEFAULT,
-          operator_types: TYPES_DEFAULT
+          operator_types: TYPES_DEFAULT,
+          statuses: STATUSES_DEFAULT
         };
       }
 
       return {
         shifts: data.shifts || SHIFTS_DEFAULT,
         regions: data.regions || REGIONS_DEFAULT,
-        operator_types: data.operator_types || TYPES_DEFAULT
+        operator_types: data.operator_types || TYPES_DEFAULT,
+        statuses: data.statuses || STATUSES_DEFAULT
       };
     }
   });
@@ -130,21 +117,41 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   const availableShifts = shiftSettings?.shifts || SHIFTS_DEFAULT;
   const availableRegions = shiftSettings?.regions || REGIONS_DEFAULT;
   const availableTypes = shiftSettings?.operator_types || TYPES_DEFAULT;
+  const availableStatuses = shiftSettings?.statuses || STATUSES_DEFAULT;
 
-  // Estados locais para edição de Configurações
+  // Estados do Formulário de Escala em Lote (Múltiplas Datas, Pessoas, Regiões e Tipos)
+  const [formShiftName, setFormShiftName] = useState(availableShifts[0]?.name || 'MANHÃ');
+  const [formShiftTime, setFormShiftTime] = useState(availableShifts[0]?.time || '08:00 - 12:00');
+  const [formSelectedRegions, setFormSelectedRegions] = useState<string[]>([availableRegions[0] || 'Matriz']);
+  const [formSelectedTypes, setFormSelectedTypes] = useState<string[]>([availableTypes[0] || 'Dedicado']);
+  const [formStatus, setFormStatus] = useState(availableStatuses[0] || 'Confirmado');
+  const [formNotes, setFormNotes] = useState('');
+  
+  // Múltiplas Datas Selecionadas no Modal
+  const [formDates, setFormDates] = useState<string[]>([selectedDate]);
+
+  // Múltiplas Pessoas Selecionadas no Modal
+  const [formSelectedPeople, setFormSelectedPeople] = useState<string[]>([]);
+  const [customOperatorName, setCustomOperatorName] = useState('');
+
+  // Estados locais para edição de Configurações do Setor
   const [settingsShifts, setSettingsShifts] = useState(availableShifts);
   const [settingsRegions, setSettingsRegions] = useState(availableRegions);
   const [settingsTypes, setSettingsTypes] = useState(availableTypes);
+  const [settingsStatuses, setSettingsStatuses] = useState(availableStatuses);
+
   const [newRegionText, setNewRegionText] = useState('');
   const [newTypeText, setNewTypeText] = useState('');
+  const [newStatusText, setNewStatusText] = useState('');
   const [newShiftName, setNewShiftName] = useState('');
   const [newShiftTime, setNewShiftTime] = useState('');
 
-  // Open Settings Modal helper
+  // Abrir Modal de Configurações
   const handleOpenSettings = () => {
     setSettingsShifts(availableShifts);
     setSettingsRegions(availableRegions);
     setSettingsTypes(availableTypes);
+    setSettingsStatuses(availableStatuses);
     setIsSettingsOpen(true);
   };
 
@@ -159,6 +166,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
           shifts: settingsShifts,
           regions: settingsRegions,
           operator_types: settingsTypes,
+          statuses: settingsStatuses,
           updated_at: new Date().toISOString()
         });
       if (error) throw error;
@@ -290,11 +298,55 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     });
   }, [rawShifts, selectedDate, filterShift, filterRegion, filterType, filterStatus, onlyVacancies, searchQuery]);
 
-  // Salvar / Criar Escalas em Lote (Suporta Múltiplos Dias e Múltiplas Pessoas)
+  // Funções de Atalho Rápido de Datas
+  const setDatesSegSex = () => {
+    const base = new Date(`${selectedDate}T00:00:00`);
+    const dayOfWeek = base.getDay(); // 0: Dom, 1: Seg, ..., 6: Sáb
+    const monday = new Date(base);
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    monday.setDate(monday.getDate() + diffToMonday);
+
+    const dates: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(monday);
+      d.setDate(d.getDate() + i);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    setFormDates(dates);
+  };
+
+  const setDates7Dias = () => {
+    const base = new Date(`${selectedDate}T00:00:00`);
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(base);
+      d.setDate(d.getDate() + i);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    setFormDates(dates);
+  };
+
+  const setDatesMesInteiro = () => {
+    const base = new Date(`${selectedDate}T00:00:00`);
+    const year = base.getFullYear();
+    const month = base.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const dates: string[] = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    setFormDates(dates);
+  };
+
+  // Salvar / Criar Escalas em Lote (Suporta Múltiplas Datas, Pessoas, Regiões e Tipos)
   const createBulkShifts = useMutation({
     mutationFn: async () => {
       if (isReadOnly) throw new Error("Acesso restrito");
       if (formDates.length === 0) throw new Error("Selecione pelo menos uma data.");
+      if (formSelectedRegions.length === 0) throw new Error("Selecione pelo menos uma região/base.");
+      if (formSelectedTypes.length === 0) throw new Error("Selecione pelo menos um tipo de operador/função.");
 
       let peopleToInsert: Array<{ name: string; userId: string | null }> = [];
 
@@ -314,21 +366,25 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
 
       const rowsToInsert = [];
       for (const d of formDates) {
-        for (const p of peopleToInsert) {
-          rowsToInsert.push({
-            board_id: boardId,
-            workspace_id: boardData?.workspace_id || null,
-            shift_date: d,
-            shift_name: formShiftName,
-            shift_time: formShiftTime,
-            region_name: formRegionName,
-            operator_user_id: p.userId,
-            operator_name: p.name,
-            operator_type: formOperatorType,
-            status: formStatus,
-            notes: formNotes,
-            created_by: currentUser?.id || null
-          });
+        for (const reg of formSelectedRegions) {
+          for (const tp of formSelectedTypes) {
+            for (const p of peopleToInsert) {
+              rowsToInsert.push({
+                board_id: boardId,
+                workspace_id: boardData?.workspace_id || null,
+                shift_date: d,
+                shift_name: formShiftName,
+                shift_time: formShiftTime,
+                region_name: reg,
+                operator_user_id: p.userId,
+                operator_name: p.name,
+                operator_type: tp,
+                status: formStatus,
+                notes: formNotes,
+                created_by: currentUser?.id || null
+              });
+            }
+          }
         }
       }
 
@@ -358,41 +414,12 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   });
 
-  // Atualizar Escala Existente
-  const updateShiftMutation = useMutation({
-    mutationFn: async (shiftData: any) => {
-      if (isReadOnly) throw new Error("Acesso restrito");
-      const { error } = await supabase
-        .from('operational_shifts')
-        .update({
-          shift_name: shiftData.shift_name,
-          shift_time: shiftData.shift_time,
-          region_name: shiftData.region_name,
-          operator_type: shiftData.operator_type,
-          status: shiftData.status,
-          notes: shiftData.notes,
-          operator_name: shiftData.operator_name,
-          operator_user_id: shiftData.operator_user_id
-        })
-        .eq('id', shiftData.id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['operational_shifts', boardId] });
-      setEditingShift(null);
-      if (selectedShiftDetails) {
-        setSelectedShiftDetails((prev: any) => ({ ...prev, ...editingShift }));
-      }
-    }
-  });
-
   const resetForm = () => {
     setFormShiftName(availableShifts[0]?.name || 'MANHÃ');
     setFormShiftTime(availableShifts[0]?.time || '08:00 - 12:00');
-    setFormRegionName(availableRegions[0] || 'Matriz');
-    setFormOperatorType(availableTypes[0] || 'Dedicado');
-    setFormStatus('Confirmado');
+    setFormSelectedRegions([availableRegions[0] || 'Matriz']);
+    setFormSelectedTypes([availableTypes[0] || 'Dedicado']);
+    setFormStatus(availableStatuses[0] || 'Confirmado');
     setFormNotes('');
     setFormDates([selectedDate]);
     setFormSelectedPeople([]);
@@ -412,6 +439,22 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       setFormSelectedPeople(formSelectedPeople.filter(id => id !== pId));
     } else {
       setFormSelectedPeople([...formSelectedPeople, pId]);
+    }
+  };
+
+  const toggleFormRegion = (rStr: string) => {
+    if (formSelectedRegions.includes(rStr)) {
+      if (formSelectedRegions.length > 1) setFormSelectedRegions(formSelectedRegions.filter(r => r !== rStr));
+    } else {
+      setFormSelectedRegions([...formSelectedRegions, rStr]);
+    }
+  };
+
+  const toggleFormType = (tStr: string) => {
+    if (formSelectedTypes.includes(tStr)) {
+      if (formSelectedTypes.length > 1) setFormSelectedTypes(formSelectedTypes.filter(t => t !== tStr));
+    } else {
+      setFormSelectedTypes([...formSelectedTypes, tStr]);
     }
   };
 
@@ -467,7 +510,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             <button
               onClick={handleOpenSettings}
               className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
-              title="Configurar Turnos e Bases do Setor"
+              title="Configurar Turnos, Bases e Status do Setor"
             >
               <Settings className="w-3.5 h-3.5 text-slate-500" />
               <span>Opções de Escala</span>
@@ -578,6 +621,18 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             ))}
           </select>
 
+          {/* Filtro Status */}
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-700 text-xs focus:outline-none focus:border-blue-500 cursor-pointer"
+          >
+            <option value="all">Todos os status</option>
+            {availableStatuses.map((st: string) => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
+
           {/* Toggle Vagas */}
           <button
             onClick={() => setOnlyVacancies(!onlyVacancies)}
@@ -592,7 +647,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         </div>
       </div>
 
-      {/* ÁREA DE CONTEÚDO PRINCIPAL (TEMA CLARO CLEAN) */}
+      {/* ÁREA DE CONTEÚDO PRINCIPAL */}
       <div className="flex-1 overflow-auto p-8">
         
         {/* VISÃO 1: QUADRO (CARDS MATRICIAIS POR TURNO) */}
@@ -675,7 +730,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                               <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
                                 item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                 item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                'bg-rose-50 text-rose-700 border-rose-200'
+                                'bg-slate-100 text-slate-700 border-slate-300'
                               }`}>
                                 {item.status}
                               </span>
@@ -749,7 +804,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                           <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
                             item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                             item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-rose-50 text-rose-700 border-rose-200'
+                            'bg-slate-100 text-slate-700 border-slate-300'
                           }`}>
                             {item.status}
                           </span>
@@ -837,7 +892,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
 
       </div>
 
-      {/* MODAL 1: LANÇAR ESCALA EM LOTE (Múltiplas Datas e Pessoas do Setor) */}
+      {/* MODAL 1: LANÇAR ESCALA EM LOTE (Múltiplas Datas, Pessoas, Regiões e Tipos) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 max-w-xl w-full p-6 shadow-xl flex flex-col gap-5 my-8">
@@ -854,11 +909,45 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
 
             <div className="flex flex-col gap-4 text-xs">
               
-              {/* Seleção de Múltiplas Datas */}
+              {/* SEÇÃO 1: DATAS COM ATALHOS RÁPIDOS */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  1. Datas da Escala <span className="text-slate-400 font-normal">(Selecione um ou mais dias)</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-bold text-slate-700">
+                    1. Datas da Escala <span className="text-slate-400 font-normal">({formDates.length} dia(s) selecionado(s))</span>
+                  </label>
+                  {/* Atalhos Rápidos */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={setDatesSegSex}
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 rounded text-[10px] font-bold border border-slate-200 transition-colors cursor-pointer"
+                      title="Selecionar Segunda a Sexta da semana atual"
+                    >
+                      Seg-Sex
+                    </button>
+                    <button
+                      onClick={setDates7Dias}
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 rounded text-[10px] font-bold border border-slate-200 transition-colors cursor-pointer"
+                      title="Selecionar os próximos 7 dias"
+                    >
+                      7 Dias
+                    </button>
+                    <button
+                      onClick={setDatesMesInteiro}
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 rounded text-[10px] font-bold border border-slate-200 transition-colors cursor-pointer"
+                      title="Selecionar todos os dias do mês"
+                    >
+                      Mês Inteiro
+                    </button>
+                    <button
+                      onClick={() => setFormDates([selectedDate])}
+                      className="px-1.5 py-0.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 rounded text-[10px] font-semibold border border-slate-200 transition-colors cursor-pointer"
+                      title="Limpar seleção"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="date"
@@ -871,9 +960,9 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                     }}
                     className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
                   />
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap max-h-24 overflow-y-auto">
                     {formDates.map(d => (
-                      <span key={d} className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold rounded-full border border-blue-200 flex items-center gap-1">
+                      <span key={d} className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold rounded-full border border-blue-200 flex items-center gap-1 text-[11px]">
                         {d.split('-').reverse().slice(0,2).join('/')}
                         {formDates.length > 1 && (
                           <button onClick={() => toggleFormDate(d)} className="hover:text-rose-600">
@@ -886,46 +975,58 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                 </div>
               </div>
 
-              {/* Turno & Região */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Turno</label>
-                  <select
-                    value={formShiftName}
-                    onChange={(e) => {
-                      const selectedName = e.target.value;
-                      setFormShiftName(selectedName);
-                      const found = availableShifts.find((s: any) => s.name === selectedName);
-                      if (found?.time) setFormShiftTime(found.time);
-                    }}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
-                  >
-                    {availableShifts.map((s: any) => (
-                      <option key={s.name} value={s.name}>{s.name} ({s.time})</option>
-                    ))}
-                  </select>
-                </div>
+              {/* SEÇÃO 2: TURNO */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Turno</label>
+                <select
+                  value={formShiftName}
+                  onChange={(e) => {
+                    const selectedName = e.target.value;
+                    setFormShiftName(selectedName);
+                    const found = availableShifts.find((s: any) => s.name === selectedName);
+                    if (found?.time) setFormShiftTime(found.time);
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
+                >
+                  {availableShifts.map((s: any) => (
+                    <option key={s.name} value={s.name}>{s.name} ({s.time})</option>
+                  ))}
+                </select>
+              </div>
 
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Região / Base</label>
-                  <select
-                    value={formRegionName}
-                    onChange={(e) => setFormRegionName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
-                  >
-                    {availableRegions.map((r: string) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
+              {/* SEÇÃO 3: SELEÇÃO MÚLTIPLA DE REGIÃO / BASE */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">
+                  Região / Base <span className="text-slate-400 font-normal">(Selecione uma ou mais bases)</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-md">
+                  {availableRegions.map((r: string) => {
+                    const isSelected = formSelectedRegions.includes(r);
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => toggleFormRegion(r)}
+                        className={`px-3 py-1 rounded-full font-bold text-xs border transition-all cursor-pointer flex items-center gap-1 ${
+                          isSelected 
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3" />}
+                        <span>{r}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Seleção de Colaboradores (Exclusivos do Setor) */}
+              {/* SEÇÃO 4: COLABORADORES DO SETOR */}
               <div>
                 <label className="block font-bold text-slate-700 mb-1.5">
                   2. Colaboradores do Setor <span className="text-slate-400 font-normal">(Marque as pessoas para lançar)</span>
                 </label>
-                <div className="max-h-40 overflow-y-auto border border-slate-200 bg-slate-50 rounded-md p-2 flex flex-col gap-1">
+                <div className="max-h-36 overflow-y-auto border border-slate-200 bg-slate-50 rounded-md p-2 flex flex-col gap-1">
                   {(teamMembers || []).length === 0 ? (
                     <span className="text-xs text-slate-400 p-2 text-center">Nenhum colaborador encontrado no setor.</span>
                   ) : (
@@ -977,33 +1078,45 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                 />
               </div>
 
-              {/* Tipo de Operador & Status */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Tipo de Operador</label>
-                  <select
-                    value={formOperatorType}
-                    onChange={(e) => setFormOperatorType(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
-                  >
-                    {availableTypes.map((t: string) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+              {/* SEÇÃO 5: SELEÇÃO MÚLTIPLA DE TIPO DE OPERADOR */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">
+                  Tipo de Operador / Função <span className="text-slate-400 font-normal">(Selecione uma ou mais funções)</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-md">
+                  {availableTypes.map((t: string) => {
+                    const isSelected = formSelectedTypes.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => toggleFormType(t)}
+                        className={`px-3 py-1 rounded-full font-bold text-xs border transition-all cursor-pointer flex items-center gap-1 ${
+                          isSelected 
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3" />}
+                        <span>{t}</span>
+                      </button>
+                    );
+                  })}
                 </div>
+              </div>
 
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Status</label>
-                  <select
-                    value={formStatus}
-                    onChange={(e) => setFormStatus(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500"
-                  >
-                    {STATUSES_DEFAULT.map((st: string) => (
-                      <option key={st} value={st}>{st}</option>
-                    ))}
-                  </select>
-                </div>
+              {/* SEÇÃO 6: STATUS */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Status da Escala</label>
+                <select
+                  value={formStatus}
+                  onChange={(e) => setFormStatus(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  {availableStatuses.map((st: string) => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Observações e Tarefas */}
@@ -1023,14 +1136,14 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 onClick={() => createBulkShifts.mutate()}
                 disabled={createBulkShifts.isPending}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm flex items-center gap-1.5"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
                 {createBulkShifts.isPending ? 'Gravando...' : 'Confirmar Lançamento'}
               </button>
@@ -1185,7 +1298,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         </div>
       )}
 
-      {/* MODAL 3: CONFIGURAR OPÇÕES DE ESCALA DO SETOR (Turnos e Bases Fixas) */}
+      {/* MODAL 3: CONFIGURAR OPÇÕES DE ESCALA DO SETOR (Turnos, Bases e Status Fixos) */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 max-w-lg w-full p-6 shadow-xl flex flex-col gap-5 my-8">
@@ -1200,7 +1313,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
               </button>
             </div>
 
-            <div className="flex flex-col gap-5 text-xs">
+            <div className="flex flex-col gap-5 text-xs max-h-[70vh] overflow-y-auto pr-1">
               
               {/* Turnos Fixos */}
               <div>
@@ -1211,7 +1324,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                       <div className="font-bold text-slate-800">{s.name} <span className="font-normal text-slate-500">({s.time})</span></div>
                       <button
                         onClick={() => setSettingsShifts(settingsShifts.filter((_: any, i: number) => i !== idx))}
-                        className="text-slate-400 hover:text-rose-600 p-1"
+                        className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -1242,7 +1355,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                         setNewShiftTime('');
                       }
                     }}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md cursor-pointer"
                   >
                     Adicionar
                   </button>
@@ -1256,7 +1369,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                   {settingsRegions.map((r: string, idx: number) => (
                     <span key={idx} className="px-2.5 py-1 bg-slate-100 border border-slate-200 font-bold rounded-full text-slate-700 flex items-center gap-1">
                       {r}
-                      <button onClick={() => setSettingsRegions(settingsRegions.filter((_: string, i: number) => i !== idx))} className="hover:text-rose-600">
+                      <button onClick={() => setSettingsRegions(settingsRegions.filter((_: string, i: number) => i !== idx))} className="hover:text-rose-600 cursor-pointer">
                         <X className="w-3 h-3" />
                       </button>
                     </span>
@@ -1266,7 +1379,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Nova Base/Região (Ex: Matriz, Aldeota)..."
+                    placeholder="Nova Base/Região (Ex: Matriz, SÃO PAULO)..."
                     value={newRegionText}
                     onChange={(e) => setNewRegionText(e.target.value)}
                     className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
@@ -1278,21 +1391,21 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                         setNewRegionText('');
                       }
                     }}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md cursor-pointer"
                   >
                     Adicionar
                   </button>
                 </div>
               </div>
 
-              {/* Tipos de Operação */}
+              {/* Tipos de Operador */}
               <div>
                 <label className="block font-bold text-slate-700 mb-1.5">Tipos de Operador / Funções</label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {settingsTypes.map((t: string, idx: number) => (
                     <span key={idx} className="px-2.5 py-1 bg-slate-100 border border-slate-200 font-bold rounded-full text-slate-700 flex items-center gap-1">
                       {t}
-                      <button onClick={() => setSettingsTypes(settingsTypes.filter((_: string, i: number) => i !== idx))} className="hover:text-rose-600">
+                      <button onClick={() => setSettingsTypes(settingsTypes.filter((_: string, i: number) => i !== idx))} className="hover:text-rose-600 cursor-pointer">
                         <X className="w-3 h-3" />
                       </button>
                     </span>
@@ -1302,7 +1415,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Novo tipo (Ex: Dedicado, Apoio)..."
+                    placeholder="Novo tipo (Ex: LOGAR, Dedicado)..."
                     value={newTypeText}
                     onChange={(e) => setNewTypeText(e.target.value)}
                     className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
@@ -1314,7 +1427,43 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                         setNewTypeText('');
                       }
                     }}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md cursor-pointer"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Personalizados da Escala */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Status da Escala</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {settingsStatuses.map((st: string, idx: number) => (
+                    <span key={idx} className="px-2.5 py-1 bg-blue-50 border border-blue-200 font-bold rounded-full text-blue-800 flex items-center gap-1">
+                      {st}
+                      <button onClick={() => setSettingsStatuses(settingsStatuses.filter((_: string, i: number) => i !== idx))} className="hover:text-rose-600 cursor-pointer">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Novo status (Ex: Confirmado, Aguardando)..."
+                    value={newStatusText}
+                    onChange={(e) => setNewStatusText(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newStatusText.trim() && !settingsStatuses.includes(newStatusText.trim())) {
+                        setSettingsStatuses([...settingsStatuses, newStatusText.trim()]);
+                        setNewStatusText('');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md cursor-pointer"
                   >
                     Adicionar
                   </button>
@@ -1326,14 +1475,14 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
               <button
                 onClick={() => setIsSettingsOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 onClick={() => saveSettingsMutation.mutate()}
                 disabled={saveSettingsMutation.isPending}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm cursor-pointer"
               >
                 {saveSettingsMutation.isPending ? 'Salvando...' : 'Salvar Configurações'}
               </button>
