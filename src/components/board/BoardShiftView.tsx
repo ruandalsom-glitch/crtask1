@@ -48,15 +48,16 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   // Comentários do Modal de Detalhes
   const [newCommentText, setNewCommentText] = useState('');
 
-  // 1. Busca dados do Usuário Atual
+  // 1. Busca dados do Usuário Atual e Perfil
   const { data: currentUser } = useQuery({
-    queryKey: ['current_user'],
+    queryKey: ['current_user_shift_v3'],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      const { data: profile } = await supabase.from('profiles').select('id, email, avatar_url, role').eq('id', user.id).maybeSingle();
       return { ...user, profile };
-    }
+    },
+    staleTime: 5 * 60 * 1000
   });
 
   // 2. Busca o workspace_id do quadro
@@ -149,11 +150,20 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   const [newShiftName, setNewShiftName] = useState('');
   const [newShiftTime, setNewShiftTime] = useState('');
 
-  // Permissão de Gerenciamento: Apenas LÍDER de setor (role === 'leader' | 'lider' | 'líder') e ADMINISTRADOR (role === 'admin' | 'administrador') podem alterar configurações e escalas.
+  // Permissão de Gerenciamento: Apenas LÍDER de setor e ADMINISTRADOR podem alterar configurações e escalas.
   const canManageShifts = useMemo(() => {
-    if (!currentUser?.profile) return false;
-    const pRole = (currentUser.profile.role || '').toLowerCase().trim();
-    
+    let pRole = (currentUser?.profile?.role || '').toLowerCase().trim();
+
+    // Fallback 1: Se currentUser.profile ainda não carregou ou veio vazio, busca no teamMembers pelo id ou e-mail
+    if (!pRole && currentUser && teamMembers) {
+      const found = teamMembers.find(
+        (m: any) => m.id === currentUser.id || (currentUser.email && m.email?.toLowerCase() === currentUser.email.toLowerCase())
+      );
+      if (found?.role) {
+        pRole = (found.role || '').toLowerCase().trim();
+      }
+    }
+
     const isLeaderOrAdmin = 
       pRole === 'admin' || 
       pRole === 'administrador' || 
@@ -162,7 +172,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       pRole === 'líder';
 
     return isLeaderOrAdmin;
-  }, [currentUser]);
+  }, [currentUser, teamMembers]);
 
   // Abrir Modal de Configurações
   const handleOpenSettings = () => {
