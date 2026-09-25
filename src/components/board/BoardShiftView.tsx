@@ -149,8 +149,16 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   const [newShiftName, setNewShiftName] = useState('');
   const [newShiftTime, setNewShiftTime] = useState('');
 
+  // Permissão de Gerenciamento: Apenas LÍDER de setor (role === 'leader') e ADMINISTRADOR (role === 'admin') podem alterar configurações e escalas.
+  const canManageShifts = useMemo(() => {
+    const role = currentUser?.profile?.role;
+    const isLeaderOrAdmin = role === 'admin' || role === 'leader';
+    return isLeaderOrAdmin && !isReadOnly;
+  }, [currentUser, isReadOnly]);
+
   // Abrir Modal de Configurações
   const handleOpenSettings = () => {
+    if (!canManageShifts) return;
     setSettingsShifts(availableShifts);
     setSettingsRegions(availableRegions);
     setSettingsTypes(availableTypes);
@@ -161,7 +169,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   // Mutation para Salvar Configurações
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
-      if (isReadOnly) throw new Error("Acesso restrito");
+      if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem gerenciar as configurações da escala.");
       const { error } = await supabase
         .from('operational_shift_settings')
         .upsert({
@@ -352,7 +360,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   // Salvar / Criar Escalas em Lote (Suporta Múltiplas Datas, Pessoas, Regiões e Tipos)
   const createBulkShifts = useMutation({
     mutationFn: async () => {
-      if (isReadOnly) throw new Error("Acesso restrito");
+      if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem escalar operadores.");
       if (formDates.length === 0) throw new Error("Selecione pelo menos uma data.");
       if (formSelectedRegions.length === 0) throw new Error("Selecione pelo menos uma região/base.");
       if (formSelectedTypes.length === 0) throw new Error("Selecione pelo menos um tipo de operador/função.");
@@ -401,7 +409,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['operational_shifts', boardId] });
+      queryClient.invalidateQueries({ queryKey: ['operational_shifts'] });
       setIsModalOpen(false);
       resetForm();
     },
@@ -413,12 +421,12 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   // Excluir Escala
   const deleteShiftMutation = useMutation({
     mutationFn: async (shiftId: string) => {
-      if (isReadOnly) throw new Error("Acesso restrito");
+      if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem excluir escalas.");
       const { error } = await supabase.from('operational_shifts').delete().eq('id', shiftId);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['operational_shifts', boardId] });
+      queryClient.invalidateQueries({ queryKey: ['operational_shifts'] });
       setSelectedShiftDetails(null);
     }
   });
@@ -515,7 +523,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         <div className="flex items-center gap-3">
           
           {/* Botão Configurações da Escala (Para Líderes / Admins) */}
-          {!isReadOnly && (
+          {canManageShifts && (
             <button
               onClick={handleOpenSettings}
               className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
@@ -566,7 +574,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
           </div>
 
           {/* Botão de Lançar Escala */}
-          {!isReadOnly && (
+          {canManageShifts && (
             <button
               onClick={() => { resetForm(); setIsModalOpen(true); }}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-all cursor-pointer"
@@ -822,7 +830,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                           {item.notes || '-'}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {!isReadOnly && (
+                          {canManageShifts && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1281,7 +1289,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             </div>
 
             <div className="flex justify-between items-center pt-3 border-t border-slate-100">
-              {!isReadOnly ? (
+              {canManageShifts ? (
                 <button
                   onClick={() => {
                     if (confirm("Remover esta escala do dia?")) {
