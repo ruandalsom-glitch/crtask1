@@ -198,25 +198,56 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     }
   };
 
+  // Busca a URL do Google Agenda salva no Banco de Dados (Supabase) do Quadro
+  const { data: dbBoardGoogleUrl } = useQuery({
+    queryKey: ['board_google_calendar_url', boardId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('boards')
+        .select('google_calendar_url')
+        .eq('id', boardId)
+        .maybeSingle();
+
+      if (error) return null;
+      return data?.google_calendar_url || null;
+    },
+    staleTime: 5 * 60 * 1000
+  });
+
   useEffect(() => {
-    const savedUrl = localStorage.getItem(`gcal_url_${boardId}`) || localStorage.getItem('gcal_url_global') || '';
-    if (savedUrl) {
-      setGoogleCalendarUrl(savedUrl);
+    const savedLocalUrl = localStorage.getItem(`gcal_url_${boardId}`) || localStorage.getItem('gcal_url_global') || '';
+    const effectiveUrl = dbBoardGoogleUrl || savedLocalUrl;
+
+    if (effectiveUrl) {
+      setGoogleCalendarUrl(effectiveUrl);
+      if (dbBoardGoogleUrl && !savedLocalUrl) {
+        localStorage.setItem(`gcal_url_${boardId}`, dbBoardGoogleUrl);
+      }
       const timer = setTimeout(() => {
-        syncGoogleCalendar(savedUrl);
+        syncGoogleCalendar(effectiveUrl);
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [boardId]);
+  }, [boardId, dbBoardGoogleUrl]);
 
-  const handleSaveGoogleUrl = (url: string) => {
+  const handleSaveGoogleUrl = async (url: string) => {
     const clean = url.trim();
     setGoogleCalendarUrl(clean);
     if (clean) {
       localStorage.setItem(`gcal_url_${boardId}`, clean);
+      try {
+        await supabase.from('boards').update({ google_calendar_url: clean }).eq('id', boardId);
+      } catch (err) {
+        console.warn("Não foi possível persistir no banco:", err);
+      }
       syncGoogleCalendar(clean);
     } else {
       localStorage.removeItem(`gcal_url_${boardId}`);
+      try {
+        await supabase.from('boards').update({ google_calendar_url: null }).eq('id', boardId);
+      } catch (err) {
+        console.warn("Não foi possível remover do banco:", err);
+      }
       setGoogleEvents([]);
     }
   };

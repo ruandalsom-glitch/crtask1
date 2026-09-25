@@ -73,3 +73,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE POLICY "Permitir edicao de comentarios para autenticados" ON public.operational_shift_comments FOR ALL USING (auth.role() = 'authenticated');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- 4. Adiciona a coluna google_calendar_url na tabela boards para persistir a integracao do Google Agenda no banco de dados
+ALTER TABLE public.boards ADD COLUMN IF NOT EXISTS google_calendar_url TEXT;
+
