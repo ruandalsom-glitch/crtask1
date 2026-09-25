@@ -86,15 +86,18 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     staleTime: 5 * 60 * 1000
   });
 
-  // 4. Configurações da Escala do Quadro (Turnos, Regiões, Tipos e Status Fixos/Customizáveis)
+  // 4. Configurações da Escala do Quadro/Setor (Turnos, Regiões, Tipos e Status Fixos/Customizáveis)
   const { data: shiftSettings } = useQuery({
-    queryKey: ['operational_shift_settings', boardId],
+    queryKey: ['operational_shift_settings', boardId, boardData?.workspace_id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('operational_shift_settings')
-        .select('*')
-        .eq('board_id', boardId)
-        .maybeSingle();
+      let query = supabase.from('operational_shift_settings').select('*');
+      if (boardData?.workspace_id) {
+        query = query.or(`workspace_id.eq.${boardData.workspace_id},board_id.eq.${boardId}`);
+      } else {
+        query = query.eq('board_id', boardId);
+      }
+
+      const { data, error } = await query.limit(1).maybeSingle();
 
       if (error || !data) {
         return {
@@ -163,6 +166,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         .from('operational_shift_settings')
         .upsert({
           board_id: boardId,
+          workspace_id: boardData?.workspace_id || null,
           shifts: settingsShifts,
           regions: settingsRegions,
           operator_types: settingsTypes,
@@ -172,7 +176,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['operational_shift_settings', boardId] });
+      queryClient.invalidateQueries({ queryKey: ['operational_shift_settings'] });
       setIsSettingsOpen(false);
     },
     onError: (err: any) => {
@@ -180,14 +184,19 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   });
 
-  // 5. Busca as Escalas do Banco de Dados
+  // 5. Busca as Escalas do Banco de Dados (Busca por Workspace ou por Board para compartilhar com o setor)
   const { data: rawShifts, isLoading: isLoadingShifts } = useQuery({
-    queryKey: ['operational_shifts', boardId, selectedDate],
+    queryKey: ['operational_shifts', boardId, boardData?.workspace_id, selectedDate],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('operational_shifts')
-        .select('*')
-        .eq('board_id', boardId)
+      let query = supabase.from('operational_shifts').select('*');
+
+      if (boardData?.workspace_id) {
+        query = query.or(`workspace_id.eq.${boardData.workspace_id},board_id.eq.${boardId}`);
+      } else {
+        query = query.eq('board_id', boardId);
+      }
+
+      const { data, error } = await query
         .order('shift_name')
         .order('region_name');
 

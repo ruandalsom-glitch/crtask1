@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS public.operational_shift_settings (
 );
 
 ALTER TABLE public.operational_shift_settings ADD COLUMN IF NOT EXISTS statuses JSONB DEFAULT '["Confirmado", "Pendente", "Vaga"]'::jsonb;
+ALTER TABLE public.operational_shift_settings ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 ALTER TABLE public.operational_shift_settings ENABLE ROW LEVEL SECURITY;
