@@ -149,12 +149,20 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   const [newShiftName, setNewShiftName] = useState('');
   const [newShiftTime, setNewShiftTime] = useState('');
 
-  // Permissão de Gerenciamento: Apenas LÍDER de setor (role === 'leader') e ADMINISTRADOR (role === 'admin') podem alterar configurações e escalas.
+  // Permissão de Gerenciamento: Apenas LÍDER de setor (role === 'leader' | 'lider' | 'líder') e ADMINISTRADOR (role === 'admin' | 'administrador') podem alterar configurações e escalas.
   const canManageShifts = useMemo(() => {
-    const role = currentUser?.profile?.role;
-    const isLeaderOrAdmin = role === 'admin' || role === 'leader';
-    return isLeaderOrAdmin && !isReadOnly;
-  }, [currentUser, isReadOnly]);
+    if (!currentUser?.profile) return false;
+    const pRole = (currentUser.profile.role || '').toLowerCase().trim();
+    
+    const isLeaderOrAdmin = 
+      pRole === 'admin' || 
+      pRole === 'administrador' || 
+      pRole === 'leader' || 
+      pRole === 'lider' || 
+      pRole === 'líder';
+
+    return isLeaderOrAdmin;
+  }, [currentUser]);
 
   // Abrir Modal de Configurações
   const handleOpenSettings = () => {
