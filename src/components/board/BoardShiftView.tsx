@@ -7,7 +7,8 @@ import {
   Calendar, ChevronLeft, ChevronRight, Plus, Search, Filter, 
   Trash2, Edit, User, MapPin, Clock, CheckCircle2, AlertCircle, 
   HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check,
-  Settings, MessageSquare, Send, Layers, Sparkles, CalendarDays, RefreshCw
+  Settings, MessageSquare, Send, Layers, Sparkles, CalendarDays, RefreshCw,
+  CalendarRange, CheckSquare, Square, AlertTriangle
 } from 'lucide-react';
 
 const SHIFTS_DEFAULT = [
@@ -28,8 +29,11 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     return new Date().toISOString().split('T')[0];
   });
 
-  // Modo de Visão: Quadro (Cards), Lista (Tabela), Timeline (Linha do tempo)
-  const [viewTab, setViewTab] = useState<'quadro' | 'lista' | 'timeline'>('quadro');
+  // Modo de Visão: Quadro (Cards), Lista (Tabela), Timeline (Linha do tempo), Calendário Mensal
+  const [viewTab, setViewTab] = useState<'quadro' | 'lista' | 'timeline' | 'calendario'>('quadro');
+
+  // Mês exibido na Visão Calendário
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date(`${selectedDate}T00:00:00`));
 
   // Filtros
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,8 +46,18 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [selectedShiftDetails, setSelectedShiftDetails] = useState<any | null>(null);
-  const [editingShift, setEditingShift] = useState<any | null>(null);
+
+  // Seleção múltipla para exclusão na visão de Lista (Tabela)
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+
+  // Campos do Modal de Exclusão em Lote
+  const [bulkDeleteMode, setBulkDeleteMode] = useState<'single_day' | 'date_range'>('single_day');
+  const [bulkStartDate, setBulkStartDate] = useState(selectedDate);
+  const [bulkEndDate, setBulkEndDate] = useState(selectedDate);
+  const [bulkFilterOperator, setBulkFilterOperator] = useState('all');
+  const [bulkFilterRegion, setBulkFilterRegion] = useState('all');
 
   // Comentários do Modal de Detalhes
   const [newCommentText, setNewCommentText] = useState('');
@@ -81,7 +95,6 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardData.workspace_id);
       const memberUserIds = new Set((members || []).map((m: any) => m.user_id));
 
-      // Retorna administradores e membros pertencentes ao setor
       return profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
     },
     staleTime: 5 * 60 * 1000
@@ -154,7 +167,6 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   const canManageShifts = useMemo(() => {
     let pRole = (currentUser?.profile?.role || '').toLowerCase().trim();
 
-    // Fallback 1: Se currentUser.profile ainda não carregou ou veio vazio, busca no teamMembers pelo id ou e-mail
     if (!pRole && currentUser && teamMembers) {
       const found = teamMembers.find(
         (m: any) => m.id === currentUser.id || (currentUser.email && m.email?.toLowerCase() === currentUser.email.toLowerCase())
@@ -210,9 +222,16 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   });
 
-  // 5. Busca as Escalas do Banco de Dados (Busca por Workspace ou por Board para compartilhar com o setor)
+  // 5. Busca as Escalas do Banco de Dados (Buscando um intervalo amplo de datas para a visão Mensal e Geral)
+  const monthRangeLimits = useMemo(() => {
+    const calDate = new Date(calendarMonth);
+    const start = new Date(calDate.getFullYear(), calDate.getMonth() - 1, 1).toISOString().split('T')[0];
+    const end = new Date(calDate.getFullYear(), calDate.getMonth() + 2, 0).toISOString().split('T')[0];
+    return { start, end };
+  }, [calendarMonth]);
+
   const { data: rawShifts, isLoading: isLoadingShifts } = useQuery({
-    queryKey: ['operational_shifts', boardId, boardData?.workspace_id, selectedDate],
+    queryKey: ['operational_shifts', boardId, boardData?.workspace_id, monthRangeLimits.start, monthRangeLimits.end],
     queryFn: async () => {
       let query = supabase.from('operational_shifts').select('*');
 
@@ -222,17 +241,31 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         query = query.eq('board_id', boardId);
       }
 
+      query = query.gte('shift_date', monthRangeLimits.start).lte('shift_date', monthRangeLimits.end);
+
       const { data, error } = await query
+        .order('shift_date')
         .order('shift_name')
         .order('region_name');
 
       if (error) {
-        console.warn("Tabela operational_shifts pode não existir ainda:", error);
+        console.warn("Tabela operational_shifts erro:", error);
         return [];
       }
       return data || [];
     }
   });
+
+  // Map de Escalas por Data (para acelerar rendering do Calendário Mensal e badges)
+  const shiftsByDateMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    (rawShifts || []).forEach((shift: any) => {
+      const d = shift.shift_date;
+      if (!map.has(d)) map.set(d, []);
+      map.get(d)!.push(shift);
+    });
+    return map;
+  }, [rawShifts]);
 
   // 6. Busca os Comentários da Escala Selecionada
   const { data: shiftComments, refetch: refetchComments } = useQuery({
@@ -276,11 +309,13 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   });
 
-  // Navegação de Datas
+  // Navegação de Datas no Header
   const changeDate = (days: number) => {
     const current = new Date(`${selectedDate}T00:00:00`);
     current.setDate(current.getDate() + days);
-    setSelectedDate(current.toISOString().split('T')[0]);
+    const newDateStr = current.toISOString().split('T')[0];
+    setSelectedDate(newDateStr);
+    setCalendarMonth(new Date(`${newDateStr}T00:00:00`));
   };
 
   const formattedSelectedDateText = useMemo(() => {
@@ -313,7 +348,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     return name.slice(0, 2).toUpperCase();
   };
 
-  // Filtra as escalas conforme os critérios da tela
+  // Filtra as escalas conforme os critérios da tela para o dia selecionado
   const shiftsForSelectedDate = useMemo(() => {
     return (rawShifts || []).filter((shift: any) => {
       if (shift.shift_date !== selectedDate) return false;
@@ -336,7 +371,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   // Funções de Atalho Rápido de Datas
   const setDatesSegSex = () => {
     const base = new Date(`${selectedDate}T00:00:00`);
-    const dayOfWeek = base.getDay(); // 0: Dom, 1: Seg, ..., 6: Sáb
+    const dayOfWeek = base.getDay();
     const monday = new Date(base);
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     monday.setDate(monday.getDate() + diffToMonday);
@@ -375,7 +410,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     setFormDates(dates);
   };
 
-  // Salvar / Criar Escalas em Lote (Suporta Múltiplas Datas, Pessoas, Regiões e Tipos)
+  // Salvar / Criar Escalas em Lote
   const createBulkShifts = useMutation({
     mutationFn: async () => {
       if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem escalar operadores.");
@@ -436,7 +471,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   });
 
-  // Excluir Escala
+  // Excluir Escala Única
   const deleteShiftMutation = useMutation({
     mutationFn: async (shiftId: string) => {
       if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem excluir escalas.");
@@ -446,6 +481,62 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operational_shifts'] });
       setSelectedShiftDetails(null);
+    }
+  });
+
+  // Excluir Várias Escalas Selecionadas na Tabela (Lista)
+  const deleteSelectedRowsMutation = useMutation({
+    mutationFn: async (shiftIds: string[]) => {
+      if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem excluir escalas.");
+      if (shiftIds.length === 0) return;
+      const { error } = await supabase.from('operational_shifts').delete().in('id', shiftIds);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['operational_shifts'] });
+      setSelectedRowIds([]);
+    },
+    onError: (err: any) => {
+      alert("Erro ao excluir escalas selecionadas: " + err.message);
+    }
+  });
+
+  // Excluir em Lote por Período/Filtros
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem excluir escalas.");
+
+      let query = supabase.from('operational_shifts').delete();
+
+      if (boardData?.workspace_id) {
+        query = query.eq('workspace_id', boardData.workspace_id);
+      } else {
+        query = query.eq('board_id', boardId);
+      }
+
+      if (bulkDeleteMode === 'single_day') {
+        query = query.eq('shift_date', bulkStartDate);
+      } else {
+        query = query.gte('shift_date', bulkStartDate).lte('shift_date', bulkEndDate);
+      }
+
+      if (bulkFilterOperator !== 'all') {
+        query = query.eq('operator_user_id', bulkFilterOperator);
+      }
+
+      if (bulkFilterRegion !== 'all') {
+        query = query.eq('region_name', bulkFilterRegion);
+      }
+
+      const { error } = await query;
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['operational_shifts'] });
+      setIsBulkDeleteOpen(false);
+    },
+    onError: (err: any) => {
+      alert("Erro ao executar limpeza em lote: " + err.message);
     }
   });
 
@@ -493,10 +584,63 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   };
 
+  // Gerador de Dias do Calendário Mensal
+  const calendarDaysMatrix = useMemo(() => {
+    const calDate = new Date(calendarMonth);
+    const year = calDate.getFullYear();
+    const month = calDate.getMonth();
+
+    const firstDayOfMonth = new Date(year, month, 1);
+    const startingDayOfWeek = firstDayOfMonth.getDay(); // 0: Dom
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const matrix: Array<{ dateStr: string; dayNum: number; isCurrentMonth: boolean }> = [];
+
+    // Dias do mês anterior
+    const prevMonthDays = new Date(year, month, 0).getDate();
+    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+      const d = new Date(year, month - 1, prevMonthDays - i);
+      matrix.push({
+        dateStr: d.toISOString().split('T')[0],
+        dayNum: prevMonthDays - i,
+        isCurrentMonth: false
+      });
+    }
+
+    // Dias do mês atual
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
+      matrix.push({
+        dateStr: d.toISOString().split('T')[0],
+        dayNum: day,
+        isCurrentMonth: true
+      });
+    }
+
+    // Completar última semana com próximo mês
+    const totalSoFar = matrix.length;
+    const remaining = (7 - (totalSoFar % 7)) % 7;
+    for (let day = 1; day <= remaining; day++) {
+      const d = new Date(year, month + 1, day);
+      matrix.push({
+        dateStr: d.toISOString().split('T')[0],
+        dayNum: day,
+        isCurrentMonth: false
+      });
+    }
+
+    return matrix;
+  }, [calendarMonth]);
+
+  const monthYearLabel = useMemo(() => {
+    const d = new Date(calendarMonth);
+    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  }, [calendarMonth]);
+
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800">
       
-      {/* TOOLBAR SUPERIOR DA ESCALA (Design Claro Clean) */}
+      {/* TOOLBAR SUPERIOR DA ESCALA */}
       <div className="bg-white border-b border-slate-200 px-8 py-4 flex flex-wrap items-center justify-between gap-4 shadow-sm z-10">
         
         {/* Título & Seleção de Data */}
@@ -529,7 +673,11 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             </button>
 
             <button 
-              onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} 
+              onClick={() => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                setSelectedDate(todayStr);
+                setCalendarMonth(new Date(`${todayStr}T00:00:00`));
+              }} 
               className="ml-1 px-2.5 py-1 bg-white hover:bg-slate-200 text-slate-700 font-medium rounded text-[11px] shadow-xs border border-slate-200 transition-colors"
             >
               Hoje
@@ -542,17 +690,32 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
           
           {/* Botão Configurações da Escala (Para Líderes / Admins) */}
           {canManageShifts && (
-            <button
-              onClick={handleOpenSettings}
-              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
-              title="Configurar Turnos, Bases e Status do Setor"
-            >
-              <Settings className="w-3.5 h-3.5 text-slate-500" />
-              <span>Opções de Escala</span>
-            </button>
+            <>
+              <button
+                onClick={handleOpenSettings}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
+                title="Configurar Turnos, Bases e Status do Setor"
+              >
+                <Settings className="w-3.5 h-3.5 text-slate-500" />
+                <span>Opções de Escala</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setBulkStartDate(selectedDate);
+                  setBulkEndDate(selectedDate);
+                  setIsBulkDeleteOpen(true);
+                }}
+                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-rose-200 transition-colors cursor-pointer"
+                title="Excluir escalas em lote por período ou dia"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Limpar em Lote</span>
+              </button>
+            </>
           )}
 
-          {/* Selector de Modo de Visualização */}
+          {/* Selector de Modo de Visualização (4 Abas: Quadro, Lista, Timeline, Calendário) */}
           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
             <button
               onClick={() => setViewTab('quadro')}
@@ -588,6 +751,18 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             >
               <BarChart2 className="w-3.5 h-3.5" />
               <span>Timeline</span>
+            </button>
+
+            <button
+              onClick={() => setViewTab('calendario')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewTab === 'calendario' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarRange className="w-3.5 h-3.5" />
+              <span>Calendário</span>
             </button>
           </div>
 
@@ -782,93 +957,158 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
           </div>
         )}
 
-        {/* VISÃO 2: LISTA (TABELA CLEAN) */}
+        {/* VISÃO 2: LISTA (TABELA CLEAN COM MULTI-SELEÇÃO) */}
         {viewTab === 'lista' && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <table className="w-full text-left text-xs text-slate-700 border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase tracking-wider text-[11px]">
-                  <th className="py-3 px-4">Operador</th>
-                  <th className="py-3 px-4">Turno</th>
-                  <th className="py-3 px-4">Horário</th>
-                  <th className="py-3 px-4">Região / Base</th>
-                  <th className="py-3 px-4">Tipo</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Observações / Tarefas</th>
-                  <th className="py-3 px-4 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {shiftsForSelectedDate.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400">
-                      Nenhuma escala encontrada para os filtros selecionados.
-                    </td>
-                  </tr>
-                ) : (
-                  shiftsForSelectedDate.map((item: any) => {
-                    const avatarUrl = getUserAvatar(item.operator_user_id, item.operator_name);
+          <div className="flex flex-col gap-3">
+            {/* Barra de Ações em Lote para Seleções da Tabela */}
+            {canManageShifts && selectedRowIds.length > 0 && (
+              <div className="bg-rose-50 border border-rose-200 px-4 py-2.5 rounded-lg flex items-center justify-between text-xs font-semibold text-rose-900 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <CheckSquare className="w-4 h-4 text-rose-600" />
+                  <span>{selectedRowIds.length} escala(s) selecionada(s)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedRowIds([])}
+                    className="px-2.5 py-1 bg-white hover:bg-rose-100 text-rose-800 border border-rose-200 rounded text-[11px] font-medium transition-colors"
+                  >
+                    Desmarcar Tudo
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Tem certeza que deseja excluir as ${selectedRowIds.length} escalas selecionadas?`)) {
+                        deleteSelectedRowsMutation.mutate(selectedRowIds);
+                      }
+                    }}
+                    disabled={deleteSelectedRowsMutation.isPending}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir Selecionadas</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
-                    return (
-                      <tr 
-                        key={item.id} 
-                        onClick={() => setSelectedShiftDetails(item)}
-                        className="hover:bg-slate-50 transition-colors cursor-pointer"
-                      >
-                        <td className="py-3 px-4 font-bold text-slate-800">
-                          <div className="flex items-center gap-2.5">
-                            {avatarUrl ? (
-                              <img src={avatarUrl} alt={item.operator_name} className="w-7 h-7 rounded-full object-cover border border-slate-200" />
-                            ) : (
-                              <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center">
-                                {getInitials(item.operator_name)}
-                              </div>
-                            )}
-                            <span>{item.operator_name}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-slate-700">{item.shift_name}</td>
-                        <td className="py-3 px-4 text-slate-500">{item.shift_time || '-'}</td>
-                        <td className="py-3 px-4 font-medium text-slate-700">{item.region_name}</td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                            {item.operator_type}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
-                            item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                            item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-slate-100 text-slate-700 border-slate-300'
-                          }`}>
-                            {item.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
-                          {item.notes || '-'}
-                        </td>
-                        <td className="py-3 px-4 text-right">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase tracking-wider text-[11px]">
+                    {canManageShifts && (
+                      <th className="py-3 px-4 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={shiftsForSelectedDate.length > 0 && selectedRowIds.length === shiftsForSelectedDate.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRowIds(shiftsForSelectedDate.map((s: any) => s.id));
+                            } else {
+                              setSelectedRowIds([]);
+                            }
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                        />
+                      </th>
+                    )}
+                    <th className="py-3 px-4">Operador</th>
+                    <th className="py-3 px-4">Turno</th>
+                    <th className="py-3 px-4">Horário</th>
+                    <th className="py-3 px-4">Região / Base</th>
+                    <th className="py-3 px-4">Tipo</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Observações / Tarefas</th>
+                    <th className="py-3 px-4 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {shiftsForSelectedDate.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                        Nenhuma escala encontrada para os filtros selecionados.
+                      </td>
+                    </tr>
+                  ) : (
+                    shiftsForSelectedDate.map((item: any) => {
+                      const avatarUrl = getUserAvatar(item.operator_user_id, item.operator_name);
+                      const isRowSelected = selectedRowIds.includes(item.id);
+
+                      return (
+                        <tr 
+                          key={item.id} 
+                          onClick={() => setSelectedShiftDetails(item)}
+                          className={`transition-colors cursor-pointer ${isRowSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}
+                        >
                           {canManageShifts && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm("Deseja remover esta escala?")) {
-                                  deleteShiftMutation.mutate(item.id);
-                                }
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded transition-colors"
-                              title="Excluir Escala"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isRowSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedRowIds([...selectedRowIds, item.id]);
+                                  } else {
+                                    setSelectedRowIds(selectedRowIds.filter(id => id !== item.id));
+                                  }
+                                }}
+                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                              />
+                            </td>
                           )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                          <td className="py-3 px-4 font-bold text-slate-800">
+                            <div className="flex items-center gap-2.5">
+                              {avatarUrl ? (
+                                <img src={avatarUrl} alt={item.operator_name} className="w-7 h-7 rounded-full object-cover border border-slate-200" />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center">
+                                  {getInitials(item.operator_name)}
+                                </div>
+                              )}
+                              <span>{item.operator_name}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-slate-700">{item.shift_name}</td>
+                          <td className="py-3 px-4 text-slate-500">{item.shift_time || '-'}</td>
+                          <td className="py-3 px-4 font-medium text-slate-700">{item.region_name}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                              {item.operator_type}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                              item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              'bg-slate-100 text-slate-700 border-slate-300'
+                            }`}>
+                              {item.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
+                            {item.notes || '-'}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {canManageShifts && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm("Deseja remover esta escala?")) {
+                                    deleteShiftMutation.mutate(item.id);
+                                  }
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                                title="Excluir Escala"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -925,9 +1165,132 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
           </div>
         )}
 
+        {/* VISÃO 4: CALENDÁRIO MENSAAL COMPLETO (Dias com Escalas no Geral) */}
+        {viewTab === 'calendario' && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+            
+            {/* Header de Navegação do Mês */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CalendarRange className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-800 text-base capitalize">{monthYearLabel}</h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const d = new Date(calendarMonth);
+                    d.setMonth(d.getMonth() - 1);
+                    setCalendarMonth(d);
+                  }}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-md text-xs font-semibold border border-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Mês Anterior
+                </button>
+
+                <button
+                  onClick={() => setCalendarMonth(new Date(`${new Date().toISOString().split('T')[0]}T00:00:00`))}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-md text-xs font-semibold border border-slate-200 transition-colors cursor-pointer"
+                >
+                  Mês Atual
+                </button>
+
+                <button
+                  onClick={() => {
+                    const d = new Date(calendarMonth);
+                    d.setMonth(d.getMonth() + 1);
+                    setCalendarMonth(d);
+                  }}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-md text-xs font-semibold border border-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  Próximo Mês
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Cabeçalho dos Dias da Semana */}
+            <div className="grid grid-cols-7 bg-slate-100 border-b border-slate-200 text-center font-bold text-slate-600 text-[11px] uppercase tracking-wider py-2">
+              <div>Dom</div>
+              <div>Seg</div>
+              <div>Ter</div>
+              <div>Qua</div>
+              <div>Qui</div>
+              <div>Sex</div>
+              <div>Sáb</div>
+            </div>
+
+            {/* Grade de Dias do Mês */}
+            <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-slate-100 bg-slate-100 min-h-[500px]">
+              {calendarDaysMatrix.map((cell, idx) => {
+                const dayShifts = shiftsByDateMap.get(cell.dateStr) || [];
+                const isSelected = selectedDate === cell.dateStr;
+                const isToday = new Date().toISOString().split('T')[0] === cell.dateStr;
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      setSelectedDate(cell.dateStr);
+                      setViewTab('quadro');
+                    }}
+                    className={`p-2 flex flex-col transition-all cursor-pointer min-h-[90px] relative group ${
+                      cell.isCurrentMonth ? 'bg-white hover:bg-blue-50/40' : 'bg-slate-50/60 text-slate-400'
+                    } ${isSelected ? 'ring-2 ring-blue-600 z-10' : ''}`}
+                  >
+                    {/* Número do Dia */}
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${
+                        isToday ? 'bg-blue-600 text-white shadow-xs' : (cell.isCurrentMonth ? 'text-slate-800' : 'text-slate-400')
+                      }`}>
+                        {cell.dayNum}
+                      </span>
+
+                      {/* Contador total de escalas no dia */}
+                      {dayShifts.length > 0 && (
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 font-extrabold text-[10px] rounded-full border border-blue-200">
+                          {dayShifts.length} {dayShifts.length === 1 ? 'escala' : 'escalas'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Resumo de Operadores do Dia */}
+                    <div className="flex-1 flex flex-col gap-1 overflow-hidden">
+                      {dayShifts.length > 0 ? (
+                        <div className="flex flex-col gap-0.5 max-h-[70px] overflow-hidden">
+                          {dayShifts.slice(0, 3).map((s: any) => (
+                            <div 
+                              key={s.id} 
+                              className="text-[10px] bg-slate-100 group-hover:bg-white text-slate-700 px-1.5 py-0.5 rounded font-medium truncate flex items-center justify-between border border-slate-200/60"
+                            >
+                              <span className="truncate font-bold">{s.operator_name}</span>
+                              <span className="text-[9px] text-slate-400 shrink-0">({s.shift_name})</span>
+                            </div>
+                          ))}
+                          {dayShifts.length > 3 && (
+                            <span className="text-[9px] text-blue-600 font-bold px-1 mt-0.5">
+                              + {dayShifts.length - 3} mais...
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 italic my-auto text-center hidden group-hover:block">
+                          Sem escalas
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+        )}
+
       </div>
 
-      {/* MODAL 1: LANÇAR ESCALA EM LOTE (Múltiplas Datas, Pessoas, Regiões e Tipos) */}
+      {/* MODAL 1: LANÇAR ESCALA EM LOTE */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 max-w-xl w-full p-6 shadow-xl flex flex-col gap-5 my-8">
@@ -1333,7 +1696,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         </div>
       )}
 
-      {/* MODAL 3: CONFIGURAR OPÇÕES DE ESCALA DO SETOR (Turnos, Bases e Status Fixos) */}
+      {/* MODAL 3: CONFIGURAR OPÇÕES DE ESCALA DO SETOR */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 max-w-lg w-full p-6 shadow-xl flex flex-col gap-5 my-8">
@@ -1520,6 +1883,157 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm cursor-pointer"
               >
                 {saveSettingsMutation.isPending ? 'Salvando...' : 'Salvar Configurações'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: LIMPEZA / REMOÇÃO EM LOTE */}
+      {isBulkDeleteOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-rose-200 max-w-lg w-full p-6 shadow-xl flex flex-col gap-5 my-8">
+            
+            <div className="flex justify-between items-center border-b border-rose-100 pb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+                <h3 className="font-bold text-slate-800 text-base">Limpar / Excluir Escalas em Lote</h3>
+              </div>
+              <button onClick={() => setIsBulkDeleteOpen(false)} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4 text-xs">
+              <p className="text-slate-600">
+                Selecione o critério para remover escalas cadastradas no setor de uma só vez:
+              </p>
+
+              {/* Modo de Exclusão */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Escopo de Exclusão</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteMode('single_day')}
+                    className={`p-2.5 rounded-lg border text-left font-bold transition-all cursor-pointer ${
+                      bulkDeleteMode === 'single_day'
+                        ? 'bg-rose-50 border-rose-300 text-rose-900 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>Dia Único</span>
+                    <span className="block font-normal text-[11px] text-slate-500 mt-0.5">Excluir escalas do dia {bulkStartDate.split('-').reverse().join('/')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteMode('date_range')}
+                    className={`p-2.5 rounded-lg border text-left font-bold transition-all cursor-pointer ${
+                      bulkDeleteMode === 'date_range'
+                        ? 'bg-rose-50 border-rose-300 text-rose-900 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>Período de Datas</span>
+                    <span className="block font-normal text-[11px] text-slate-500 mt-0.5">Excluir de uma data inicial a final</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Intervalo de Datas */}
+              {bulkDeleteMode === 'single_day' ? (
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Data a Limpar</label>
+                  <input
+                    type="date"
+                    value={bulkStartDate}
+                    onChange={(e) => {
+                      setBulkStartDate(e.target.value);
+                      setBulkEndDate(e.target.value);
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Data Inicial</label>
+                    <input
+                      type="date"
+                      value={bulkStartDate}
+                      onChange={(e) => setBulkStartDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Data Final</label>
+                    <input
+                      type="date"
+                      value={bulkEndDate}
+                      onChange={(e) => setBulkEndDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Filtros Opcionais */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Colaborador Especifico (Opcional)</label>
+                  <select
+                    value={bulkFilterOperator}
+                    onChange={(e) => setBulkFilterOperator(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  >
+                    <option value="all">Todos os colaboradores</option>
+                    {(teamMembers || []).map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.email.split('@')[0].toUpperCase()}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Região / Base Específica (Opcional)</label>
+                  <select
+                    value={bulkFilterRegion}
+                    onChange={(e) => setBulkFilterRegion(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-800"
+                  >
+                    <option value="all">Todas as regiões</option>
+                    {availableRegions.map((r: string) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] leading-relaxed">
+                ⚠️ <strong>Atenção:</strong> Esta ação removerá permanentemente as escalas que se enquadrem no período e filtros selecionados.
+              </div>
+
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setIsBulkDeleteOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm("Confirma a exclusão em lote das escalas selecionadas?")) {
+                    bulkDeleteMutation.mutate();
+                  }
+                }}
+                disabled={bulkDeleteMutation.isPending}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{bulkDeleteMutation.isPending ? 'Excluindo...' : 'Confirmar Exclusão'}</span>
               </button>
             </div>
 
