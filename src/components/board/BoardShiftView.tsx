@@ -200,18 +200,34 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
       if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem gerenciar as configurações da escala.");
-      const { error } = await supabase
+      
+      const payload: any = {
+        board_id: boardId,
+        shifts: settingsShifts,
+        regions: settingsRegions,
+        operator_types: settingsTypes,
+        statuses: settingsStatuses,
+        updated_at: new Date().toISOString()
+      };
+
+      if (boardData?.workspace_id) {
+        payload.workspace_id = boardData.workspace_id;
+      }
+
+      let { error } = await supabase
         .from('operational_shift_settings')
-        .upsert({
-          board_id: boardId,
-          workspace_id: boardData?.workspace_id || null,
-          shifts: settingsShifts,
-          regions: settingsRegions,
-          operator_types: settingsTypes,
-          statuses: settingsStatuses,
-          updated_at: new Date().toISOString()
-        });
-      if (error) throw error;
+        .upsert(payload);
+
+      // Se a coluna workspace_id não existir na tabela do Supabase ainda, tenta salvar sem a propriedade workspace_id
+      if (error && (error.message?.includes('workspace_id') || error.details?.includes('workspace_id'))) {
+        delete payload.workspace_id;
+        const retry = await supabase
+          .from('operational_shift_settings')
+          .upsert(payload);
+        if (retry.error) throw retry.error;
+      } else if (error) {
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operational_shift_settings'] });
