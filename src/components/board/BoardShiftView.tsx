@@ -8,7 +8,7 @@ import {
   Trash2, Edit, User, MapPin, Clock, CheckCircle2, AlertCircle, 
   HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check,
   Settings, MessageSquare, Send, Layers, Sparkles, CalendarDays, RefreshCw,
-  CalendarRange, CheckSquare, Square, AlertTriangle
+  CalendarRange, CheckSquare, Square, AlertTriangle, Tag
 } from 'lucide-react';
 
 const SHIFTS_DEFAULT = [
@@ -218,7 +218,6 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         .from('operational_shift_settings')
         .upsert(payload);
 
-      // Se a coluna workspace_id não existir na tabela do Supabase ainda, tenta salvar sem a propriedade workspace_id
       if (error && (error.message?.includes('workspace_id') || error.details?.includes('workspace_id'))) {
         delete payload.workspace_id;
         const retry = await supabase
@@ -238,7 +237,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   });
 
-  // 5. Busca as Escalas do Banco de Dados (Buscando um intervalo amplo de datas para a visão Mensal e Geral)
+  // 5. Busca as Escalas do Banco de Dados
   const monthRangeLimits = useMemo(() => {
     const calDate = new Date(calendarMonth);
     const start = new Date(calDate.getFullYear(), calDate.getMonth() - 1, 1).toISOString().split('T')[0];
@@ -272,7 +271,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     }
   });
 
-  // Map de Escalas por Data (para acelerar rendering do Calendário Mensal e badges)
+  // Map de Escalas por Data
   const shiftsByDateMap = useMemo(() => {
     const map = new Map<string, any[]>();
     (rawShifts || []).forEach((shift: any) => {
@@ -364,13 +363,13 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     return name.slice(0, 2).toUpperCase();
   };
 
-  // Filtra as escalas conforme os critérios da tela para o dia selecionado
+  // Filtra as escalas conforme os critérios da tela para o dia selecionado (Suporta múltiplas tags combinadas por vírgula)
   const shiftsForSelectedDate = useMemo(() => {
     return (rawShifts || []).filter((shift: any) => {
       if (shift.shift_date !== selectedDate) return false;
       if (filterShift !== 'all' && shift.shift_name !== filterShift) return false;
-      if (filterRegion !== 'all' && shift.region_name !== filterRegion) return false;
-      if (filterType !== 'all' && shift.operator_type !== filterType) return false;
+      if (filterRegion !== 'all' && !shift.region_name?.toLowerCase().includes(filterRegion.toLowerCase())) return false;
+      if (filterType !== 'all' && !shift.operator_type?.toLowerCase().includes(filterType.toLowerCase())) return false;
       if (filterStatus !== 'all' && shift.status !== filterStatus) return false;
       if (onlyVacancies && shift.status !== 'Vaga') return false;
       if (searchQuery) {
@@ -426,7 +425,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     setFormDates(dates);
   };
 
-  // Salvar / Criar Escalas em Lote
+  // Salvar / Criar Escalas em Lote (Junta Múltiplas Regiões e Funções em 1 único card limpo por operador)
   const createBulkShifts = useMutation({
     mutationFn: async () => {
       if (!canManageShifts) throw new Error("Apenas Líderes de Setor e Administradores podem escalar operadores.");
@@ -450,27 +449,27 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
         throw new Error("Selecione pelo menos uma pessoa do setor ou digite um nome.");
       }
 
+      // Combina as múltiplas regiões e tipos em uma string de tags limpas por vírgula
+      const combinedRegionName = formSelectedRegions.join(', ');
+      const combinedOperatorType = formSelectedTypes.join(', ');
+
       const rowsToInsert = [];
       for (const d of formDates) {
-        for (const reg of formSelectedRegions) {
-          for (const tp of formSelectedTypes) {
-            for (const p of peopleToInsert) {
-              rowsToInsert.push({
-                board_id: boardId,
-                workspace_id: boardData?.workspace_id || null,
-                shift_date: d,
-                shift_name: formShiftName,
-                shift_time: formShiftTime,
-                region_name: reg,
-                operator_user_id: p.userId,
-                operator_name: p.name,
-                operator_type: tp,
-                status: formStatus,
-                notes: formNotes,
-                created_by: currentUser?.id || null
-              });
-            }
-          }
+        for (const p of peopleToInsert) {
+          rowsToInsert.push({
+            board_id: boardId,
+            workspace_id: boardData?.workspace_id || null,
+            shift_date: d,
+            shift_name: formShiftName,
+            shift_time: formShiftTime,
+            region_name: combinedRegionName,
+            operator_user_id: p.userId,
+            operator_name: p.name,
+            operator_type: combinedOperatorType,
+            status: formStatus,
+            notes: formNotes,
+            created_by: currentUser?.id || null
+          });
         }
       }
 
@@ -541,7 +540,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       }
 
       if (bulkFilterRegion !== 'all') {
-        query = query.eq('region_name', bulkFilterRegion);
+        query = query.ilike('region_name', `%${bulkFilterRegion}%`);
       }
 
       const { error } = await query;
@@ -607,12 +606,11 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
     const month = calDate.getMonth();
 
     const firstDayOfMonth = new Date(year, month, 1);
-    const startingDayOfWeek = firstDayOfMonth.getDay(); // 0: Dom
+    const startingDayOfWeek = firstDayOfMonth.getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const matrix: Array<{ dateStr: string; dayNum: number; isCurrentMonth: boolean }> = [];
 
-    // Dias do mês anterior
     const prevMonthDays = new Date(year, month, 0).getDate();
     for (let i = startingDayOfWeek - 1; i >= 0; i--) {
       const d = new Date(year, month - 1, prevMonthDays - i);
@@ -623,7 +621,6 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       });
     }
 
-    // Dias do mês atual
     for (let day = 1; day <= daysInMonth; day++) {
       const d = new Date(year, month, day);
       matrix.push({
@@ -633,7 +630,6 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       });
     }
 
-    // Completar última semana com próximo mês
     const totalSoFar = matrix.length;
     const remaining = (7 - (totalSoFar % 7)) % 7;
     for (let day = 1; day <= remaining; day++) {
@@ -731,7 +727,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             </>
           )}
 
-          {/* Selector de Modo de Visualização (4 Abas: Quadro, Lista, Timeline, Calendário) */}
+          {/* Selector de Modo de Visualização */}
           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
             <button
               onClick={() => setViewTab('quadro')}
@@ -876,7 +872,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
       {/* ÁREA DE CONTEÚDO PRINCIPAL */}
       <div className="flex-1 overflow-auto p-8">
         
-        {/* VISÃO 1: QUADRO (CARDS MATRICIAIS POR TURNO) */}
+        {/* VISÃO 1: QUADRO (CARDS MATRICIAIS POR TURNO COM TAGS MÚLTIPLAS CLEAN) */}
         {viewTab === 'quadro' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
             {availableShifts.map((shiftDef: any) => {
@@ -909,26 +905,42 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                     ) : (
                       shiftItems.map((item: any) => {
                         const avatarUrl = getUserAvatar(item.operator_user_id, item.operator_name);
-                        
+                        const regionTags = (item.region_name || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+                        const typeTags = (item.operator_type || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+
                         return (
                           <div 
                             key={item.id}
                             onClick={() => setSelectedShiftDetails(item)}
-                            className="p-3.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-blue-300 rounded-lg transition-all cursor-pointer group shadow-2xs"
+                            className="p-3.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-blue-300 rounded-lg transition-all cursor-pointer group shadow-2xs flex flex-col gap-2.5"
                           >
-                            <div className="flex items-start justify-between gap-2 mb-2.5">
-                              <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold">
-                                <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                                <span>{item.region_name}</span>
+                            {/* Tags de Regiões/Bases e Tipos/Funções Unificadas */}
+                            <div className="flex flex-col gap-1.5">
+                              {/* Regiões / Bases */}
+                              <div className="flex items-center gap-1 flex-wrap text-xs text-slate-600 font-semibold">
+                                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                {regionTags.map((reg: string, rIdx: number) => (
+                                  <span key={rIdx} className="px-1.5 py-0.5 bg-slate-200/70 text-slate-800 font-bold rounded text-[10px] border border-slate-300/50">
+                                    {reg}
+                                  </span>
+                                ))}
                               </div>
-                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                                {item.operator_type}
-                              </span>
+
+                              {/* Tipos / Funções */}
+                              {typeTags.length > 0 && (
+                                <div className="flex items-center gap-1 flex-wrap pl-5">
+                                  {typeTags.map((tp: string, tIdx: number) => (
+                                    <span key={tIdx} className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                                      {tp}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
-                            <div className="flex items-center justify-between">
+                            {/* Informações do Operador e Status */}
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-200/50">
                               <div className="flex items-center gap-2.5">
-                                {/* Foto de Perfil ou Iniciais */}
                                 {avatarUrl ? (
                                   <img 
                                     src={avatarUrl} 
@@ -953,7 +965,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                                 </div>
                               </div>
 
-                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border shrink-0 ${
                                 item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                 item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                 'bg-slate-100 text-slate-700 border-slate-300'
@@ -973,7 +985,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
           </div>
         )}
 
-        {/* VISÃO 2: LISTA (TABELA CLEAN COM MULTI-SELEÇÃO) */}
+        {/* VISÃO 2: LISTA (TABELA CLEAN COM MULTI-SELEÇÃO E TAGS MÚLTIPLAS) */}
         {viewTab === 'lista' && (
           <div className="flex flex-col gap-3">
             {/* Barra de Ações em Lote para Seleções da Tabela */}
@@ -1029,8 +1041,8 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                     <th className="py-3 px-4">Operador</th>
                     <th className="py-3 px-4">Turno</th>
                     <th className="py-3 px-4">Horário</th>
-                    <th className="py-3 px-4">Região / Base</th>
-                    <th className="py-3 px-4">Tipo</th>
+                    <th className="py-3 px-4">Regiões / Bases</th>
+                    <th className="py-3 px-4">Funções / Tipos</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Observações / Tarefas</th>
                     <th className="py-3 px-4 text-right">Ações</th>
@@ -1047,6 +1059,8 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                     shiftsForSelectedDate.map((item: any) => {
                       const avatarUrl = getUserAvatar(item.operator_user_id, item.operator_name);
                       const isRowSelected = selectedRowIds.includes(item.id);
+                      const regionTags = (item.region_name || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+                      const typeTags = (item.operator_type || '').split(',').map((s: string) => s.trim()).filter(Boolean);
 
                       return (
                         <tr 
@@ -1084,11 +1098,23 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                           </td>
                           <td className="py-3 px-4 font-semibold text-slate-700">{item.shift_name}</td>
                           <td className="py-3 px-4 text-slate-500">{item.shift_time || '-'}</td>
-                          <td className="py-3 px-4 font-medium text-slate-700">{item.region_name}</td>
+                          <td className="py-3 px-4 font-medium text-slate-700">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {regionTags.map((reg: string, rIdx: number) => (
+                                <span key={rIdx} className="px-1.5 py-0.5 bg-slate-100 text-slate-700 font-bold rounded text-[10px] border border-slate-200">
+                                  {reg}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
                           <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                              {item.operator_type}
-                            </span>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {typeTags.map((tp: string, tIdx: number) => (
+                                <span key={tIdx} className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-bold text-[10px] border border-blue-200">
+                                  {tp}
+                                </span>
+                              ))}
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
@@ -1181,7 +1207,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
           </div>
         )}
 
-        {/* VISÃO 4: CALENDÁRIO MENSAAL COMPLETO (Dias com Escalas no Geral) */}
+        {/* VISÃO 4: CALENDÁRIO MENSAL COMPLETO (Dias com Escalas no Geral) */}
         {viewTab === 'calendario' && (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
             
@@ -1408,10 +1434,10 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                 </select>
               </div>
 
-              {/* SEÇÃO 3: SELEÇÃO MÚLTIPLA DE REGIÃO / BASE */}
+              {/* SEÇÃO 3: SELEÇÃO MÚLTIPLA DE REGIÃO / BASE (COMBINADAS EM TAGS UNIFICADAS) */}
               <div>
                 <label className="block font-bold text-slate-700 mb-1.5">
-                  Região / Base <span className="text-slate-400 font-normal">(Selecione uma ou mais bases)</span>
+                  Região / Base <span className="text-slate-400 font-normal">(Selecione uma ou mais bases para atribuir)</span>
                 </label>
                 <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-md">
                   {availableRegions.map((r: string) => {
@@ -1495,7 +1521,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
               {/* SEÇÃO 5: SELEÇÃO MÚLTIPLA DE TIPO DE OPERADOR */}
               <div>
                 <label className="block font-bold text-slate-700 mb-1.5">
-                  Tipo de Operador / Função <span className="text-slate-400 font-normal">(Selecione uma ou mais funções)</span>
+                  Tipo de Operador / Função <span className="text-slate-400 font-normal">(Selecione uma ou mais funções para atribuir)</span>
                 </label>
                 <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-md">
                   {availableTypes.map((t: string) => {
@@ -1588,7 +1614,7 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
                 <div>
                   <h3 className="font-bold text-slate-800 text-base">{selectedShiftDetails.operator_name}</h3>
                   <p className="text-xs text-slate-500 font-medium">
-                    {selectedShiftDetails.shift_name} ({selectedShiftDetails.shift_time}) - {selectedShiftDetails.region_name}
+                    {selectedShiftDetails.shift_name} ({selectedShiftDetails.shift_time})
                   </p>
                 </div>
               </div>
@@ -1599,18 +1625,33 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
             </div>
 
             {/* Detalhes Técnicos do Turno */}
-            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Tipo</span>
-                <span className="font-semibold text-slate-800">{selectedShiftDetails.operator_type}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Regiões / Bases</span>
+                <div className="flex flex-wrap gap-1">
+                  {(selectedShiftDetails.region_name || '').split(',').map((r: string, idx: number) => (
+                    <span key={idx} className="px-1.5 py-0.5 bg-slate-200 text-slate-800 font-bold text-[10px] rounded border border-slate-300">
+                      {r.trim()}
+                    </span>
+                  ))}
+                </div>
               </div>
+
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>
-                <span className="font-bold text-blue-700">{selectedShiftDetails.status}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Funções / Tipos</span>
+                <div className="flex flex-wrap gap-1">
+                  {(selectedShiftDetails.operator_type || '').split(',').map((t: string, idx: number) => (
+                    <span key={idx} className="px-1.5 py-0.5 bg-blue-100 text-blue-800 font-bold text-[10px] rounded-full border border-blue-200">
+                      {t.trim()}
+                    </span>
+                  ))}
+                </div>
               </div>
+
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Data</span>
-                <span className="font-semibold text-slate-800">{selectedShiftDetails.shift_date}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Status / Data</span>
+                <span className="font-bold text-blue-700 block mt-0.5">{selectedShiftDetails.status}</span>
+                <span className="text-[11px] text-slate-600 font-medium block">{selectedShiftDetails.shift_date}</span>
               </div>
             </div>
 
