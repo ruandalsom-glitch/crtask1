@@ -295,6 +295,80 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     staleTime: 5 * 60 * 1000
   });
 
+  // 3.5. Busca Todos os Perfis do Sistema para Lookup de Foto e Cargo
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles_lookup_roster'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('profiles').select('id, email, avatar_url, role').order('email');
+      if (error) {
+        console.warn('Erro ao carregar perfis para foto e cargo:', error);
+        return [];
+      }
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000
+  });
+
+  // Helper para buscar perfil de usuário por nome/email
+  const getMemberProfile = (name: string) => {
+    if (!name || !allProfiles || allProfiles.length === 0) return null;
+    const clean = name.toLowerCase().trim();
+    const cleanAlpha = clean.replace(/[^a-z0-9]/g, '');
+
+    // 1. Match exato com email
+    const exactEmail = allProfiles.find(p => p.email?.toLowerCase().trim() === clean);
+    if (exactEmail) return exactEmail;
+
+    // 2. Match com prefixo antes do @
+    const prefixMatch = allProfiles.find(p => {
+      const prefix = (p.email?.split('@')[0] || '').toLowerCase().trim();
+      return prefix === clean;
+    });
+    if (prefixMatch) return prefixMatch;
+
+    // 3. Match ignorando caracteres especiais (pontos, traços, espaços)
+    const alphaMatch = allProfiles.find(p => {
+      const prefix = (p.email?.split('@')[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return prefix === cleanAlpha;
+    });
+    if (alphaMatch) return alphaMatch;
+
+    // 4. Match pelo primeiro nome se for único
+    const parts = clean.split(/[\s._-]+/).filter(Boolean);
+    const firstName = parts[0];
+    if (firstName && firstName.length >= 3) {
+      const candidates = allProfiles.filter(p => {
+        const prefixParts = (p.email?.split('@')[0] || '').toLowerCase().split(/[\s._-]+/).filter(Boolean);
+        return prefixParts.includes(firstName);
+      });
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length > 1 && parts.length > 1) {
+        const matchSurname = candidates.find(c => {
+          const cPrefix = (c.email?.split('@')[0] || '').toLowerCase();
+          return parts.slice(1).some(pt => pt.length >= 3 && cPrefix.includes(pt));
+        });
+        if (matchSurname) return matchSurname;
+      }
+    }
+
+    return null;
+  };
+
+  // Helper para formatar o badge de cargo
+  const getRoleBadge = (role?: string) => {
+    const r = (role || '').toLowerCase().trim();
+    if (r === 'admin' || r === 'administrador') {
+      return { label: 'Administrador', bg: 'bg-blue-50 text-blue-700 border-blue-200' };
+    }
+    if (r === 'leader' || r === 'lider' || r === 'líder') {
+      return { label: 'Líder', bg: 'bg-purple-50 text-purple-700 border-purple-200' };
+    }
+    if (r === 'user' || r === 'operador' || r === 'membro') {
+      return { label: 'Operador', bg: 'bg-slate-50 text-slate-600 border-slate-200' };
+    }
+    return null;
+  };
+
   // Permissão de Gerenciamento (Líderes e Administradores)
   const canManageRoster = useMemo(() => {
     if (isReadOnly) return false;
@@ -795,6 +869,22 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       .filter(g => g.members.length > 0 || !searchMember);
   }, [turnoGroups, filterTurno, searchMember, filterStatusCode, daysInCurrentMonth, currentYear, currentMonthIndex, cellShiftMap]);
 
+  // Lista unificada de colaboradores na ordem dos turnos para exibição limpa na tabela
+  const flattenedMembers = useMemo(() => {
+    const list: { member: string; turnoName: string; turnoId: string; turnoColor?: string }[] = [];
+    filteredGroups.forEach(g => {
+      g.members.forEach(m => {
+        list.push({
+          member: m,
+          turnoName: g.name,
+          turnoId: g.id,
+          turnoColor: g.color
+        });
+      });
+    });
+    return list;
+  }, [filteredGroups]);
+
   // Navegação de Mês
   const handlePrevMonth = () => {
     const prev = new Date(selectedMonthDate);
@@ -1250,7 +1340,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                 
                 {/* COLGROUP COM LARGURAS RÍGIDAS PARA ALINHAMENTO PIXEL-PERFECT */}
                 <colgroup>
-                  <col style={{ width: '220px', minWidth: '220px' }} />
+                  <col style={{ width: '260px', minWidth: '260px' }} />
                   {monthDaysList.map(d => (
                     <col key={d.dateStr} style={{ width: '38px', minWidth: '38px' }} />
                   ))}
@@ -1323,7 +1413,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
                 {/* CORPO DA TABELA (ÚNICO TBODY VÁLIDO) */}
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {filteredGroups.length === 0 || totalRosterMembersCount === 0 ? (
+                  {flattenedMembers.length === 0 ? (
                     <tr>
                       <td colSpan={monthDaysList.length + 7} className="p-12 text-center text-slate-400">
                         <div className="flex flex-col items-center justify-center gap-3">
@@ -1341,142 +1431,138 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       </td>
                     </tr>
                   ) : (
-                    filteredGroups.map(group => (
-                      <Fragment key={group.id}>
-                        
-                        {/* LINHA DE TÍTULO DO TURNO / SETOR (TEMA CLARO E ELEGANTE) */}
-                        <tr className="bg-slate-100/90 text-slate-800 font-bold sticky z-10">
-                          <td 
-                            colSpan={monthDaysList.length + 7}
-                            className="sticky left-0 px-4 py-2.5 bg-slate-100 text-slate-800 font-extrabold uppercase tracking-wide text-xs border-y border-slate-200 shadow-2xs"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shadow-xs"></span>
-                                <span className="text-slate-900 text-xs font-black">{group.name}</span>
-                                <span className="text-[11px] font-semibold text-slate-600 bg-white px-2.5 py-0.5 rounded-full border border-slate-200 shadow-2xs">
-                                  {group.members.length} colaborador{group.members.length === 1 ? '' : 'es'}
-                                </span>
+                    flattenedMembers.map(item => {
+                      const member = item.member;
+                      const stats = memberMonthlyStats.get(member);
+                      const profile = getMemberProfile(member);
+                      const roleBadge = getRoleBadge(profile?.role);
+
+                      return (
+                        <tr 
+                          key={`${item.turnoId}_${member}`}
+                          className="hover:bg-slate-50/80 transition-colors divide-x divide-slate-100 group/row"
+                        >
+                          
+                          {/* COLUNA FIXA: NOME DO COLABORADOR, TURNO E CARGO */}
+                          <td className="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 px-3 py-2 border-r border-slate-200 shadow-2xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                
+                                {/* Foto de Avatar Real ou Letra Inicial Fallback */}
+                                {profile?.avatar_url ? (
+                                  <img 
+                                    src={profile.avatar_url} 
+                                    alt={member} 
+                                    className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-2xs shrink-0" 
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0 border border-slate-300 shadow-2xs">
+                                    {member.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+
+                                <div className="flex flex-col min-w-0 leading-snug">
+                                  <span className="truncate text-xs font-bold text-slate-900" title={member}>
+                                    {member}
+                                  </span>
+                                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                    {/* Turno */}
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.2 bg-blue-50 text-blue-700 rounded border border-blue-200/60 truncate max-w-[110px]" title={`Turno: ${item.turnoName}`}>
+                                      {item.turnoName}
+                                    </span>
+                                    {/* Cargo */}
+                                    {roleBadge ? (
+                                      <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border truncate max-w-[110px] ${roleBadge.bg}`} title={`Cargo: ${roleBadge.label}`}>
+                                        {roleBadge.label}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-medium px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded border border-slate-200" title="Colaborador / Add-on">
+                                        Operador
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
+
                               {canManageRoster && (
                                 <button
-                                  onClick={() => {
-                                    setTargetTurnoForAdd(group.name);
-                                    setIsAddMemberModalOpen(true);
-                                  }}
-                                  className="text-[11px] font-bold text-blue-700 hover:text-blue-800 hover:bg-white px-2.5 py-1 rounded-lg border border-transparent hover:border-slate-200 transition-all flex items-center gap-1 cursor-pointer"
+                                  onClick={() => handleRemoveMember(member, item.turnoName)}
+                                  className="opacity-0 group-hover/row:opacity-100 text-slate-400 hover:text-red-600 p-1 rounded transition-opacity cursor-pointer shrink-0"
+                                  title="Remover da Escala"
                                 >
-                                  <UserPlus className="w-3 h-3 text-blue-600" />
-                                  <span>Adicionar no Turno</span>
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
                           </td>
-                        </tr>
 
-                        {/* LINHAS DOS COLABORADORES DO TURNO */}
-                        {group.members.map(member => {
-                          const stats = memberMonthlyStats.get(member);
+                          {/* CÉLULAS DOS DIAS DO MÊS (1..31) */}
+                          {monthDaysList.map(d => {
+                            const { def, customText } = resolveCellStatus(member, d.dateStr);
 
-                          return (
-                            <tr 
-                              key={`${group.id}_${member}`}
-                              className="hover:bg-slate-50/80 transition-colors divide-x divide-slate-100 group/row"
-                            >
-                              
-                              {/* COLUNA FIXA: NOME DO COLABORADOR */}
-                              <td className="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 px-3 py-2 font-medium text-slate-800 truncate border-r border-slate-200 shadow-2xs">
-                                <div className="flex items-center justify-between gap-1.5">
-                                  <div className="flex items-center gap-2 truncate">
-                                    <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0 border border-slate-300">
-                                      {member.charAt(0).toUpperCase()}
-                                    </div>
-                                    <span className="truncate text-xs font-semibold text-slate-800" title={member}>
-                                      {member}
-                                    </span>
-                                  </div>
-
-                                  {canManageRoster && (
-                                    <button
-                                      onClick={() => handleRemoveMember(member, group.name)}
-                                      className="opacity-0 group-hover/row:opacity-100 text-slate-400 hover:text-red-600 p-1 rounded transition-opacity cursor-pointer shrink-0"
-                                      title="Remover da Escala"
+                            return (
+                              <td
+                                key={d.dateStr}
+                                onClick={(e) => {
+                                  if (!canManageRoster) return;
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setActiveCellPopover({
+                                    dateStr: d.dateStr,
+                                    operatorName: member,
+                                    shiftName: item.turnoName,
+                                    anchorRect: rect,
+                                    currentCode: def?.code || '',
+                                    currentTimeText: def?.isCustomTime ? customText : ''
+                                  });
+                                }}
+                                className={`p-0.5 text-center transition-all relative ${
+                                  d.isSunday 
+                                    ? 'bg-purple-50/20' 
+                                    : d.isWeekend 
+                                      ? 'bg-slate-50/60' 
+                                      : 'bg-white'
+                                } ${canManageRoster ? 'cursor-pointer hover:ring-2 hover:ring-blue-400 hover:z-20' : ''}`}
+                              >
+                                <div className="h-7 w-full flex items-center justify-center">
+                                  {def ? (
+                                    <div 
+                                      className={`w-full h-full rounded-[3px] flex items-center justify-center font-bold text-[11px] select-none transition-transform active:scale-95 shadow-2xs ${def.bgClass} ${def.textClass} ${def.borderClass ? `border ${def.borderClass}` : ''}`}
+                                      title={`${member} - ${d.label}: ${def.label} (${customText})`}
                                     >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                                      {customText}
+                                    </div>
+                                  ) : (
+                                    <div className="w-full h-full rounded-[2px] flex items-center justify-center text-slate-200 group-hover/cell:bg-slate-100 text-[10px]">
+                                      {canManageRoster && <span className="opacity-0 hover:opacity-100 text-slate-400">+</span>}
+                                    </div>
                                   )}
                                 </div>
                               </td>
+                            );
+                          })}
 
-                              {/* CÉLULAS DOS DIAS DO MÊS (1..31) */}
-                              {monthDaysList.map(d => {
-                                const { def, customText } = resolveCellStatus(member, d.dateStr);
-
-                                return (
-                                  <td
-                                    key={d.dateStr}
-                                    onClick={(e) => {
-                                      if (!canManageRoster) return;
-                                      const rect = e.currentTarget.getBoundingClientRect();
-                                      setActiveCellPopover({
-                                        dateStr: d.dateStr,
-                                        operatorName: member,
-                                        shiftName: group.name,
-                                        anchorRect: rect,
-                                        currentCode: def?.code || '',
-                                        currentTimeText: def?.isCustomTime ? customText : ''
-                                      });
-                                    }}
-                                    className={`p-0.5 text-center transition-all relative ${
-                                      d.isSunday 
-                                        ? 'bg-purple-50/20' 
-                                        : d.isWeekend 
-                                          ? 'bg-slate-50/60' 
-                                          : 'bg-white'
-                                    } ${canManageRoster ? 'cursor-pointer hover:ring-2 hover:ring-blue-400 hover:z-20' : ''}`}
-                                  >
-                                    <div className="h-7 w-full flex items-center justify-center">
-                                      {def ? (
-                                        <div 
-                                          className={`w-full h-full rounded-[3px] flex items-center justify-center font-bold text-[11px] select-none transition-transform active:scale-95 shadow-2xs ${def.bgClass} ${def.textClass} ${def.borderClass ? `border ${def.borderClass}` : ''}`}
-                                          title={`${member} - ${d.label}: ${def.label} (${customText})`}
-                                        >
-                                          {customText}
-                                        </div>
-                                      ) : (
-                                        <div className="w-full h-full rounded-[2px] flex items-center justify-center text-slate-200 group-hover/cell:bg-slate-100 text-[10px]">
-                                          {canManageRoster && <span className="opacity-0 hover:opacity-100 text-slate-400">+</span>}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </td>
-                                );
-                              })}
-
-                              {/* COLUNAS DE RESUMO DE TOTAIS */}
-                              <td className="px-1.5 py-1 text-center font-bold text-emerald-700 bg-emerald-50/40">
-                                {stats?.totalWork || 0}
-                              </td>
-                              <td className="px-1.5 py-1 text-center font-bold text-green-800 bg-green-50/40">
-                                {stats?.totalOff || 0}
-                              </td>
-                              <td className="px-1.5 py-1 text-center font-bold text-amber-700 bg-amber-50/40">
-                                {stats?.totalVacation || 0}
-                              </td>
-                              <td className="px-1.5 py-1 text-center font-bold text-sky-700 bg-sky-50/40">
-                                {stats?.totalMedical || 0}
-                              </td>
-                              <td className="px-1.5 py-1 text-center font-bold text-pink-700 bg-pink-50/40">
-                                {stats?.totalRemote || 0}
-                              </td>
-                              <td className="px-1.5 py-1 text-center font-bold text-red-700 bg-red-50/40">
-                                {stats?.totalDelayOrAbsence || 0}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </Fragment>
-                    ))
+                          {/* COLUNAS DE RESUMO DE TOTAIS */}
+                          <td className="px-1.5 py-1 text-center font-bold text-emerald-700 bg-emerald-50/40">
+                            {stats?.totalWork || 0}
+                          </td>
+                          <td className="px-1.5 py-1 text-center font-bold text-green-800 bg-green-50/40">
+                            {stats?.totalOff || 0}
+                          </td>
+                          <td className="px-1.5 py-1 text-center font-bold text-amber-700 bg-amber-50/40">
+                            {stats?.totalVacation || 0}
+                          </td>
+                          <td className="px-1.5 py-1 text-center font-bold text-sky-700 bg-sky-50/40">
+                            {stats?.totalMedical || 0}
+                          </td>
+                          <td className="px-1.5 py-1 text-center font-bold text-pink-700 bg-pink-50/40">
+                            {stats?.totalRemote || 0}
+                          </td>
+                          <td className="px-1.5 py-1 text-center font-bold text-red-700 bg-red-50/40">
+                            {stats?.totalDelayOrAbsence || 0}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1596,16 +1682,34 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                     const totalDays = daysInCurrentMonth;
                     const workPct = Math.round(((stats?.totalWork || 0) / totalDays) * 100);
 
+                    const profile = getMemberProfile(member);
+                    const roleBadge = getRoleBadge(profile?.role);
+
                     return (
                       <div key={member} className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs flex flex-col justify-between gap-4 hover:shadow-md transition-shadow">
                         <div>
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-sm border border-blue-200">
-                              {member.charAt(0).toUpperCase()}
-                            </div>
+                            {profile?.avatar_url ? (
+                              <img 
+                                src={profile.avatar_url} 
+                                alt={member} 
+                                className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-2xs shrink-0" 
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-sm border border-blue-200 shrink-0">
+                                {member.charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <div className="truncate">
                               <h4 className="font-bold text-slate-900 text-sm truncate" title={member}>{member}</h4>
-                              <p className="text-xs text-slate-500">{group.name}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-xs text-slate-500 font-medium">{group.name}</span>
+                                {roleBadge && (
+                                  <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${roleBadge.bg}`}>
+                                    {roleBadge.label}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -1820,6 +1924,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                 <div className="max-h-36 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-2 gap-1.5">
                   {turnoGroups.flatMap(g => g.members).map(member => {
                     const isChecked = scaleSelectedMembers.includes(member);
+                    const profile = getMemberProfile(member);
+                    const roleBadge = getRoleBadge(profile?.role);
+
                     return (
                       <label 
                         key={member}
@@ -1839,9 +1946,21 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                               setScaleSelectedMembers(prev => [...prev, member]);
                             }
                           }}
-                          className="rounded text-blue-600 focus:ring-blue-500"
+                          className="rounded text-blue-600 focus:ring-blue-500 shrink-0"
                         />
+                        {profile?.avatar_url ? (
+                          <img src={profile.avatar_url} alt={member} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[9px] shrink-0">
+                            {member.charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <span className="truncate">{member}</span>
+                        {roleBadge && (
+                          <span className={`text-[9px] px-1 py-0.2 rounded border ml-auto shrink-0 ${roleBadge.bg}`}>
+                            {roleBadge.label}
+                          </span>
+                        )}
                       </label>
                     );
                   })}
@@ -2317,22 +2436,38 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       {group.members.length === 0 ? (
                         <p className="text-xs text-slate-400 py-2 text-center">Nenhum colaborador neste turno.</p>
                       ) : (
-                        group.members.map(member => (
-                          <div key={member} className="py-2 flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2 font-medium text-slate-800">
-                              <User className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{member}</span>
-                            </div>
+                        group.members.map(member => {
+                          const profile = getMemberProfile(member);
+                          const roleBadge = getRoleBadge(profile?.role);
 
-                            <button
-                              onClick={() => handleRemoveMember(member, group.name)}
-                              className="text-slate-400 hover:text-red-600 p-1"
-                              title="Remover da Escala"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))
+                          return (
+                            <div key={member} className="py-2 flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2.5 font-medium text-slate-800">
+                                {profile?.avatar_url ? (
+                                  <img src={profile.avatar_url} alt={member} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[9px] font-bold flex items-center justify-center shrink-0">
+                                    {member.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <span>{member}</span>
+                                {roleBadge && (
+                                  <span className={`text-[9px] px-1.5 py-0.2 rounded border font-semibold ${roleBadge.bg}`}>
+                                    {roleBadge.label}
+                                  </span>
+                                )}
+                              </div>
+
+                              <button
+                                onClick={() => handleRemoveMember(member, group.name)}
+                                className="text-slate-400 hover:text-red-600 p-1 cursor-pointer"
+                                title="Remover da Escala"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </div>
