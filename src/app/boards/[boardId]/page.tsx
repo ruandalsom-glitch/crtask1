@@ -6,6 +6,7 @@ import { BoardKanbanView } from '@/components/board/BoardKanbanView';
 import { BoardCalendarView } from '@/components/board/BoardCalendarView';
 import { BoardRoutineView } from '@/components/board/BoardRoutineView';
 import { BoardShiftView } from '@/components/board/BoardShiftView';
+import { BoardMonthlyRosterView } from '@/components/board/BoardMonthlyRosterView';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
@@ -14,7 +15,7 @@ import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala'>('tabela');
+  const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos'>('tabela');
 
   const { data: accessCheck, isLoading } = useQuery({
     queryKey: ['board_access_check', boardId],
@@ -196,6 +197,18 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
               Escala
             </button>
+
+            <button 
+              onClick={() => setActiveTab('turnos')}
+              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                activeTab === 'turnos' 
+                  ? 'border-blue-600 text-blue-600 font-bold' 
+                  : 'border-transparent text-[#676879] hover:text-[#323338]'
+              }`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+              Quadro de turnos
+            </button>
           </div>
 
           <div className="flex items-center gap-4 text-[13px] text-[#676879] mb-2 font-medium">
@@ -220,7 +233,13 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         ) : activeTab === 'rotina' ? (
           <BoardRoutineView boardId={boardId} isReadOnly={isReadOnly} />
         ) : activeTab === 'escala' ? (
-          <BoardShiftView boardId={boardId} isReadOnly={isReadOnly} />
+          <BoardShiftView 
+            boardId={boardId} 
+            isReadOnly={isReadOnly} 
+            onSwitchToTurnos={() => setActiveTab('turnos')} 
+          />
+        ) : activeTab === 'turnos' ? (
+          <BoardMonthlyRosterView boardId={boardId} isReadOnly={isReadOnly} />
         ) : (
           <BoardCalendarView boardId={boardId} isReadOnly={isReadOnly} />
         )}

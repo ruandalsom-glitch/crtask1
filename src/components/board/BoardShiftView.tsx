@@ -8,7 +8,7 @@ import {
   Trash2, Edit, User, MapPin, Clock, CheckCircle2, AlertCircle, 
   HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check,
   Settings, MessageSquare, Send, Layers, Sparkles, CalendarDays, RefreshCw,
-  CalendarRange, CheckSquare, Square, AlertTriangle, Tag
+  CalendarRange, CheckSquare, Square, AlertTriangle, Tag, FileSpreadsheet
 } from 'lucide-react';
 
 const SHIFTS_DEFAULT = [
@@ -21,7 +21,15 @@ const REGIONS_DEFAULT = ['Matriz', 'Aldeota', 'Barra', 'Campo'];
 const TYPES_DEFAULT = ['Dedicado', 'Apoio', 'Nuvem'];
 const STATUSES_DEFAULT = ['Confirmado', 'Pendente', 'Vaga'];
 
-export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isReadOnly?: boolean }) {
+export function BoardShiftView({ 
+  boardId, 
+  isReadOnly,
+  onSwitchToTurnos
+}: { 
+  boardId: string; 
+  isReadOnly?: boolean;
+  onSwitchToTurnos?: () => void;
+}) {
   const queryClient = useQueryClient();
 
   // Data Selecionada (Padrão: Hoje)
@@ -776,6 +784,17 @@ export function BoardShiftView({ boardId, isReadOnly }: { boardId: string; isRea
               <CalendarRange className="w-3.5 h-3.5" />
               <span>Calendário</span>
             </button>
+
+            {onSwitchToTurnos && (
+              <button
+                onClick={onSwitchToTurnos}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-2xs ml-1"
+                title="Abrir o Quadro de Turnos Mensal do Setor"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Quadro de Turnos Mensal</span>
+              </button>
+            )}
           </div>
 
           {/* Botão de Lançar Escala */}
