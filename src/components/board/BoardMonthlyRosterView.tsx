@@ -1264,13 +1264,13 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
                 {/* CABEÇALHO COM OS DIAS DO MÊS DIRETAMENTE EM CIMA DAS CÉLULAS */}
                 <thead>
-                  <tr className="bg-black text-white divide-x divide-slate-800 sticky top-0 z-30 shadow-xs h-12">
+                  <tr className="bg-slate-100 text-slate-700 divide-x divide-slate-200 border-b border-slate-200 sticky top-0 z-30 shadow-2xs h-12">
                     
                     {/* Coluna Fixa do Colaborador */}
-                    <th className="sticky left-0 z-40 bg-black text-white px-3 py-2 text-left font-bold text-xs uppercase tracking-wider border-r border-slate-800">
+                    <th className="sticky left-0 z-40 bg-slate-100 text-slate-800 px-3 py-2 text-left font-bold text-xs uppercase tracking-wider border-r border-slate-200">
                       <div className="flex items-center justify-between">
                         <span>Colaborador</span>
-                        <span className="text-[10px] text-slate-400 font-normal">
+                        <span className="text-[10px] text-slate-500 font-semibold">
                           {MONTH_SHORT[currentMonthIndex]}/{currentYear}
                         </span>
                       </div>
@@ -1280,18 +1280,18 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                     {monthDaysList.map(d => (
                       <th 
                         key={d.dateStr} 
-                        className={`p-0 text-center font-bold transition-colors ${
+                        className={`p-0 text-center font-bold transition-colors border-r ${
                           d.isSunday 
-                            ? 'bg-slate-900 text-purple-300' 
+                            ? 'bg-purple-50 text-purple-900 border-purple-200/80' 
                             : d.isWeekend 
-                              ? 'bg-slate-900/90 text-amber-200' 
-                              : 'bg-black text-slate-100'
+                              ? 'bg-amber-50 text-amber-900 border-amber-200/80' 
+                              : 'bg-slate-50 text-slate-700 border-slate-200'
                         }`}
                       >
                         <div className="flex flex-col items-center justify-center leading-tight py-1">
                           <span className="text-[11px] font-extrabold tracking-tight">{d.label}</span>
                           <span className={`text-[9px] font-bold uppercase ${
-                            d.isSunday ? 'text-purple-400' : d.isWeekend ? 'text-amber-400' : 'text-slate-400'
+                            d.isSunday ? 'text-purple-600' : d.isWeekend ? 'text-amber-600' : 'text-slate-400'
                           }`}>
                             {d.dayNameShort}
                           </span>
@@ -1300,22 +1300,22 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                     ))}
 
                     {/* Colunas de Resumo de Totais */}
-                    <th className="bg-slate-900 text-emerald-300 px-1 py-1 text-center font-bold text-[10px]" title="Dias Trabalhados">
+                    <th className="bg-emerald-50 text-emerald-800 px-1 py-1 text-center font-bold text-[10px] border-r border-slate-200" title="Dias Trabalhados">
                       ✓
                     </th>
-                    <th className="bg-slate-900 text-green-300 px-1 py-1 text-center font-bold text-[10px]" title="Total Folgas (FG/DOM/DOFF/FJ)">
+                    <th className="bg-green-50 text-green-800 px-1 py-1 text-center font-bold text-[10px] border-r border-slate-200" title="Total Folgas (FG/DOM/DOFF/FJ)">
                       FG
                     </th>
-                    <th className="bg-slate-900 text-amber-300 px-1 py-1 text-center font-bold text-[10px]" title="Férias">
+                    <th className="bg-amber-50 text-amber-800 px-1 py-1 text-center font-bold text-[10px] border-r border-slate-200" title="Férias">
                       FÉR
                     </th>
-                    <th className="bg-slate-900 text-sky-300 px-1 py-1 text-center font-bold text-[10px]" title="Atestados">
+                    <th className="bg-sky-50 text-sky-800 px-1 py-1 text-center font-bold text-[10px] border-r border-slate-200" title="Atestados">
                       AT
                     </th>
-                    <th className="bg-slate-900 text-pink-300 px-1 py-1 text-center font-bold text-[10px]" title="Home Office">
+                    <th className="bg-pink-50 text-pink-800 px-1 py-1 text-center font-bold text-[10px] border-r border-slate-200" title="Home Office">
                       HM
                     </th>
-                    <th className="bg-slate-900 text-red-300 px-1 py-1 text-center font-bold text-[10px]" title="Atrasos / Faltas">
+                    <th className="bg-red-50 text-red-800 px-1 py-1 text-center font-bold text-[10px] border-r border-slate-200" title="Atrasos / Faltas">
                       ATR
                     </th>
                   </tr>
@@ -1344,18 +1344,18 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                     filteredGroups.map(group => (
                       <Fragment key={group.id}>
                         
-                        {/* LINHA DE TÍTULO DO TURNO / SETOR */}
-                        <tr className="bg-slate-900 text-white font-bold sticky z-10">
+                        {/* LINHA DE TÍTULO DO TURNO / SETOR (TEMA CLARO E ELEGANTE) */}
+                        <tr className="bg-slate-100/90 text-slate-800 font-bold sticky z-10">
                           <td 
                             colSpan={monthDaysList.length + 7}
-                            className="sticky left-0 px-4 py-2 bg-slate-900 text-slate-100 font-extrabold uppercase tracking-wide text-xs border-y border-slate-800"
+                            className="sticky left-0 px-4 py-2.5 bg-slate-100 text-slate-800 font-extrabold uppercase tracking-wide text-xs border-y border-slate-200 shadow-2xs"
                           >
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-                                <span>{group.name}</span>
-                                <span className="text-[11px] font-normal text-slate-400 lowercase">
-                                  ({group.members.length} colaboradores)
+                              <div className="flex items-center gap-2.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shadow-xs"></span>
+                                <span className="text-slate-900 text-xs font-black">{group.name}</span>
+                                <span className="text-[11px] font-semibold text-slate-600 bg-white px-2.5 py-0.5 rounded-full border border-slate-200 shadow-2xs">
+                                  {group.members.length} colaborador{group.members.length === 1 ? '' : 'es'}
                                 </span>
                               </div>
                               {canManageRoster && (
@@ -1364,9 +1364,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                                     setTargetTurnoForAdd(group.name);
                                     setIsAddMemberModalOpen(true);
                                   }}
-                                  className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
+                                  className="text-[11px] font-bold text-blue-700 hover:text-blue-800 hover:bg-white px-2.5 py-1 rounded-lg border border-transparent hover:border-slate-200 transition-all flex items-center gap-1 cursor-pointer"
                                 >
-                                  <UserPlus className="w-3 h-3" />
+                                  <UserPlus className="w-3 h-3 text-blue-600" />
                                   <span>Adicionar no Turno</span>
                                 </button>
                               )}
