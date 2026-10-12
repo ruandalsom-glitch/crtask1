@@ -35,6 +35,14 @@ export const ROSTER_STATUSES: Record<string, StatusDefinition> = {
     borderClass: 'border-[#a8e4b3]',
     category: 'work'
   },
+  EXT: {
+    code: 'EXT',
+    label: 'Trabalho Externo',
+    shortLabel: 'EXT',
+    bgClass: 'bg-[#3949ab]',
+    textClass: 'text-white',
+    category: 'work'
+  },
   FG: {
     code: 'FG',
     label: 'Folga da Escala',
@@ -235,7 +243,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   const [scaleWeekdayOff, setScaleWeekdayOff] = useState<number>(3); // padrão: Quarta-feira
   // Folga no final de semana: 'alternate' (1 semana sab, 1 semana dom), 'sat_fixed', 'sun_fixed'
   const [scaleWeekendOffMode, setScaleWeekendOffMode] = useState<'alternate' | 'sat_fixed' | 'sun_fixed'>('alternate');
-  const [scaleRestFillMode, setScaleRestFillMode] = useState<'PRESENCA' | 'HOME' | 'EMPTY'>('PRESENCA');
+  const [scaleRestFillMode, setScaleRestFillMode] = useState<'PRESENCA' | 'HOME' | 'EXT' | 'EMPTY'>('PRESENCA');
 
   // Campos da Escolha Manual de Folgas
   const [manualOffDates, setManualOffDates] = useState<string[]>([]);
@@ -599,6 +607,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
             } else {
               // Demais dias: conforme opção escolhida
               if (scaleRestFillMode === 'PRESENCA') finalStatus = 'Confirmado';
+              else if (scaleRestFillMode === 'EXT') finalStatus = 'EXT';
               else if (scaleRestFillMode === 'HOME') finalStatus = 'HOME';
             }
 
@@ -639,6 +648,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               finalStatus = (dow === 0) ? 'DOM' : 'FG';
             } else {
               if (scaleRestFillMode === 'PRESENCA') finalStatus = 'Confirmado';
+              else if (scaleRestFillMode === 'EXT') finalStatus = 'EXT';
               else if (scaleRestFillMode === 'HOME') finalStatus = 'HOME';
             }
 
@@ -753,6 +763,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     }
     if (upper === 'HOME' || upper === 'HOME-OFFICE' || upper === 'HOME OFFICE') {
       return { def: ROSTER_STATUSES.HOME, customText: 'HOME', rawStatus: raw };
+    }
+    if (upper === 'EXT' || upper === 'EXTERNO' || upper === 'TRABALHO EXTERNO') {
+      return { def: ROSTER_STATUSES.EXT, customText: 'EXT', rawStatus: raw };
     }
     if (upper === 'F' || upper === 'FALTA') {
       return { def: ROSTER_STATUSES.FALTA, customText: 'F', rawStatus: raw };
@@ -1247,6 +1260,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               >
                 <option value="all">Todos os Status</option>
                 <option value="PRESENCA">✓ Presença / Normal</option>
+                <option value="EXT">EXT (Trabalho Externo)</option>
                 <option value="FG">FG (Folga)</option>
                 <option value="DOM">DOM (Domingo)</option>
                 <option value="FERIAS">FÉRIAS</option>
@@ -1265,6 +1279,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
             
             <span className="px-2 py-0.5 rounded bg-[#c6efce] text-[#006100] border border-[#a8e4b3] shadow-2xs" title="Presença Normal">
               ✓ Normal
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-[#3949ab] text-white shadow-2xs" title="EXT = Trabalho Externo">
+              EXT
             </span>
             <span className="px-1.5 py-0.5 rounded bg-[#2d7d32] text-white shadow-2xs" title="Folga da Escala">
               FG
@@ -2057,6 +2074,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     >
                       <option value="PRESENCA">✓ Presença / Veio Trabalhar (Normal)</option>
+                      <option value="EXT">EXT (Trabalho Externo)</option>
                       <option value="HOME">HOME (Home Office)</option>
                       <option value="EMPTY">Deixar em branco (Apenas marcar as folgas)</option>
                     </select>
@@ -2115,6 +2133,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800"
                     >
                       <option value="PRESENCA">✓ Presença / Veio Trabalhar</option>
+                      <option value="EXT">EXT (Trabalho Externo)</option>
                       <option value="HOME">HOME (Home Office)</option>
                       <option value="EMPTY">Deixar em branco</option>
                     </select>
@@ -2154,6 +2173,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800"
                     >
                       <option value="FERIAS">FÉRIAS (Férias Regulamentares)</option>
+                      <option value="EXT">EXT (Trabalho Externo)</option>
                       <option value="AT">AT (Atestado Médico)</option>
                       <option value="DOFF">DOFF (Day Off Especial)</option>
                       <option value="FJ">FJ (Folga Justificada)</option>
@@ -2532,6 +2552,19 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               >
                 <span className="text-base">✓</span>
                 <span>Presença Normal</span>
+              </button>
+
+              <button
+                onClick={() => updateCellMutation.mutate({
+                  operatorName: activeCellPopover.operatorName,
+                  shiftName: activeCellPopover.shiftName,
+                  shiftDate: activeCellPopover.dateStr,
+                  statusCode: 'EXT'
+                })}
+                className="p-2.5 rounded-xl bg-[#3949ab] hover:bg-[#303f9f] text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-2xs"
+              >
+                <span className="px-1.5 py-0.5 bg-white/20 rounded text-[10px]">EXT</span>
+                <span>Trab. Externo</span>
               </button>
 
               <button
