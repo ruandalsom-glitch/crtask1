@@ -1703,95 +1703,99 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
             compact ? 'p-4 sm:p-6' : 'p-5 sm:p-8'
           }`}
         >
-          {/* TOPO: LOGO CR TASK + COLABORADOR & MÊS + LEGENDA */}
-          <div className="flex flex-col lg:flex-row items-center justify-between gap-6 mb-6 pb-5 border-b border-slate-800/90">
+          {/* TOPO: LOGO CR TASK + COLABORADOR & MÊS + BARRA DE LEGENDA COMPLETA */}
+          <div className="flex flex-col gap-4 mb-5 pb-5 border-b border-slate-800/90">
             
-            {/* Esquerda: Logotipo Oficial CR (/logo.png) + Selo CR Task */}
-            <div className="flex items-center gap-3.5 shrink-0">
-              <div className={`${compact ? 'w-16 h-16' : 'w-20 h-20'} bg-black rounded-2xl border border-slate-700/80 shadow-xl p-1.5 flex items-center justify-center shrink-0`}>
-                <img
-                  src="/logo.png"
-                  alt="CR Task Logo"
-                  className="w-full h-full object-contain rounded-xl"
-                />
-              </div>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg sm:text-xl font-black tracking-tight text-white">
-                    CR TASK
+            {/* Linha 1: Logo CR Task à Esquerda + Colaborador & Mês à Direita */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
+              
+              {/* Esquerda: Logotipo Oficial CR (/logo.png) + Selo CR Task */}
+              <div className="flex items-center gap-3.5 shrink-0">
+                <div className={`${compact ? 'w-14 h-14' : 'w-16 h-16'} bg-black rounded-2xl border border-slate-700/80 shadow-xl p-1.5 flex items-center justify-center shrink-0`}>
+                  <img
+                    src="/logo.png"
+                    alt="CR Task Logo"
+                    className="w-full h-full object-contain rounded-xl"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg sm:text-xl font-black tracking-tight text-white">
+                      CR TASK
+                    </span>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      Oficial
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-400">
+                    Gestão Operacional • Escala Mensal
                   </span>
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                    Oficial
+                  <span className="text-[11px] font-bold text-indigo-400 mt-0.5">
+                    Setor / Turno: {shiftLabel}
                   </span>
                 </div>
-                <span className="text-xs font-semibold text-slate-400">
-                  Gestão Operacional • Escala Mensal
-                </span>
-                <span className="text-[11px] font-bold text-indigo-400 mt-0.5">
-                  Setor / Turno: {shiftLabel}
-                </span>
-              </div>
-            </div>
-
-            {/* Centro: Avatar + Nome do Colaborador + Mês/Ano */}
-            <div className="flex flex-col items-center text-center flex-1 px-2">
-              <div className="flex items-center gap-3 mb-1.5">
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={targetName}
-                    className="w-10 h-10 rounded-full object-cover ring-2 ring-indigo-500/60 shadow-md shrink-0"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-indigo-600/30 border border-indigo-400/40 text-indigo-200 font-black text-base flex items-center justify-center shrink-0">
-                    {targetName.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <h2
-                  className={`${
-                    compact ? 'text-2xl sm:text-3xl' : 'text-2xl sm:text-4xl'
-                  } font-black text-white uppercase tracking-tight leading-tight`}
-                >
-                  {targetName}
-                </h2>
               </div>
 
-              <div className="flex items-center gap-2 mt-1">
-                <span className="px-4 py-1 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-black text-sm sm:text-base uppercase tracking-widest shadow-xs">
-                  📅 {MONTH_NAMES[currentMonthIndex].toUpperCase()} {currentYear}
-                </span>
-                {roleBadge && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-slate-300">
-                    {roleBadge.label}
+              {/* Direita: Avatar + Nome do Colaborador + Mês/Ano */}
+              <div className="flex flex-col items-center sm:items-end text-center sm:text-right min-w-0">
+                <div className="flex items-center gap-2.5 mb-1 max-w-full">
+                  {profile?.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt={targetName}
+                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-2 ring-indigo-500/60 shadow-md shrink-0"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-indigo-600/30 border border-indigo-400/40 text-indigo-200 font-black text-base flex items-center justify-center shrink-0">
+                      {targetName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <h2
+                    className={`${
+                      compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'
+                    } font-black text-white uppercase tracking-tight leading-tight truncate`}
+                  >
+                    {targetName}
+                  </h2>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 mt-0.5">
+                  <span className="px-3.5 py-1 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-black text-xs sm:text-sm uppercase tracking-widest shadow-xs">
+                    📅 {MONTH_NAMES[currentMonthIndex].toUpperCase()} {currentYear}
                   </span>
-                )}
+                  {roleBadge && (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-slate-300">
+                      {roleBadge.label}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Direita: Pílulas de Legenda no Estilo CR Task */}
-            <div className="grid grid-cols-2 gap-1.5 w-full lg:w-[270px] shrink-0">
-              <div className="bg-[#1e293b] border border-slate-600 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-slate-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+            {/* Linha 2: Pílulas de Legenda em Largura Total (Sem cortar nenhum item) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 w-full pt-1">
+              <div className="bg-[#1e293b] border border-slate-600 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
                 <span className="truncate">TRABALHA</span>
               </div>
-              <div className="bg-emerald-600/90 border border-emerald-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-200 shrink-0"></span>
+              <div className="bg-emerald-600/90 border border-emerald-400/50 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-bold text-white">
+                <span className="w-2 h-2 rounded-full bg-emerald-200 shrink-0"></span>
                 <span className="truncate">FOLGA SEMANA</span>
               </div>
-              <div className="bg-purple-600/90 border border-purple-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-200 shrink-0"></span>
+              <div className="bg-purple-600/90 border border-purple-400/50 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-bold text-white">
+                <span className="w-2 h-2 rounded-full bg-purple-200 shrink-0"></span>
                 <span className="truncate">FOLGA FDS</span>
               </div>
-              <div className="bg-rose-600/90 border border-rose-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-200 shrink-0"></span>
+              <div className="bg-rose-600/90 border border-rose-400/50 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-bold text-white">
+                <span className="w-2 h-2 rounded-full bg-rose-200 shrink-0"></span>
                 <span className="truncate">DAY OFF</span>
               </div>
-              <div className="bg-amber-500 border border-amber-300 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-extrabold text-slate-950">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-950 shrink-0"></span>
+              <div className="bg-amber-500 border border-amber-300 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-extrabold text-slate-950">
+                <span className="w-2 h-2 rounded-full bg-slate-950 shrink-0"></span>
                 <span className="truncate">FÉRIAS</span>
               </div>
-              <div className="bg-indigo-600/90 border border-indigo-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
-                <span className="w-2.5 h-2.5 rounded-full bg-indigo-200 shrink-0"></span>
+              <div className="bg-indigo-600/90 border border-indigo-400/50 rounded-lg py-1.5 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-bold text-white">
+                <span className="w-2 h-2 rounded-full bg-indigo-200 shrink-0"></span>
                 <span className="truncate">EXTERNO (EXT)</span>
               </div>
             </div>
