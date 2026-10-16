@@ -483,6 +483,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   const cellShiftMap = useMemo(() => {
     const map = new Map<string, any>();
     (rawShiftsData || []).forEach((row: any) => {
+      if (row.shift_name === '__ESC_ENVIADA__') return;
       if (row.operator_name && row.shift_date) {
         const key = `${row.operator_name.toLowerCase().trim()}_${row.shift_date}`;
         map.set(key, row);
@@ -957,6 +958,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     const set = new Set<string>();
     turnoGroups.forEach(g => g.members.forEach(m => set.add(m)));
     (rawShiftsData || []).forEach((r: any) => {
+      if (r.shift_name === '__ESC_ENVIADA__') return;
       if (r.operator_name && r.operator_name.trim()) {
         set.add(r.operator_name.trim());
       }
@@ -964,48 +966,104 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     return Array.from(set);
   }, [turnoGroups, rawShiftsData]);
 
-  // Identifica automaticamente o colaborador correspondente ao usuário logado (para membros comuns)
-  const matchedCurrentUserMember = useMemo(() => {
-    if (!currentUser?.email || allRosterMembers.length === 0) return allRosterMembers[0] || '';
-    const userEmail = currentUser.email.toLowerCase().trim();
-    const userPrefix = userEmail.split('@')[0] || '';
-    const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
-    const userNorm = norm(userPrefix);
-    const userFirstPart = norm(userPrefix.split(/[\s._-]+/)[0] || '');
+  const normText = (s: string) =>
+    (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
-    // 1. Pelo perfil mapeado
-    const byProfile = allRosterMembers.find(m => {
-      const p = getMemberProfile(m);
-      return p?.email?.toLowerCase().trim() === userEmail;
+  // Conjunto de colaboradores cuja escala deste mês já foi ENVIADA pelo gestor via botão
+  const publishedMembersSet = useMemo(() => {
+    const set = new Set<string>();
+    (rawShiftsData || []).forEach((row: any) => {
+      if (row.shift_name === '__ESC_ENVIADA__' && row.operator_name) {
+        set.add(row.operator_name.toLowerCase().trim());
+      }
     });
-    if (byProfile) return byProfile;
+    return set;
+  }, [rawShiftsData]);
 
-    // 2. Pelo prefixo normalizado
-    const byNorm = allRosterMembers.find(m => norm(m) === userNorm || norm(m).includes(userNorm) || userNorm.includes(norm(m)));
-    if (byNorm) return byNorm;
+  // Verifica se o gestor já clicou em "Enviar" para este colaborador neste mês
+  const isMemberSchedulePublished = (memberName: string) => {
+    if (!memberName) return false;
+    const clean = memberName.toLowerCase().trim();
+    const nTarget = normText(memberName);
+    const nFirst = normText(memberName.split(/[\s._-]+/)[0] || '');
+    for (const pub of publishedMembersSet) {
+      if (pub === clean || normText(pub) === nTarget) return true;
+      const pubFirst = normText(pub.split(/[\s._-]+/)[0] || '');
+      if (nFirst.length >= 3 && pubFirst === nFirst) return true;
+    }
+    return false;
+  };
 
-    // 3. Pelo primeiro nome
-    if (userFirstPart.length >= 3) {
-      const byFirst = allRosterMembers.find(m => {
-        const mFirst = norm(m.split(/[\s._-]+/)[0] || '');
-        return mFirst === userFirstPart;
-      });
-      if (byFirst) return byFirst;
+  // Verifica se há ao menos 1 turno lançado para este colaborador no mês selecionado
+  const hasMemberShiftsInMonth = (memberName: string) => {
+    if (!memberName) return false;
+    const clean = memberName.toLowerCase().trim();
+    const nTarget = normText(memberName);
+    return (rawShiftsData || []).some((row: any) => {
+      if (row.shift_name === '__ESC_ENVIADA__' || !row.operator_name) return false;
+      const rClean = row.operator_name.toLowerCase().trim();
+      return rClean === clean || normText(rClean) === nTarget;
+    });
+  };
+
+  // Identifica estritamente o colaborador correspondente ao quadro/usuário logado (sem cair no nome de outro colega)
+  const matchedCurrentUserMember = useMemo(() => {
+    const boardTitle = (boardData?.name || '').trim();
+    const userEmail = (currentUser?.email || '').toLowerCase().trim();
+    const userPrefix = userEmail.split('@')[0] || '';
+    const userNorm = normText(userPrefix);
+    const userFirstPart = normText(userPrefix.split(/[\s._-]+/)[0] || '');
+    const boardNorm = normText(boardTitle);
+    const boardFirstPart = normText(boardTitle.split(/[\s._-]+/)[0] || '');
+
+    if (allRosterMembers.length > 0) {
+      // 1. Se estiver no quadro nominal do colaborador (ex: "Ruan"), prioriza o match com o nome do quadro
+      if (boardNorm.length >= 3) {
+        const byBoardExact = allRosterMembers.find(
+          m => normText(m) === boardNorm || normText(m.split(/[\s._-]+/)[0] || '') === boardFirstPart
+        );
+        if (byBoardExact) return byBoardExact;
+      }
+
+      // 2. Match pelo perfil/e-mail do usuário logado
+      if (userEmail) {
+        const byProfile = allRosterMembers.find(m => {
+          const p = getMemberProfile(m);
+          return p?.email?.toLowerCase().trim() === userEmail;
+        });
+        if (byProfile) return byProfile;
+
+        const byNorm = allRosterMembers.find(
+          m => normText(m) === userNorm || normText(m).includes(userNorm) || (userNorm.length >= 3 && userNorm.includes(normText(m)))
+        );
+        if (byNorm) return byNorm;
+
+        if (userFirstPart.length >= 3) {
+          const byFirst = allRosterMembers.find(m => {
+            const mFirst = normText(m.split(/[\s._-]+/)[0] || '');
+            return mFirst === userFirstPart;
+          });
+          if (byFirst) return byFirst;
+        }
+      }
     }
 
-    // 4. Pelo nome do próprio quadro
-    if (boardData?.name) {
-      const bNorm = norm(boardData.name);
-      const byBoard = allRosterMembers.find(m => norm(m) === bNorm || norm(m.split(' ')[0]) === bNorm);
-      if (byBoard) return byBoard;
+    // Nunca retorna allRosterMembers[0] (que seria outro colaborador como Davis)!
+    // Retorna o nome do próprio quadro/usuário para exibir o card nominal com "Ainda não definido"
+    if (boardTitle && !boardTitle.toLowerCase().includes('panorama')) {
+      return boardTitle;
     }
-
-    return allRosterMembers[0] || '';
+    if (userPrefix) {
+      return userPrefix.charAt(0).toUpperCase() + userPrefix.slice(1);
+    }
+    return 'Colaborador';
   }, [currentUser, allRosterMembers, allProfiles, boardData]);
 
   useEffect(() => {
-    if (!isLeaderOrAdmin && matchedCurrentUserMember) {
-      setSelectedGoMember(matchedCurrentUserMember);
+    if (!isLeaderOrAdmin) {
+      if (matchedCurrentUserMember && selectedGoMember !== matchedCurrentUserMember) {
+        setSelectedGoMember(matchedCurrentUserMember);
+      }
     } else if (!selectedGoMember && allRosterMembers.length > 0) {
       setSelectedGoMember(allRosterMembers[0]);
     }
@@ -1016,7 +1074,19 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     const { def, customText } = resolveCellStatus(memberName, dateStr);
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-    if (!def || def.code === 'PRESENCA') {
+    // Célula sem lançamento: não marca como "Trabalha" automaticamente
+    if (!def) {
+      return {
+        bgHex: '#0f172a',
+        borderHex: '#1e293b',
+        textHex: '#64748b',
+        subTextHex: '#475569',
+        category: 'vazio' as const,
+        badge: '-'
+      };
+    }
+
+    if (def.code === 'PRESENCA') {
       return {
         bgHex: '#1e293b',
         borderHex: '#334155',
@@ -1374,7 +1444,6 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     const stats = memberMonthlyStats.get(memberName);
     ctx.fillStyle = '#64748b';
     ctx.font = '600 13px Inter, Arial, sans-serif';
-    ctx.textAlign = 'between' as any;
     ctx.textAlign = 'left';
     ctx.fillText(
       `Resumo do Mês:   Trabalha: ${stats?.totalWork || 0} dias   •   Folgas: ${stats?.totalOff || 0} dias   •   Férias: ${stats?.totalVacation || 0} dias`,
@@ -1423,24 +1492,70 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     }
   };
 
+  // Grava no banco que a escala deste colaborador/mês foi oficialmente enviada pela liderança
+  const markMemberScheduleAsPublished = async (membersToPublish: string[]) => {
+    const targetBoardIds = workspaceBoardIds && workspaceBoardIds.length > 0 ? workspaceBoardIds : [boardId];
+    for (const m of membersToPublish) {
+      await supabase
+        .from('operational_shifts')
+        .delete()
+        .in('board_id', targetBoardIds)
+        .eq('shift_name', '__ESC_ENVIADA__')
+        .eq('operator_name', m)
+        .eq('shift_date', startOfMonthStr);
+    }
+
+    const rows = membersToPublish.map(m => {
+      const row: any = {
+        board_id: boardId,
+        shift_date: startOfMonthStr,
+        shift_name: '__ESC_ENVIADA__',
+        shift_time: '00:00',
+        region_name: 'Sistema',
+        operator_name: m,
+        operator_type: 'Publicacao',
+        status: 'ENVIADA',
+        notes: `Enviada em ${new Date().toISOString()}`
+      };
+      if (boardData?.workspace_id) row.workspace_id = boardData.workspace_id;
+      return row;
+    });
+
+    if (rows.length > 0) {
+      let { error } = await supabase.from('operational_shifts').insert(rows);
+      if (error && error.message?.includes('workspace_id')) {
+        const cleanRows = rows.map(({ workspace_id, ...rest }) => rest);
+        const retry = await supabase.from('operational_shifts').insert(cleanRows);
+        if (retry.error) throw retry.error;
+      } else if (error) {
+        throw error;
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: ['operational_shifts_roster'] });
+  };
+
   // Enviar / Compartilhar Escala com o Colaborador no Sistema (+ E-mail)
   const handleSendScaleToCollaborator = async (memberName: string) => {
     if (!memberName) return;
     setIsSendingShare(true);
     try {
+      // 1. Libera oficialmente a escala deste mês para o colaborador visualizar em "Minha Escala"
+      await markMemberScheduleAsPublished([memberName]);
+
       const profile = getMemberProfile(memberName);
       const authorEmail = currentUser?.email || 'lider@masterdeliveryexpress.com.br';
       const monthLabel = `${MONTH_NAMES[currentMonthIndex]} de ${currentYear}`;
 
       if (profile?.email) {
-        // 1. Insere notificação no sino do colaborador
+        // 2. Insere notificação no sino do colaborador
         await supabase.from('notifications').insert([{
           user_email: profile.email,
           message: `${authorEmail}||📅 Sua escala de ${monthLabel} foi compartilhada! Clique para abrir Minha Escala.`,
           read: false
         }]);
 
-        // 2. Dispara e-mail formatado no padrão visual CR Task
+        // 3. Dispara e-mail formatado no padrão visual CR Task
         const s = memberMonthlyStats.get(memberName);
         fetch('/api/send-email', {
           method: 'POST',
@@ -1466,9 +1581,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           })
         }).catch(() => {});
 
-        setShareFeedbackMsg(`✅ Escala de ${monthLabel} enviada para ${memberName} (${profile.email})!`);
+        setShareFeedbackMsg(`✅ Escala de ${monthLabel} liberada e enviada para ${memberName} (${profile.email})!`);
       } else {
-        setShareFeedbackMsg(`✅ Escala de ${memberName} pronta! (Colaborador sem e-mail vinculado — use Copiar ou Baixar PNG para enviar via WhatsApp).`);
+        setShareFeedbackMsg(`✅ Escala de ${monthLabel} liberada no painel para ${memberName}!`);
       }
       setTimeout(() => setShareFeedbackMsg(''), 5000);
     } catch (err: any) {
@@ -1483,11 +1598,17 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     if (allRosterMembers.length === 0) return;
     setIsSendingShare(true);
     try {
+      const membersWithShifts = allRosterMembers.filter(m => hasMemberShiftsInMonth(m));
+      const targetList = membersWithShifts.length > 0 ? membersWithShifts : allRosterMembers;
+
+      // 1. Libera oficialmente as escalas no banco
+      await markMemberScheduleAsPublished(targetList);
+
       const authorEmail = currentUser?.email || 'lider@masterdeliveryexpress.com.br';
       const monthLabel = `${MONTH_NAMES[currentMonthIndex]} de ${currentYear}`;
       const notifsToInsert: any[] = [];
 
-      allRosterMembers.forEach(m => {
+      targetList.forEach(m => {
         const p = getMemberProfile(m);
         if (p?.email) {
           notifsToInsert.push({
@@ -1502,7 +1623,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
         await supabase.from('notifications').insert(notifsToInsert);
       }
 
-      setShareFeedbackMsg(`🚀 Escalas de ${monthLabel} enviadas para toda a equipe (${notifsToInsert.length} notificações disparadas)!`);
+      setShareFeedbackMsg(`🚀 Escalas de ${monthLabel} liberadas e enviadas para a equipe (${targetList.length} colaboradores)!`);
       setTimeout(() => setShareFeedbackMsg(''), 5000);
     } catch (err: any) {
       alert('Erro ao compartilhar escalas em lote: ' + err.message);
@@ -1662,30 +1783,58 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
   // Renderizador do Card Visual Oficial "CR TASK" (Com logotipo /logo.png e cores do sistema)
   const renderGoScheduleCard = (memberName: string, compact = false) => {
-    const targetName = memberName || selectedGoMember || allRosterMembers[0] || 'COLABORADOR';
+    const targetName = memberName || (!isLeaderOrAdmin ? matchedCurrentUserMember : (selectedGoMember || allRosterMembers[0])) || 'COLABORADOR';
     const stats = memberMonthlyStats.get(targetName);
-    const groupObj = turnoGroups.find(g => g.members.includes(targetName));
+    const groupObj = turnoGroups.find(g => g.members.some(m => m.toLowerCase() === targetName.toLowerCase()));
     const shiftLabel = groupObj?.name || 'Geral';
     const profile = getMemberProfile(targetName);
     const roleBadge = getRoleBadge(profile?.role);
+
+    // Verifica se a escala deste mês foi lançada e enviada/publicada
+    const hasShifts = hasMemberShiftsInMonth(targetName);
+    const isPublished = isMemberSchedulePublished(targetName);
+    // Para o colaborador comum: só libera a visualização quando o gestor clicou em "Enviar" E existem turnos lançados no mês.
+    // Para o gestor/líder: se o mês futuro ainda não teve nenhum lançamento, exibe o aviso de "Ainda não definido".
+    const isScheduleUndefined = !isLeaderOrAdmin ? (!hasShifts || !isPublished) : !hasShifts;
 
     return (
       <div className="flex flex-col items-center w-full">
         {/* Barra rápida de resumo numérico acima do card */}
         <div className="w-full max-w-[940px] mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
             <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 shadow-2xs text-slate-800">
               Turno: <strong className="text-indigo-600">{shiftLabel}</strong>
             </span>
-            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
-              Trabalha: <strong>{stats?.totalWork || 0} dias</strong>
-            </span>
-            <span className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-800">
-              Folgas: <strong>{stats?.totalOff || 0} dias</strong>
-            </span>
-            {(stats?.totalVacation || 0) > 0 && (
+            {!isScheduleUndefined ? (
+              <>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
+                  Trabalha: <strong>{stats?.totalWork || 0} dias</strong>
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-800">
+                  Folgas: <strong>{stats?.totalOff || 0} dias</strong>
+                </span>
+                {(stats?.totalVacation || 0) > 0 && (
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
+                    Férias: <strong>{stats?.totalVacation} dias</strong>
+                  </span>
+                )}
+              </>
+            ) : (
               <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
-                Férias: <strong>{stats?.totalVacation} dias</strong>
+                ⏳ Escala do mês: <strong>Ainda não definido</strong>
+              </span>
+            )}
+            {isLeaderOrAdmin && hasShifts && (
+              <span
+                className={`px-2.5 py-1 rounded-lg border ${
+                  isPublished
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : 'bg-amber-50 border-amber-200 text-amber-700'
+                }`}
+              >
+                {isPublished
+                  ? '✅ Enviada ao colaborador'
+                  : '⏳ Rascunho (Clique em "Enviar" para liberar ao colaborador)'}
               </span>
             )}
           </div>
@@ -1802,8 +1951,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           </div>
 
           {/* GRADE MODERNA DE CALENDÁRIO SEGUNDA A DOMINGO (ESTILO CR TASK) */}
-          <div className="w-full overflow-x-auto">
-            <div className="min-w-[620px] flex flex-col gap-2">
+          <div className="w-full overflow-x-auto relative">
+            <div className="min-w-[620px] flex flex-col gap-2 relative">
               {/* Cabeçalho dos Dias da Semana */}
               <div className="grid grid-cols-7 gap-2">
                 {['SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA', 'SÁBADO', 'DOMINGO'].map((dayHeader, idx) => (
@@ -1820,72 +1969,119 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                 ))}
               </div>
 
-              {/* Semanas e Células Arredondadas */}
-              {goCalendarWeeks.map((week, wIdx) => (
-                <div key={wIdx} className="grid grid-cols-7 gap-2">
-                  {week.map((cell, cIdx) => {
-                    if (!cell) {
-                      return (
-                        <div
-                          key={`empty_${wIdx}_${cIdx}`}
-                          className="h-14 sm:h-16 rounded-xl bg-slate-900/40 border border-slate-800/60"
-                        />
-                      );
-                    }
+              {/* Container das Semanas com Blur quando a escala do mês ainda não foi definida/enviada */}
+              <div className="relative">
+                <div
+                  className={`flex flex-col gap-2 transition-all duration-300 ${
+                    isScheduleUndefined && !canManageRoster
+                      ? 'blur-[6px] opacity-30 pointer-events-none select-none'
+                      : isScheduleUndefined && canManageRoster
+                      ? 'blur-[4px] opacity-40'
+                      : ''
+                  }`}
+                >
+                  {goCalendarWeeks.map((week, wIdx) => (
+                    <div key={wIdx} className="grid grid-cols-7 gap-2">
+                      {week.map((cell, cIdx) => {
+                        if (!cell) {
+                          return (
+                            <div
+                              key={`empty_${wIdx}_${cIdx}`}
+                              className="h-14 sm:h-16 rounded-xl bg-slate-900/40 border border-slate-800/60"
+                            />
+                          );
+                        }
 
-                    const cellStyle = resolveGoCellStyle(targetName, cell.dateStr, cell.dayOfWeek);
-                    const rawStatus = resolveCellStatus(targetName, cell.dateStr);
+                        const cellStyle = resolveGoCellStyle(targetName, cell.dateStr, cell.dayOfWeek);
+                        const rawStatus = resolveCellStatus(targetName, cell.dateStr);
 
-                    return (
-                      <div
-                        key={cell.dateStr}
-                        onClick={(e) => {
-                          if (!canManageRoster) return;
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          setActiveCellPopover({
-                            dateStr: cell.dateStr,
-                            operatorName: targetName,
-                            shiftName: shiftLabel,
-                            anchorRect: rect,
-                            currentCode: rawStatus.def?.code || '',
-                            currentTimeText: rawStatus.def?.isCustomTime ? rawStatus.customText : ''
-                          });
-                        }}
-                        style={{
-                          backgroundColor: cellStyle.bgHex,
-                          borderColor: cellStyle.borderHex,
-                          color: cellStyle.textHex
-                        }}
-                        title={`${targetName} - Dia ${cell.dayNumber}: ${cellStyle.badge || 'Trabalha'}`}
-                        className={`h-14 sm:h-16 rounded-xl border-[1.5px] flex flex-col items-center justify-center relative transition-all shadow-sm ${
-                          canManageRoster
-                            ? 'cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95'
-                            : ''
-                        }`}
-                      >
-                        <span className="text-lg sm:text-xl font-black tracking-tight leading-none">
-                          {cell.dayNumber}
-                        </span>
-                        <span
-                          style={{ color: cellStyle.subTextHex }}
-                          className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-tight mt-1 truncate max-w-[90%]"
-                        >
-                          {cellStyle.badge}
-                        </span>
-                      </div>
-                    );
-                  })}
+                        return (
+                          <div
+                            key={cell.dateStr}
+                            onClick={(e) => {
+                              if (!canManageRoster) return;
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setActiveCellPopover({
+                                dateStr: cell.dateStr,
+                                operatorName: targetName,
+                                shiftName: shiftLabel,
+                                anchorRect: rect,
+                                currentCode: rawStatus.def?.code || '',
+                                currentTimeText: rawStatus.def?.isCustomTime ? rawStatus.customText : ''
+                              });
+                            }}
+                            style={{
+                              backgroundColor: isScheduleUndefined ? '#1e293b' : cellStyle.bgHex,
+                              borderColor: isScheduleUndefined ? '#334155' : cellStyle.borderHex,
+                              color: isScheduleUndefined ? '#64748b' : cellStyle.textHex
+                            }}
+                            title={
+                              isScheduleUndefined
+                                ? `${targetName} - Dia ${cell.dayNumber}: Ainda não definido`
+                                : `${targetName} - Dia ${cell.dayNumber}: ${cellStyle.badge || 'Não definido'}`
+                            }
+                            className={`h-14 sm:h-16 rounded-xl border-[1.5px] flex flex-col items-center justify-center relative transition-all shadow-sm ${
+                              canManageRoster
+                                ? 'cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95'
+                                : ''
+                            }`}
+                          >
+                            <span className="text-lg sm:text-xl font-black tracking-tight leading-none">
+                              {cell.dayNumber}
+                            </span>
+                            {!isScheduleUndefined && (
+                              <span
+                                style={{ color: cellStyle.subTextHex }}
+                                className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-tight mt-1 truncate max-w-[90%]"
+                              >
+                                {cellStyle.badge}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
-              ))}
+
+                {/* FAIXA CENTRAL "AINDA NÃO DEFINIDO" SOBRE OS DIAS COM BLUR */}
+                {isScheduleUndefined && (
+                  <div
+                    className={`absolute inset-0 flex items-center justify-center z-10 ${
+                      canManageRoster ? 'pointer-events-none' : ''
+                    }`}
+                  >
+                    <div className="w-full py-5 px-6 bg-slate-950/85 backdrop-blur-md border-y border-indigo-500/40 shadow-2xl flex flex-col items-center justify-center text-center gap-1.5">
+                      <span className="px-4 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-black uppercase tracking-widest">
+                        ⏳ Escala de {MONTH_NAMES[currentMonthIndex]} {currentYear}
+                      </span>
+                      <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider">
+                        Ainda não definido
+                      </h3>
+                      <p className="text-xs text-slate-400 font-medium max-w-md">
+                        {canManageRoster
+                          ? 'Nenhum turno foi lançado para este colaborador neste mês. Clique em qualquer dia (ou use a Planilha Mensal) para definir a escala.'
+                          : 'A escala deste mês ainda não foi definida e enviada pelo gestor do seu setor.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Rodapé do Card CR Task */}
           <div className="mt-5 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-medium">
-            <span>
-              Resumo Mensal: <strong className="text-emerald-400">{stats?.totalWork || 0} dias trabalhados</strong> • <strong className="text-purple-400">{stats?.totalOff || 0} folgas</strong>
-              {(stats?.totalVacation || 0) > 0 ? ` • ${stats?.totalVacation} dias de férias` : ''}
-            </span>
+            {!isScheduleUndefined ? (
+              <span>
+                Resumo Mensal: <strong className="text-emerald-400">{stats?.totalWork || 0} dias trabalhados</strong> • <strong className="text-purple-400">{stats?.totalOff || 0} folgas</strong>
+                {(stats?.totalVacation || 0) > 0 ? ` • ${stats?.totalVacation} dias de férias` : ''}
+              </span>
+            ) : (
+              <span className="text-amber-400/90 font-semibold">
+                ⏳ Escala mensal de {MONTH_NAMES[currentMonthIndex]} {currentYear} ainda não definida
+              </span>
+            )}
             <span className="text-slate-500 font-semibold">
               CR Task • Painel Operacional
             </span>
@@ -1899,7 +2095,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   // VISÃO EXCLUSIVA DO COLABORADOR COMUM (!isLeaderOrAdmin)
   // ============================================================================
   if (!isLeaderOrAdmin) {
-    const activeMemberForUser = selectedGoMember || matchedCurrentUserMember || allRosterMembers[0] || '';
+    // Alinhado estritamente ao colaborador do quadro/logado (ex: Ruan vê apenas Ruan, nunca o Davis)
+    const activeMemberForUser = matchedCurrentUserMember;
+    const canExportUserScale = hasMemberShiftsInMonth(activeMemberForUser) && isMemberSchedulePublished(activeMemberForUser);
 
     return (
       <div className="flex flex-col h-full w-full bg-slate-50 overflow-y-auto">
@@ -1913,7 +2111,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 Minha Escala Mensal
                 <span className="text-xs px-2.5 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-full">
-                  CR Task
+                  {activeMemberForUser}
                 </span>
               </h2>
               <p className="text-xs text-slate-500">
@@ -1924,22 +2122,6 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
           {/* Seletor de Mês e Ações do Colaborador */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Seletor de Colaborador (Caso queira consultar seu nome na lista) */}
-            {allRosterMembers.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-slate-500 font-semibold">Colaborador:</span>
-                <select
-                  value={activeMemberForUser}
-                  onChange={e => setSelectedGoMember(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                >
-                  {allRosterMembers.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             {/* Navegação de Mês */}
             <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
@@ -1968,8 +2150,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               </button>
             </div>
 
-            {/* Botões de Baixar / Copiar Escala */}
-            {activeMemberForUser && (
+            {/* Botões de Baixar / Copiar Escala (Apenas quando a escala do mês já foi definida e enviada) */}
+            {activeMemberForUser && canExportUserScale && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleCopyGoPng(activeMemberForUser)}
@@ -1997,19 +2179,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           </div>
         )}
 
-        {/* Corpo com o Card CR Task Centralizado */}
+        {/* Corpo com o Card CR Task Centralizado do Próprio Colaborador */}
         <div className="flex-1 p-6 flex flex-col items-center justify-start">
-          {allRosterMembers.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-md my-auto shadow-xs">
-              <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <h3 className="font-bold text-slate-800 text-base">Escala ainda não publicada</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                O líder do seu setor ainda não cadastrou a escala mensal de {MONTH_NAMES[currentMonthIndex]} {currentYear}.
-              </p>
-            </div>
-          ) : (
-            renderGoScheduleCard(activeMemberForUser)
-          )}
+          {renderGoScheduleCard(activeMemberForUser)}
         </div>
       </div>
     );
