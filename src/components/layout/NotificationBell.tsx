@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Bell, Check } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
+import { isBoardOwnedByUser, canUserAccessBoard } from '@/lib/privacy';
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
@@ -26,6 +27,64 @@ export function NotificationBell() {
       return data || [];
     }
   });
+
+  // Redireciona com segurança para o próprio quadro do colaborador na aba "Minha Escala" (sem cair em quadro restrito de outro colega)
+  const navigateToUserScaleBoard = async () => {
+    if (!userProfile) return;
+    const activeWs = typeof window !== 'undefined' ? localStorage.getItem('monday_active_workspace') : null;
+
+    const [boardsRes, profilesRes, workspacesRes] = await Promise.all([
+      supabase.from('boards').select('id, name, created_by, workspace_id'),
+      supabase.from('profiles').select('id, email, role'),
+      supabase.from('workspaces').select('id, visibility_mode')
+    ]);
+
+    const allBoards = boardsRes.data || [];
+    if (allBoards.length === 0) return;
+
+    const profiles = profilesRes.data || [];
+    const currentProf = profiles.find((p: any) => p.id === userProfile.id || p.email === userProfile.email);
+    const userRole = currentProf?.role || 'user';
+    const wsMap = new Map((workspacesRes.data || []).map((w: any) => [w.id, w.visibility_mode || 'own_only']));
+
+    // 1. Prioriza quadros do workspace ativo (se houver), seguidos pelos demais quadros
+    const orderedBoards = activeWs
+      ? [
+          ...allBoards.filter((b: any) => b.workspace_id === activeWs),
+          ...allBoards.filter((b: any) => b.workspace_id !== activeWs)
+        ]
+      : allBoards;
+
+    // 2. Busca primeiro o quadro que pertence ao próprio usuário logado (ex: Teffy <-> estefany, Davis <-> davis.lmarques, Ruan <-> ruan.dalsom)
+    const ownBoard = orderedBoards.find((b: any) =>
+      isBoardOwnedByUser(
+        { name: b.name, created_by: b.created_by },
+        { id: userProfile.id, email: userProfile.email || '' }
+      )
+    );
+
+    if (ownBoard) {
+      setIsOpen(false);
+      window.location.href = `/boards/${ownBoard.id}?tab=turnos`;
+      return;
+    }
+
+    // 3. Caso não tenha quadro próprio com seu nome, busca apenas quadros que o usuário tem permissão real de acessar
+    const accessibleBoard = orderedBoards.find((b: any) =>
+      canUserAccessBoard({
+        board: { name: b.name, created_by: b.created_by },
+        user: { id: userProfile.id, email: userProfile.email || '' },
+        userRole,
+        visibilityMode: wsMap.get(b.workspace_id) || 'own_only',
+        profiles
+      })
+    );
+
+    if (accessibleBoard) {
+      setIsOpen(false);
+      window.location.href = `/boards/${accessibleBoard.id}?tab=turnos`;
+    }
+  };
 
   const { data: notifications } = useQuery({
     queryKey: ['notifications', userProfile?.email],
@@ -112,22 +171,23 @@ export function NotificationBell() {
             actualMessage = parts[1];
           }
 
-          // Pega o nome do autor (ex: 'ruan.dalsom' de "ruan.dalsom atualizou...")
+          // Pega o nome do autor (usa authorEmail quando a mensagem começa com emoji como 📅)
           const authorMatch = actualMessage.split(' ')[0];
+          const isScheduleNotif = actualMessage.toLowerCase().includes('escala');
           
           const getFirstName = (str: string) => {
-            const name = str.split('.')[0];
+            const clean = str.split('@')[0] || str;
+            const name = clean.split('.')[0];
             return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
           };
           
-          const firstName = getFirstName(authorMatch);
-          // O fallback agora usa o email exato (se existir) para gerar o MESMO Dicebear do canto inferior esquerdo
+          const firstName = authorEmail ? getFirstName(authorEmail) : getFirstName(authorMatch);
           const fallbackSeed = authorEmail || authorMatch;
-          let iconUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${fallbackSeed}`;
-          let title = `Notificação de ${firstName}`;
-          let bodyText = actualMessage.replace(authorMatch, firstName);
+          let iconUrl = isScheduleNotif ? '/logo.png' : `https://api.dicebear.com/7.x/notionists/svg?seed=${fallbackSeed}`;
+          let title = isScheduleNotif ? `📅 Escala Mensal • CR Task` : `Notificação de ${firstName}`;
+          let bodyText = isScheduleNotif ? actualMessage : actualMessage.replace(authorMatch, firstName);
 
-          if (workspaceUsers && authorEmail) {
+          if (!isScheduleNotif && workspaceUsers && authorEmail) {
              const matchedUser = workspaceUsers.find((u: any) => u.email === authorEmail);
              if (matchedUser?.avatar_url) {
                 iconUrl = matchedUser.avatar_url;
@@ -141,11 +201,14 @@ export function NotificationBell() {
 
           n.onclick = async () => {
             window.focus();
+            if (!notif.read) markAsRead.mutate(notif.id);
             if (notif.task_id) {
               const { data } = await supabase.from('tasks').select('board_id').eq('id', notif.task_id).single();
               if (data?.board_id) {
                 window.location.href = `/boards/${data.board_id}?taskId=${notif.task_id}`;
               }
+            } else if (notif.message?.toLowerCase().includes('escala')) {
+              await navigateToUserScaleBoard();
             }
           };
         }
@@ -221,19 +284,7 @@ export function NotificationBell() {
                             window.location.href = `/boards/${data.board_id}?taskId=${notif.task_id}`;
                          }
                       } else if (notif.message?.toLowerCase().includes('escala')) {
-                         const activeWs = localStorage.getItem('monday_active_workspace');
-                         let query = supabase.from('boards').select('id, name, created_by');
-                         if (activeWs) query = query.eq('workspace_id', activeWs);
-                         const { data: boardsList } = await query;
-                         if (boardsList && boardsList.length > 0) {
-                           const userPrefix = (userProfile?.email?.split('@')[0] || '').toLowerCase();
-                           const ownB = boardsList.find((b: any) => 
-                             b.created_by === userProfile?.id || 
-                             b.name?.toLowerCase().includes(userPrefix)
-                           ) || boardsList[0];
-                           setIsOpen(false);
-                           window.location.href = `/boards/${ownB.id}?tab=turnos`;
-                         }
+                         await navigateToUserScaleBoard();
                       }
                     }}
                     className={`p-4 border-b border-slate-50 cursor-pointer transition-colors ${notif.read ? 'bg-white opacity-60' : 'bg-blue-50/50 hover:bg-blue-50'}`}

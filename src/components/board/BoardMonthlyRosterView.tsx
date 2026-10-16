@@ -3,6 +3,7 @@
 import { useState, useMemo, Fragment, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
+import { isBoardOwnedByUser } from '@/lib/privacy';
 import { 
   Calendar, ChevronLeft, ChevronRight, Plus, Search, Filter, 
   Trash2, Edit, User, Clock, Check, CheckCircle2, X, Layers, 
@@ -329,6 +330,15 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     const clean = name.toLowerCase().trim();
     const cleanAlpha = clean.replace(/[^a-z0-9]/g, '');
 
+    // 0. Apelido conhecido Teffy / Tefy <-> Estefany
+    if (clean === 'teffy' || clean === 'tefy' || clean.includes('estefany')) {
+      const teffyProfile = allProfiles.find(p => {
+        const em = (p.email || '').toLowerCase();
+        return em.includes('estefany') || em.includes('teffy');
+      });
+      if (teffyProfile) return teffyProfile;
+    }
+
     // 1. Match exato com email
     const exactEmail = allProfiles.find(p => p.email?.toLowerCase().trim() === clean);
     if (exactEmail) return exactEmail;
@@ -457,18 +467,38 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     }
   });
 
-  // Grupos de Turnos estruturados
+  // Grupos de Turnos estruturados (com deduplicação case-insensitive para nunca duplicar Davis.lmarques e DAVIS.LMARQUES)
   const turnoGroups: TurnoGroup[] = useMemo((): TurnoGroup[] => {
     let baseGroups = DEFAULT_TURNO_GROUPS;
     if (rosterSettings?.shifts && Array.isArray(rosterSettings.shifts) && rosterSettings.shifts.length > 0) {
       const hasRosterFormat = rosterSettings.shifts.some((s: any) => Array.isArray(s.members));
       if (hasRosterFormat) {
-        baseGroups = rosterSettings.shifts.map((s: any): TurnoGroup => ({
-          id: s.id || s.name.toLowerCase().replace(/\s+/g, '_'),
-          name: s.name,
-          color: s.color || 'blue',
-          members: Array.isArray(s.members) ? s.members : []
-        }));
+        const seenGlobal = new Map<string, string>();
+        baseGroups = rosterSettings.shifts.map((s: any): TurnoGroup => {
+          const rawMembers: string[] = Array.isArray(s.members) ? s.members : [];
+          const cleanMembers: string[] = [];
+          rawMembers.forEach(m => {
+            if (!m || !m.trim()) return;
+            const trimmed = m.trim();
+            const key = trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+            if (!key) return;
+            if (!seenGlobal.has(key)) {
+              // Se estiver todo em MAIÚSCULAS (ex: DAVIS.LMARQUES), formata para Davis.lmarques
+              const formatted =
+                trimmed === trimmed.toUpperCase() && trimmed.length > 3
+                  ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase()
+                  : trimmed;
+              seenGlobal.set(key, formatted);
+              cleanMembers.push(formatted);
+            }
+          });
+          return {
+            id: s.id || s.name.toLowerCase().replace(/\s+/g, '_'),
+            name: s.name,
+            color: s.color || 'blue',
+            members: cleanMembers
+          };
+        });
       }
     }
     return baseGroups;
@@ -782,14 +812,65 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     }
   });
 
+  const normText = (s: string) =>
+    (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+
+  // Formata nomes em CAIXA ALTA (ex: DAVIS.LMARQUES -> Davis.lmarques) para padronizar visualmente
+  const formatCollaboratorName = (rawName: string) => {
+    const trimmed = (rawName || '').trim();
+    if (!trimmed) return '';
+    if (trimmed === trimmed.toUpperCase() && trimmed.length > 3) {
+      return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+    }
+    return trimmed;
+  };
+
+  // Verifica se dois nomes representam o mesmo colaborador (ex: "Davis.lmarques" === "DAVIS.LMARQUES" === "Davis", "Teffy" === "Estefany")
+  const isSameCollaborator = (nameA: string, nameB: string) => {
+    if (!nameA || !nameB) return false;
+    const normA = normText(nameA);
+    const normB = normText(nameB);
+    if (!normA || !normB) return false;
+    if (normA === normB) return true;
+
+    const profA = getMemberProfile(nameA);
+    const profB = getMemberProfile(nameB);
+    if (profA?.id && profB?.id && profA.id === profB.id) return true;
+
+    const partsA = nameA.toLowerCase().trim().split(/[\s._-]+/).filter(Boolean);
+    const partsB = nameB.toLowerCase().trim().split(/[\s._-]+/).filter(Boolean);
+    if (
+      partsA[0] &&
+      partsB[0] &&
+      partsA[0].length >= 3 &&
+      normText(partsA[0]) === normText(partsB[0]) &&
+      (partsA.length === 1 || partsB.length === 1)
+    ) {
+      return true;
+    }
+
+    return false;
+  };
+
   // Função auxiliar para interpretar o status da célula
   const resolveCellStatus = (operatorName: string, dateStr: string): { 
     def: StatusDefinition | null; 
     customText: string; 
     rawStatus: string 
   } => {
-    const key = `${operatorName.toLowerCase().trim()}_${dateStr}`;
-    const row = cellShiftMap.get(key);
+    if (!operatorName) return { def: null, customText: '', rawStatus: '' };
+    const cleanName = operatorName.toLowerCase().trim();
+    let row = cellShiftMap.get(`${cleanName}_${dateStr}`);
+
+    // Se o quadro/card estiver usando o apelido/primeiro nome (ex: "Davis") e o turno foi salvo como "davis.lmarques", busca pelo prefixo do perfil do próprio colaborador
+    if (!row) {
+      const prof = getMemberProfile(operatorName);
+      const emailPrefix = (prof?.email?.split('@')[0] || '').toLowerCase().trim();
+      if (emailPrefix && emailPrefix !== cleanName) {
+        row = cellShiftMap.get(`${emailPrefix}_${dateStr}`);
+      }
+    }
+
     if (!row) return { def: null, customText: '', rawStatus: '' };
 
     const raw = (row.status || '').trim();
@@ -840,6 +921,42 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     return { def: ROSTER_STATUSES.PRESENCA, customText: raw, rawStatus: raw };
   };
 
+  // Lista completa de todos os colaboradores do setor/escala (deduplicada case-insensitively para nunca exibir Davis.lmarques e DAVIS.LMARQUES duplicados)
+  const allRosterMembers = useMemo(() => {
+    const result: string[] = [];
+    const addUnique = (rawName: string) => {
+      const formatted = formatCollaboratorName(rawName);
+      if (!formatted) return;
+      const alreadyExists = result.some(existing => isSameCollaborator(existing, formatted));
+      if (!alreadyExists) {
+        result.push(formatted);
+      }
+    };
+
+    // 1. Membros cadastrados nos grupos de turnos
+    turnoGroups.forEach(g => g.members.forEach(m => addUnique(m)));
+
+    // 2. Operadores que possuem turnos lançados no mês (excluindo marcadores de publicação)
+    (rawShiftsData || []).forEach((r: any) => {
+      if (r.shift_name === '__ESC_ENVIADA__') return;
+      if (r.operator_name && r.operator_name.trim()) {
+        addUnique(r.operator_name);
+      }
+    });
+
+    // 3. Membros do setor atual (para que colaboradores sem escala definida também apareçam na lista com "Ainda não definido")
+    (sectorMembersList || []).forEach((p: any) => {
+      const role = (p.role || '').toLowerCase();
+      if (role === 'admin') return;
+      const emailPrefix = p.email?.split('@')[0] || '';
+      if (emailPrefix) {
+        addUnique(emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1));
+      }
+    });
+
+    return result;
+  }, [turnoGroups, rawShiftsData, sectorMembersList, allProfiles]);
+
   // Calcular estatísticas por colaborador no mês
   const memberMonthlyStats = useMemo(() => {
     const stats = new Map<string, {
@@ -851,41 +968,46 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       totalDelayOrAbsence: number;
     }>();
 
-    turnoGroups.forEach(g => {
-      g.members.forEach(member => {
-        let work = 0;
-        let off = 0;
-        let vac = 0;
-        let med = 0;
-        let rem = 0;
-        let delay = 0;
+    const computeForMember = (member: string) => {
+      let work = 0;
+      let off = 0;
+      let vac = 0;
+      let med = 0;
+      let rem = 0;
+      let delay = 0;
 
-        for (let d = 1; d <= daysInCurrentMonth; d++) {
-          const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          const res = resolveCellStatus(member, dateStr);
-          if (res.def) {
-            if (res.def.category === 'work') work++;
-            else if (res.def.category === 'off') off++;
-            else if (res.def.category === 'vacation') vac++;
-            else if (res.def.category === 'medical') med++;
-            else if (res.def.category === 'remote') rem++;
-            else if (res.def.category === 'special') delay++;
-          }
+      for (let d = 1; d <= daysInCurrentMonth; d++) {
+        const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const res = resolveCellStatus(member, dateStr);
+        if (res.def) {
+          if (res.def.category === 'work') work++;
+          else if (res.def.category === 'off') off++;
+          else if (res.def.category === 'vacation') vac++;
+          else if (res.def.category === 'medical') med++;
+          else if (res.def.category === 'remote') rem++;
+          else if (res.def.category === 'special') delay++;
         }
+      }
 
-        stats.set(member, {
-          totalWork: work,
-          totalOff: off,
-          totalVacation: vac,
-          totalMedical: med,
-          totalRemote: rem,
-          totalDelayOrAbsence: delay
-        });
-      });
-    });
+      const obj = {
+        totalWork: work,
+        totalOff: off,
+        totalVacation: vac,
+        totalMedical: med,
+        totalRemote: rem,
+        totalDelayOrAbsence: delay
+      };
+      stats.set(member, obj);
+      stats.set(member.toLowerCase().trim(), obj);
+    };
+
+    allRosterMembers.forEach(m => computeForMember(m));
+    turnoGroups.forEach(g => g.members.forEach(m => {
+      if (!stats.has(m)) computeForMember(m);
+    }));
 
     return stats;
-  }, [turnoGroups, cellShiftMap, currentYear, currentMonthIndex, daysInCurrentMonth]);
+  }, [allRosterMembers, turnoGroups, cellShiftMap, currentYear, currentMonthIndex, daysInCurrentMonth, allProfiles]);
 
   // Lista dos dias do mês com metadados
   const monthDaysList = useMemo(() => {
@@ -953,22 +1075,6 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     return list;
   }, [filteredGroups]);
 
-  // Lista completa de todos os colaboradores da escala (incluindo quem já tem turnos lançados no mês)
-  const allRosterMembers = useMemo(() => {
-    const set = new Set<string>();
-    turnoGroups.forEach(g => g.members.forEach(m => set.add(m)));
-    (rawShiftsData || []).forEach((r: any) => {
-      if (r.shift_name === '__ESC_ENVIADA__') return;
-      if (r.operator_name && r.operator_name.trim()) {
-        set.add(r.operator_name.trim());
-      }
-    });
-    return Array.from(set);
-  }, [turnoGroups, rawShiftsData]);
-
-  const normText = (s: string) =>
-    (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
-
   // Conjunto de colaboradores cuja escala deste mês já foi ENVIADA pelo gestor via botão
   const publishedMembersSet = useMemo(() => {
     const set = new Set<string>();
@@ -983,13 +1089,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   // Verifica se o gestor já clicou em "Enviar" para este colaborador neste mês
   const isMemberSchedulePublished = (memberName: string) => {
     if (!memberName) return false;
-    const clean = memberName.toLowerCase().trim();
-    const nTarget = normText(memberName);
-    const nFirst = normText(memberName.split(/[\s._-]+/)[0] || '');
     for (const pub of publishedMembersSet) {
-      if (pub === clean || normText(pub) === nTarget) return true;
-      const pubFirst = normText(pub.split(/[\s._-]+/)[0] || '');
-      if (nFirst.length >= 3 && pubFirst === nFirst) return true;
+      if (isSameCollaborator(pub, memberName)) return true;
     }
     return false;
   };
@@ -997,77 +1098,67 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   // Verifica se há ao menos 1 turno lançado para este colaborador no mês selecionado
   const hasMemberShiftsInMonth = (memberName: string) => {
     if (!memberName) return false;
-    const clean = memberName.toLowerCase().trim();
-    const nTarget = normText(memberName);
     return (rawShiftsData || []).some((row: any) => {
       if (row.shift_name === '__ESC_ENVIADA__' || !row.operator_name) return false;
-      const rClean = row.operator_name.toLowerCase().trim();
-      return rClean === clean || normText(rClean) === nTarget;
+      return isSameCollaborator(row.operator_name, memberName);
     });
   };
 
-  // Identifica estritamente o colaborador correspondente ao quadro/usuário logado (sem cair no nome de outro colega)
+  // Identifica estritamente o colaborador correspondente ao usuário/quadro atual (sem NUNCA cair na escala de outro colega)
   const matchedCurrentUserMember = useMemo(() => {
     const boardTitle = (boardData?.name || '').trim();
+    const isGenericBoard = !boardTitle || boardTitle.toLowerCase().includes('panorama');
     const userEmail = (currentUser?.email || '').toLowerCase().trim();
     const userPrefix = userEmail.split('@')[0] || '';
-    const userNorm = normText(userPrefix);
-    const userFirstPart = normText(userPrefix.split(/[\s._-]+/)[0] || '');
-    const boardNorm = normText(boardTitle);
-    const boardFirstPart = normText(boardTitle.split(/[\s._-]+/)[0] || '');
 
-    if (allRosterMembers.length > 0) {
-      // 1. Se estiver no quadro nominal do colaborador (ex: "Ruan"), prioriza o match com o nome do quadro
-      if (boardNorm.length >= 3) {
-        const byBoardExact = allRosterMembers.find(
-          m => normText(m) === boardNorm || normText(m.split(/[\s._-]+/)[0] || '') === boardFirstPart
-        );
-        if (byBoardExact) return byBoardExact;
-      }
-
-      // 2. Match pelo perfil/e-mail do usuário logado
+    // CASO 1: Colaborador Comum (!isLeaderOrAdmin) -> "Minha Escala" é SEMPRE do usuário logado!
+    // Nunca usa o nome do quadro se o quadro pertencer a outro colega.
+    if (!isLeaderOrAdmin) {
       if (userEmail) {
-        const byProfile = allRosterMembers.find(m => {
+        // Procura na lista se o próprio usuário logado já está cadastrado
+        const matchedInList = allRosterMembers.find(m => {
           const p = getMemberProfile(m);
-          return p?.email?.toLowerCase().trim() === userEmail;
+          if (p?.email?.toLowerCase().trim() === userEmail) return true;
+          return isBoardOwnedByUser({ name: m }, { id: currentUser?.id, email: userEmail });
         });
-        if (byProfile) return byProfile;
-
-        const byNorm = allRosterMembers.find(
-          m => normText(m) === userNorm || normText(m).includes(userNorm) || (userNorm.length >= 3 && userNorm.includes(normText(m)))
-        );
-        if (byNorm) return byNorm;
-
-        if (userFirstPart.length >= 3) {
-          const byFirst = allRosterMembers.find(m => {
-            const mFirst = normText(m.split(/[\s._-]+/)[0] || '');
-            return mFirst === userFirstPart;
-          });
-          if (byFirst) return byFirst;
-        }
+        if (matchedInList) return matchedInList;
       }
+
+      // Se o quadro aberto pertence ao próprio usuário logado (ex: quadro "Teffy" para estefany@...), usa o nome do quadro
+      if (!isGenericBoard && currentUser && isBoardOwnedByUser({ name: boardTitle }, { id: currentUser.id, email: userEmail })) {
+        return boardTitle;
+      }
+
+      // Caso contrário, usa o próprio prefixo do e-mail do usuário logado (exibirá seu card nominal com "Ainda não definido")
+      if (userPrefix) {
+        return userPrefix.charAt(0).toUpperCase() + userPrefix.slice(1);
+      }
+      return 'Colaborador';
     }
 
-    // Nunca retorna allRosterMembers[0] (que seria outro colaborador como Davis)!
-    // Retorna o nome do próprio quadro/usuário para exibir o card nominal com "Ainda não definido"
-    if (boardTitle && !boardTitle.toLowerCase().includes('panorama')) {
+    // CASO 2: Líder ou Administrador (isLeaderOrAdmin)
+    // Se o líder abriu o quadro específico de um colaborador (ex: quadro "Ruan", "Teffy", "Davis"), alinha ao colaborador daquele quadro!
+    if (!isGenericBoard) {
+      const matchedByBoard = allRosterMembers.find(m => isSameCollaborator(m, boardTitle));
+      if (matchedByBoard) return matchedByBoard;
       return boardTitle;
     }
-    if (userPrefix) {
-      return userPrefix.charAt(0).toUpperCase() + userPrefix.slice(1);
-    }
-    return 'Colaborador';
-  }, [currentUser, allRosterMembers, allProfiles, boardData]);
 
-  useEffect(() => {
-    if (!isLeaderOrAdmin) {
-      if (matchedCurrentUserMember && selectedGoMember !== matchedCurrentUserMember) {
-        setSelectedGoMember(matchedCurrentUserMember);
-      }
-    } else if (!selectedGoMember && allRosterMembers.length > 0) {
-      setSelectedGoMember(allRosterMembers[0]);
+    // Se for um quadro geral, tenta o próprio líder ou o primeiro da lista
+    if (userEmail) {
+      const matchedSelf = allRosterMembers.find(m => isSameCollaborator(m, userPrefix));
+      if (matchedSelf) return matchedSelf;
     }
-  }, [isLeaderOrAdmin, matchedCurrentUserMember, allRosterMembers, selectedGoMember]);
+
+    return allRosterMembers[0] || (userPrefix ? userPrefix.charAt(0).toUpperCase() + userPrefix.slice(1) : 'Colaborador');
+  }, [isLeaderOrAdmin, currentUser, allRosterMembers, allProfiles, boardData]);
+
+  // Sempre que mudar de quadro (boardId) ou carregar o colaborador correspondente ao quadro/usuário, alinha o card selecionado
+  useEffect(() => {
+    if (matchedCurrentUserMember) {
+      setSelectedGoMember(matchedCurrentUserMember);
+    }
+  }, [boardId, matchedCurrentUserMember]);
 
   // Resolve a cor e categoria de cada dia no padrão visual oficial CR TASK (Segunda a Domingo)
   const resolveGoCellStyle = (memberName: string, dateStr: string, dayOfWeek: number) => {
@@ -1716,12 +1807,11 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
     const updated = turnoGroups.map(g => {
       if (g.name === targetTurnoForAdd) {
-        const existingSet = new Set(g.members);
         const merged = [...g.members];
         namesToAdd.forEach(n => {
-          if (!existingSet.has(n)) {
-            existingSet.add(n);
-            merged.push(n);
+          const clean = formatCollaboratorName(n);
+          if (clean && !merged.some(existing => isSameCollaborator(existing, clean))) {
+            merged.push(clean);
           }
         });
         return { ...g, members: merged };

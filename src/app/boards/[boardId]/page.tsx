@@ -72,21 +72,57 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         );
         const canEdit = userRole === 'admin' || userRole === 'leader' || isOwnBoard;
 
-        return { allowed: true, canEdit, board, userRole };
+        return { allowed: true, canEdit, board, userRole, redirectBoardId: null };
       }
 
-      return { allowed: false, canEdit: false, reason: 'private_board', board, userRole };
+      // Se caiu em um quadro restrito de outro colega (ex: via notificação de escala), busca o próprio quadro do colaborador no setor
+      const { data: sectorBoards } = await supabase
+        .from('boards')
+        .select('id, name, created_by, workspace_id');
+
+      const candidates = [
+        ...(sectorBoards || []).filter(b => b.workspace_id === board.workspace_id),
+        ...(sectorBoards || []).filter(b => b.workspace_id !== board.workspace_id)
+      ];
+
+      const ownBoard = candidates.find(b =>
+        isBoardOwnedByUser(
+          { name: b.name, created_by: b.created_by },
+          { id: user.id, email: user.email || '' }
+        )
+      );
+
+      return {
+        allowed: false,
+        canEdit: false,
+        reason: 'private_board',
+        board,
+        userRole,
+        redirectBoardId: ownBoard?.id || null
+      };
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000
   });
 
-  if (isLoading) {
+  useEffect(() => {
+    if (accessCheck?.allowed === false) {
+      const search = typeof window !== 'undefined' ? window.location.search : '';
+      if (accessCheck.redirectBoardId && accessCheck.redirectBoardId !== boardId) {
+        router.replace(`/boards/${accessCheck.redirectBoardId}${search}`);
+      } else {
+        const timer = setTimeout(() => router.replace('/'), 1800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [accessCheck, boardId, router]);
+
+  if (isLoading || (accessCheck?.allowed === false && accessCheck?.redirectBoardId && accessCheck.redirectBoardId !== boardId)) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center">
           <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-3"></div>
-          <p className="text-slate-500 text-sm font-medium">Verificando permissões de acesso ao quadro...</p>
+          <p className="text-slate-500 text-sm font-medium">Abrindo seu quadro no setor...</p>
         </div>
       </div>
     );
