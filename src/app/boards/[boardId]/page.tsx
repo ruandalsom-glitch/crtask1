@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState, use, useEffect } from 'react';
 import { BoardTableView } from '@/components/board/BoardTableView';
 import { BoardKanbanView } from '@/components/board/BoardKanbanView';
 import { BoardCalendarView } from '@/components/board/BoardCalendarView';
@@ -17,11 +17,23 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos'>('tabela');
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tabParam = searchParams.get('tab');
+      if (tabParam === 'turnos' || tabParam === 'minha-escala') {
+        setActiveTab('turnos');
+      } else if (tabParam === 'escala') {
+        setActiveTab('escala');
+      }
+    }
+  }, []);
+
   const { data: accessCheck, isLoading } = useQuery({
     queryKey: ['board_access_check', boardId],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { allowed: false, reason: 'unauthenticated' };
+      if (!user) return { allowed: false, reason: 'unauthenticated', userRole: 'user' };
 
       // Executa as consultas de permissão em paralelo para velocidade máxima
       const [boardRes, profileRes, profilesRes] = await Promise.all([
@@ -31,7 +43,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       ]);
 
       const board = boardRes.data;
-      if (!board) return { allowed: false, reason: 'not_found' };
+      if (!board) return { allowed: false, reason: 'not_found', userRole: 'user' };
 
       // Buscar visibilidade do workspace
       const { data: workspaceRes } = await supabase
@@ -43,11 +55,12 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const visibilityMode = workspaceRes?.visibility_mode || 'own_only';
       const profile = profileRes.data;
       const profiles = profilesRes.data || [];
+      const userRole = profile?.role || 'user';
 
       const allowed = canUserAccessBoard({
         board: { name: board.name, created_by: board.created_by },
         user: { id: user.id, email: user.email || '' },
-        userRole: profile?.role,
+        userRole,
         visibilityMode,
         profiles
       });
@@ -57,12 +70,12 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
           { name: board.name, created_by: board.created_by },
           { id: user.id, email: user.email || '' }
         );
-        const canEdit = profile?.role === 'admin' || profile?.role === 'leader' || isOwnBoard;
+        const canEdit = userRole === 'admin' || userRole === 'leader' || isOwnBoard;
 
-        return { allowed: true, canEdit, board };
+        return { allowed: true, canEdit, board, userRole };
       }
 
-      return { allowed: false, canEdit: false, reason: 'private_board', board };
+      return { allowed: false, canEdit: false, reason: 'private_board', board, userRole };
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000
@@ -186,29 +199,45 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
               Rotinas Diárias
             </button>
 
-            <button 
-              onClick={() => setActiveTab('escala')}
-              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                activeTab === 'escala' 
-                  ? 'border-blue-600 text-blue-600' 
-                  : 'border-transparent text-[#676879] hover:text-[#323338]'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-              Escala
-            </button>
+            {accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader' ? (
+              <>
+                <button 
+                  onClick={() => setActiveTab('escala')}
+                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'escala' 
+                      ? 'border-blue-600 text-blue-600' 
+                      : 'border-transparent text-[#676879] hover:text-[#323338]'
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                  Escala
+                </button>
 
-            <button 
-              onClick={() => setActiveTab('turnos')}
-              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                activeTab === 'turnos' 
-                  ? 'border-blue-600 text-blue-600 font-bold' 
-                  : 'border-transparent text-[#676879] hover:text-[#323338]'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-              Quadro de turnos
-            </button>
+                <button 
+                  onClick={() => setActiveTab('turnos')}
+                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'turnos' 
+                      ? 'border-blue-600 text-blue-600 font-bold' 
+                      : 'border-transparent text-[#676879] hover:text-[#323338]'
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                  Quadro de turnos
+                </button>
+              </>
+            ) : (
+              <button 
+                onClick={() => setActiveTab('turnos')}
+                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'turnos' || activeTab === 'escala'
+                    ? 'border-blue-600 text-blue-600 font-bold' 
+                    : 'border-transparent text-[#676879] hover:text-[#323338]'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                Minha Escala
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-4 text-[13px] text-[#676879] mb-2 font-medium">
@@ -232,13 +261,13 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
           <BoardKanbanView boardId={boardId} isReadOnly={isReadOnly} />
         ) : activeTab === 'rotina' ? (
           <BoardRoutineView boardId={boardId} isReadOnly={isReadOnly} />
-        ) : activeTab === 'escala' ? (
+        ) : activeTab === 'escala' && (accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader') ? (
           <BoardShiftView 
             boardId={boardId} 
             isReadOnly={isReadOnly} 
             onSwitchToTurnos={() => setActiveTab('turnos')} 
           />
-        ) : activeTab === 'turnos' ? (
+        ) : activeTab === 'turnos' || activeTab === 'escala' ? (
           <BoardMonthlyRosterView boardId={boardId} isReadOnly={isReadOnly} />
         ) : (
           <BoardCalendarView boardId={boardId} isReadOnly={isReadOnly} />

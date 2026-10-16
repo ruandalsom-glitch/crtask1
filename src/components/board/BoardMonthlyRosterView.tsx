@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, Fragment, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { 
@@ -10,7 +10,7 @@ import {
   BarChart2, LayoutGrid, List, CalendarRange, AlertCircle, Eye, 
   Share2, Copy, UserPlus, FileSpreadsheet, TrendingUp, Sun, Moon, 
   Coffee, Briefcase, Zap, Info, ShieldAlert, Award, FileText,
-  CheckSquare, Square, ArrowRight
+  CheckSquare, Square, ArrowRight, Send, Mail
 } from 'lucide-react';
 
 // Definição dos tipos de status com cores idênticas à planilha de referência
@@ -203,8 +203,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   // Mês e Ano Selecionado (Padrão: Hoje)
   const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(() => new Date());
   
-  // Abas de Visualização: Matriz (Planilha), Calendário Tradicional, Cards da Equipe, Métricas/Dashboard
-  const [activeViewMode, setActiveViewMode] = useState<'matriz' | 'calendario' | 'cards' | 'dashboard'>('matriz');
+  // Abas de Visualização: Matriz (Planilha), Card Individual (GO), Calendário Tradicional, Cards da Equipe, Métricas/Dashboard
+  const [activeViewMode, setActiveViewMode] = useState<'matriz' | 'go_card' | 'calendario' | 'cards' | 'dashboard'>('matriz');
 
   // Filtros
   const [searchMember, setSearchMember] = useState('');
@@ -215,6 +215,12 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   const [isScaleWizardOpen, setIsScaleWizardOpen] = useState(false);
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
   const [isManageTeamsOpen, setIsManageTeamsOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  // Colaborador selecionado para visualização/compartilhamento no estilo GO
+  const [selectedGoMember, setSelectedGoMember] = useState<string>('');
+  const [isSendingShare, setIsSendingShare] = useState(false);
+  const [shareFeedbackMsg, setShareFeedbackMsg] = useState<string | null>('');
 
   // Popover de Edição de Célula Ativa
   const [activeCellPopover, setActiveCellPopover] = useState<{
@@ -241,8 +247,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   // Campos da Escala 5x2 Diferenciada:
   // Folga na semana: 1 = seg, 2 = ter, 3 = qua, 4 = qui, 5 = sex
   const [scaleWeekdayOff, setScaleWeekdayOff] = useState<number>(3); // padrão: Quarta-feira
-  // Folga no final de semana: 'alternate' (1 semana sab, 1 semana dom), 'sat_fixed', 'sun_fixed'
-  const [scaleWeekendOffMode, setScaleWeekendOffMode] = useState<'alternate' | 'sat_fixed' | 'sun_fixed'>('alternate');
+  // Folga no final de semana: 'alternate' (1ª sem sab, 2ª sem dom), 'alternate_sun_first', 'sat_fixed', 'sun_fixed'
+  const [scaleWeekendOffMode, setScaleWeekendOffMode] = useState<'alternate' | 'alternate_sun_first' | 'sat_fixed' | 'sun_fixed'>('alternate');
   const [scaleRestFillMode, setScaleRestFillMode] = useState<'PRESENCA' | 'HOME' | 'EXT' | 'EMPTY'>('PRESENCA');
 
   // Campos da Escolha Manual de Folgas
@@ -377,52 +383,66 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     return null;
   };
 
-  // Permissão de Gerenciamento (Líderes e Administradores)
-  const canManageRoster = useMemo(() => {
-    if (isReadOnly) return false;
+  // Identificação de Líder ou Administrador
+  const isLeaderOrAdmin = useMemo(() => {
     const role = (currentUser?.profile?.role || '').toLowerCase().trim();
     return role === 'admin' || role === 'administrador' || role === 'leader' || role === 'lider' || role === 'líder';
-  }, [currentUser, isReadOnly]);
+  }, [currentUser]);
 
-  // 4. Configurações dos Turnos e Colaboradores Salvas no Banco
+  // Permissão de Gerenciamento (Líderes e Administradores)
+  const canManageRoster = useMemo(() => {
+    return isLeaderOrAdmin;
+  }, [isLeaderOrAdmin]);
+
+  // 3.8. Busca todos os quadros do mesmo Workspace/Setor para unificar a escala entre líder e colaboradores
+  const { data: workspaceBoardIds } = useQuery({
+    queryKey: ['workspace_boards_roster_ids', boardData?.workspace_id, boardId],
+    queryFn: async () => {
+      if (!boardData?.workspace_id) return [boardId];
+      const { data } = await supabase.from('boards').select('id').eq('workspace_id', boardData.workspace_id);
+      const ids = (data || []).map((b: any) => b.id);
+      if (!ids.includes(boardId)) ids.push(boardId);
+      return ids;
+    },
+    staleTime: 5 * 60 * 1000
+  });
+
+  // 4. Configurações dos Turnos e Colaboradores Salvas no Banco (Unificadas no Setor)
   const { data: rosterSettings } = useQuery({
-    queryKey: ['operational_shift_settings_roster', boardId, boardData?.workspace_id],
+    queryKey: ['operational_shift_settings_roster', boardId, boardData?.workspace_id, workspaceBoardIds],
     queryFn: async () => {
       let query = supabase.from('operational_shift_settings').select('*');
-      if (boardData?.workspace_id) {
+      if (boardData?.workspace_id && workspaceBoardIds && workspaceBoardIds.length > 0) {
+        query = query.or(`workspace_id.eq.${boardData.workspace_id},board_id.in.(${workspaceBoardIds.join(',')})`);
+      } else if (boardData?.workspace_id) {
         query = query.or(`workspace_id.eq.${boardData.workspace_id},board_id.eq.${boardId}`);
       } else {
         query = query.eq('board_id', boardId);
       }
-      const { data } = await query.limit(1).maybeSingle();
-      return data;
+      const { data } = await query.order('updated_at', { ascending: false });
+      if (!data || data.length === 0) return null;
+
+      // Prioriza a configuração que possui grupos com lista de membros (formato do Quadro de Turnos)
+      const withMembers = data.find((row: any) => 
+        Array.isArray(row.shifts) && row.shifts.some((s: any) => Array.isArray(s.members) && s.members.length > 0)
+      );
+      if (withMembers) return withMembers;
+
+      const withMembersArray = data.find((row: any) =>
+        Array.isArray(row.shifts) && row.shifts.some((s: any) => Array.isArray(s.members))
+      );
+      return withMembersArray || data[0];
     }
   });
 
-  // Grupos de Turnos estruturados
-  const turnoGroups: TurnoGroup[] = useMemo((): TurnoGroup[] => {
-    if (rosterSettings?.shifts && Array.isArray(rosterSettings.shifts) && rosterSettings.shifts.length > 0) {
-      return rosterSettings.shifts.map((s: any): TurnoGroup => ({
-        id: s.id || s.name.toLowerCase().replace(/\s+/g, '_'),
-        name: s.name,
-        color: s.color || 'blue',
-        members: Array.isArray(s.members) ? s.members : []
-      }));
-    }
-    return DEFAULT_TURNO_GROUPS;
-  }, [rosterSettings]);
-
-  // Total de Colaboradores Cadastrados
-  const totalRosterMembersCount = useMemo(() => {
-    return turnoGroups.reduce((acc, g) => acc + g.members.length, 0);
-  }, [turnoGroups]);
-
-  // 5. Busca Todas as Escalas do Mês Atual
+  // 5. Busca Todas as Escalas do Mês Atual (Unificadas no Setor)
   const { data: rawShiftsData } = useQuery({
-    queryKey: ['operational_shifts_roster', boardId, boardData?.workspace_id, startOfMonthStr, endOfMonthStr],
+    queryKey: ['operational_shifts_roster', boardId, boardData?.workspace_id, workspaceBoardIds, startOfMonthStr, endOfMonthStr],
     queryFn: async () => {
       let query = supabase.from('operational_shifts').select('*');
-      if (boardData?.workspace_id) {
+      if (boardData?.workspace_id && workspaceBoardIds && workspaceBoardIds.length > 0) {
+        query = query.or(`workspace_id.eq.${boardData.workspace_id},board_id.in.(${workspaceBoardIds.join(',')})`);
+      } else if (boardData?.workspace_id) {
         query = query.or(`workspace_id.eq.${boardData.workspace_id},board_id.eq.${boardId}`);
       } else {
         query = query.eq('board_id', boardId);
@@ -436,6 +456,28 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       return data || [];
     }
   });
+
+  // Grupos de Turnos estruturados
+  const turnoGroups: TurnoGroup[] = useMemo((): TurnoGroup[] => {
+    let baseGroups = DEFAULT_TURNO_GROUPS;
+    if (rosterSettings?.shifts && Array.isArray(rosterSettings.shifts) && rosterSettings.shifts.length > 0) {
+      const hasRosterFormat = rosterSettings.shifts.some((s: any) => Array.isArray(s.members));
+      if (hasRosterFormat) {
+        baseGroups = rosterSettings.shifts.map((s: any): TurnoGroup => ({
+          id: s.id || s.name.toLowerCase().replace(/\s+/g, '_'),
+          name: s.name,
+          color: s.color || 'blue',
+          members: Array.isArray(s.members) ? s.members : []
+        }));
+      }
+    }
+    return baseGroups;
+  }, [rosterSettings]);
+
+  // Total de Colaboradores Cadastrados
+  const totalRosterMembersCount = useMemo(() => {
+    return turnoGroups.reduce((acc, g) => acc + g.members.length, 0);
+  }, [turnoGroups]);
 
   // Mapeamento em O(1): chave `${operatorName.toLowerCase().trim()}_${shiftDate}` -> { id, status, notes, ... }
   const cellShiftMap = useMemo(() => {
@@ -454,8 +496,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     mutationFn: async (updatedGroups: TurnoGroup[]) => {
       if (!canManageRoster) throw new Error("Apenas Administradores e Líderes podem editar o quadro de turnos.");
       
+      const targetBoardId = rosterSettings?.board_id || boardId;
       const payload: any = {
-        board_id: boardId,
+        board_id: targetBoardId,
         shifts: updatedGroups,
         updated_at: new Date().toISOString()
       };
@@ -564,6 +607,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
       // MODO 1: ESCALA 5x2 DIFERENCIADA (1 DIA DA SEMANA + 1 DIA DO FIM DE SEMANA)
       if (scaleTabMode === '5x2') {
+        const firstDayMonOffset = (new Date(currentYear, currentMonthIndex, 1).getDay() + 6) % 7;
+
         for (let d = 1; d <= daysInCurrentMonth; d++) {
           const dStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
           datesToClear.push(dStr);
@@ -571,8 +616,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           const dateObj = new Date(currentYear, currentMonthIndex, d);
           const dow = dateObj.getDay(); // 0=dom, 1=seg, 2=ter, 3=qua, 4=qui, 5=sex, 6=sab
 
-          // Determina a semana do mês (0, 1, 2, 3, 4)
-          const weekIndex = Math.floor((d - 1) / 7);
+          // Determina a linha da semana no calendário (Segunda a Domingo: 0, 1, 2, 3, 4, 5)
+          const weekIndex = Math.floor((firstDayMonOffset + d - 1) / 7);
 
           // Folga no final de semana alternada
           let isWeekendOff = false;
@@ -585,6 +630,14 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
             } else {
               // Semana ímpar: folga no Domingo
               if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
+            }
+          } else if (scaleWeekendOffMode === 'alternate_sun_first') {
+            if (weekIndex % 2 === 0) {
+              // Semana par: folga no Domingo
+              if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
+            } else {
+              // Semana ímpar: folga no Sábado
+              if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
             }
           } else if (scaleWeekendOffMode === 'sat_fixed') {
             if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
@@ -701,12 +754,13 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
         }
       }
 
-      // Deleta dados existentes para estes membros e datas
+      // Deleta dados existentes para estes membros e datas no setor
+      const targetBoardIds = workspaceBoardIds && workspaceBoardIds.length > 0 ? workspaceBoardIds : [boardId];
       for (const m of scaleSelectedMembers) {
         await supabase
           .from('operational_shifts')
           .delete()
-          .eq('board_id', boardId)
+          .in('board_id', targetBoardIds)
           .eq('operator_name', m)
           .in('shift_date', datesToClear);
       }
@@ -898,6 +952,479 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     return list;
   }, [filteredGroups]);
 
+  // Lista completa de todos os colaboradores da escala (incluindo quem já tem turnos lançados no mês)
+  const allRosterMembers = useMemo(() => {
+    const set = new Set<string>();
+    turnoGroups.forEach(g => g.members.forEach(m => set.add(m)));
+    (rawShiftsData || []).forEach((r: any) => {
+      if (r.operator_name && r.operator_name.trim()) {
+        set.add(r.operator_name.trim());
+      }
+    });
+    return Array.from(set);
+  }, [turnoGroups, rawShiftsData]);
+
+  // Identifica automaticamente o colaborador correspondente ao usuário logado (para membros comuns)
+  const matchedCurrentUserMember = useMemo(() => {
+    if (!currentUser?.email || allRosterMembers.length === 0) return allRosterMembers[0] || '';
+    const userEmail = currentUser.email.toLowerCase().trim();
+    const userPrefix = userEmail.split('@')[0] || '';
+    const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const userNorm = norm(userPrefix);
+    const userFirstPart = norm(userPrefix.split(/[\s._-]+/)[0] || '');
+
+    // 1. Pelo perfil mapeado
+    const byProfile = allRosterMembers.find(m => {
+      const p = getMemberProfile(m);
+      return p?.email?.toLowerCase().trim() === userEmail;
+    });
+    if (byProfile) return byProfile;
+
+    // 2. Pelo prefixo normalizado
+    const byNorm = allRosterMembers.find(m => norm(m) === userNorm || norm(m).includes(userNorm) || userNorm.includes(norm(m)));
+    if (byNorm) return byNorm;
+
+    // 3. Pelo primeiro nome
+    if (userFirstPart.length >= 3) {
+      const byFirst = allRosterMembers.find(m => {
+        const mFirst = norm(m.split(/[\s._-]+/)[0] || '');
+        return mFirst === userFirstPart;
+      });
+      if (byFirst) return byFirst;
+    }
+
+    // 4. Pelo nome do próprio quadro
+    if (boardData?.name) {
+      const bNorm = norm(boardData.name);
+      const byBoard = allRosterMembers.find(m => norm(m) === bNorm || norm(m.split(' ')[0]) === bNorm);
+      if (byBoard) return byBoard;
+    }
+
+    return allRosterMembers[0] || '';
+  }, [currentUser, allRosterMembers, allProfiles, boardData]);
+
+  useEffect(() => {
+    if (!isLeaderOrAdmin && matchedCurrentUserMember) {
+      setSelectedGoMember(matchedCurrentUserMember);
+    } else if (!selectedGoMember && allRosterMembers.length > 0) {
+      setSelectedGoMember(allRosterMembers[0]);
+    }
+  }, [isLeaderOrAdmin, matchedCurrentUserMember, allRosterMembers, selectedGoMember]);
+
+  // Resolve a cor e categoria de cada dia no formato visual GO (Segunda a Domingo)
+  const resolveGoCellStyle = (memberName: string, dateStr: string, dayOfWeek: number) => {
+    const { def, customText } = resolveCellStatus(memberName, dateStr);
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    if (!def || def.code === 'PRESENCA') {
+      return {
+        bgHex: '#EFE7DC',
+        textHex: '#000000',
+        category: 'trabalha' as const,
+        badge: ''
+      };
+    }
+
+    if (def.code === 'FG' || def.code === 'FJ') {
+      if (isWeekend) {
+        return {
+          bgHex: '#FF2B2B',
+          textHex: '#000000',
+          category: 'folga_fds' as const,
+          badge: def.code === 'FJ' ? 'FJ' : ''
+        };
+      }
+      return {
+        bgHex: '#A3D977',
+        textHex: '#000000',
+        category: 'folga_semana' as const,
+        badge: def.code === 'FJ' ? 'FJ' : ''
+      };
+    }
+
+    if (def.code === 'DOM') {
+      return {
+        bgHex: '#FF2B2B',
+        textHex: '#000000',
+        category: 'folga_fds' as const,
+        badge: ''
+      };
+    }
+
+    if (def.code === 'DOFF') {
+      return {
+        bgHex: '#F7D348',
+        textHex: '#000000',
+        category: 'day_off' as const,
+        badge: ''
+      };
+    }
+
+    if (def.code === 'FERIAS') {
+      return {
+        bgHex: '#F28B44',
+        textHex: '#000000',
+        category: 'ferias' as const,
+        badge: ''
+      };
+    }
+
+    if (def.code === 'EXT') {
+      return {
+        bgHex: '#3949AB',
+        textHex: '#FFFFFF',
+        category: 'trabalha' as const,
+        badge: 'EXT'
+      };
+    }
+
+    if (def.code === 'HOME') {
+      return {
+        bgHex: '#F8BBD0',
+        textHex: '#880E4F',
+        category: 'trabalha' as const,
+        badge: 'HOME'
+      };
+    }
+
+    if (def.code === 'AT') {
+      return {
+        bgHex: '#4FC3F7',
+        textHex: '#01579B',
+        category: 'outros' as const,
+        badge: 'AT'
+      };
+    }
+
+    if (def.code === 'HORARIO' || def.code === 'FALTA') {
+      return {
+        bgHex: '#D32F2F',
+        textHex: '#FFFFFF',
+        category: 'outros' as const,
+        badge: customText || 'F'
+      };
+    }
+
+    return {
+      bgHex: '#EFE7DC',
+      textHex: '#000000',
+      category: 'trabalha' as const,
+      badge: customText !== 'x' ? customText : ''
+    };
+  };
+
+  // Matriz de semanas Segunda -> Domingo para o Card GO
+  const goCalendarWeeks = useMemo(() => {
+    const firstDayDate = new Date(currentYear, currentMonthIndex, 1);
+    // 0 = Segunda, 1 = Terça, ..., 5 = Sábado, 6 = Domingo
+    const startOffset = (firstDayDate.getDay() + 6) % 7;
+
+    const cells: ({ dayNumber: number; dateStr: string; dayOfWeek: number } | null)[] = [];
+    for (let i = 0; i < startOffset; i++) {
+      cells.push(null);
+    }
+    for (let d = 1; d <= daysInCurrentMonth; d++) {
+      const dateObj = new Date(currentYear, currentMonthIndex, d);
+      const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({
+        dayNumber: d,
+        dateStr,
+        dayOfWeek: dateObj.getDay()
+      });
+    }
+    while (cells.length % 7 !== 0) {
+      cells.push(null);
+    }
+
+    const weeks: typeof cells[] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      weeks.push(cells.slice(i, i + 7));
+    }
+    return weeks;
+  }, [currentYear, currentMonthIndex, daysInCurrentMonth]);
+
+  // Gera um Canvas HTML5 de Alta Resolução idêntico à imagem GO de referência
+  const generateGoScheduleCanvas = (memberName: string): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    const numWeeks = goCalendarWeeks.length;
+    const width = 1280;
+    const rowH = 104;
+    const tableTop = 250;
+    const height = tableTop + 40 + numWeeks * rowH + 65;
+
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+
+    // 1. Fundo Creme (#EFE7DC)
+    ctx.fillStyle = '#EFE7DC';
+    ctx.fillRect(0, 0, width, height);
+
+    // 2. Desenha Logo GO no canto superior esquerdo
+    ctx.save();
+    // Letra G estilizada
+    ctx.fillStyle = '#1D59F2';
+    ctx.font = '900 108px Inter, Arial, sans-serif';
+    ctx.fillText('G', 72, 152);
+
+    // Círculo O azul com seta de navegação branca dentro
+    const cx = 218;
+    const cy = 114;
+    const r = 46;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#1D59F2';
+    ctx.fill();
+
+    // Seta branca inclinada dentro do O
+    ctx.beginPath();
+    ctx.moveTo(cx + 18, cy - 16);
+    ctx.lineTo(cx - 20, cy - 3);
+    ctx.lineTo(cx - 3, cy + 4);
+    ctx.lineTo(cx + 3, cy + 20);
+    ctx.closePath();
+    ctx.fillStyle = '#EFE7DC';
+    ctx.fill();
+
+    // Cantoneira azul superior direita do logo GO
+    ctx.beginPath();
+    ctx.moveTo(cx + 22, cy - 58);
+    ctx.lineTo(cx + 60, cy - 48);
+    ctx.lineTo(cx + 72, cy - 10);
+    ctx.lineTo(cx + 60, cy - 15);
+    ctx.lineTo(cx + 51, cy - 39);
+    ctx.lineTo(cx + 26, cy - 46);
+    ctx.closePath();
+    ctx.fillStyle = '#1D59F2';
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Nome do Colaborador em Azul (Centralizado, Caixa Alta, Espaçado)
+    const displayFirstName = (memberName.split(' ')[0] || memberName).toUpperCase();
+    const spacedName = displayFirstName.split('').join(' ');
+    ctx.fillStyle = '#2557D6';
+    ctx.font = '900 38px Inter, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(spacedName, width / 2, 74);
+
+    // 4. Mês e Ano em Preto (Centralizado, Caixa Alta, Espaçado)
+    const monthUpper = `${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}`;
+    const spacedMonth = monthUpper.split('').join(' ');
+    ctx.fillStyle = '#000000';
+    ctx.font = '900 38px Inter, Arial, sans-serif';
+    ctx.fillText(spacedMonth, width / 2, 124);
+
+    // 5. Pílulas de Legenda
+    const pills = [
+      { label: 'FOLGA SEMANA', bg: '#A3D977' },
+      { label: 'TRABALHA', bg: '#EFE7DC' },
+      { label: 'DAY OFF', bg: '#F7D348' },
+      { label: 'FÉRIAS', bg: '#F28B44' },
+      { label: 'FOLGA FDS', bg: '#FF2B2B' }
+    ];
+    const pillW = 136;
+    const pillH = 36;
+    const pillGap = 14;
+    const totalPillsW = pills.length * pillW + (pills.length - 1) * pillGap;
+    let startPillX = (width - totalPillsW) / 2;
+    const pillY = 152;
+
+    pills.forEach(p => {
+      // Sombra/borda arredondada
+      ctx.beginPath();
+      ctx.roundRect(startPillX, pillY, pillW, pillH, 18);
+      ctx.fillStyle = p.bg;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#1E1E1E';
+      ctx.stroke();
+
+      ctx.fillStyle = '#000000';
+      ctx.font = '800 12px Inter, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(p.label, startPillX + pillW / 2, pillY + pillH / 2 + 1);
+
+      startPillX += pillW + pillGap;
+    });
+
+    // 6. Cabeçalho dos Dias da Semana (SEGUNDA a DOMINGO)
+    const tableLeft = 68;
+    const tableWidth = width - tableLeft * 2;
+    const colW = tableWidth / 7;
+    const dowHeaders = ['SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA', 'SÁBADO', 'DOMINGO'];
+
+    ctx.fillStyle = '#000000';
+    ctx.font = '800 16px Inter, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    dowHeaders.forEach((h, idx) => {
+      ctx.fillText(h, tableLeft + idx * colW + colW / 2, tableTop + 16);
+    });
+
+    // 7. Grade das Semanas
+    const gridStartY = tableTop + 36;
+    goCalendarWeeks.forEach((week, rIdx) => {
+      const y = gridStartY + rIdx * rowH;
+      week.forEach((cell, cIdx) => {
+        const x = tableLeft + cIdx * colW;
+        let bg = '#EFE7DC';
+        let txtColor = '#000000';
+        let badge = '';
+
+        if (cell) {
+          const st = resolveGoCellStyle(memberName, cell.dateStr, cell.dayOfWeek);
+          bg = st.bgHex;
+          txtColor = st.textHex;
+          badge = st.badge;
+        }
+
+        ctx.fillStyle = bg;
+        ctx.fillRect(x, y, colW, rowH);
+
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = '#3A3630';
+        ctx.strokeRect(x, y, colW, rowH);
+
+        if (cell) {
+          ctx.fillStyle = txtColor;
+          ctx.font = '800 18px Inter, Arial, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.fillText(String(cell.dayNumber), x + 10, y + 10);
+
+          if (badge) {
+            ctx.font = '800 12px Inter, Arial, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(badge, x + colW - 10, y + rowH - 10);
+          }
+        }
+      });
+    });
+
+    return canvas;
+  };
+
+  // Baixar PNG da Escala no Formato GO
+  const handleDownloadGoPng = (memberName: string) => {
+    if (!memberName) return;
+    const canvas = generateGoScheduleCanvas(memberName);
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    const cleanName = memberName.toLowerCase().replace(/\s+/g, '_');
+    link.download = `escala_${cleanName}_${MONTH_SHORT[currentMonthIndex]}_${currentYear}.png`;
+    link.href = dataUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShareFeedbackMsg(`📥 Imagem da escala de ${memberName} baixada com sucesso!`);
+    setTimeout(() => setShareFeedbackMsg(''), 4000);
+  };
+
+  // Copiar PNG da Escala para a Área de Transferência (WhatsApp / Teams)
+  const handleCopyGoPng = async (memberName: string) => {
+    if (!memberName) return;
+    try {
+      const canvas = generateGoScheduleCanvas(memberName);
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        setShareFeedbackMsg(`📋 Escala de ${memberName} copiada! Basta colar (Ctrl+V) no WhatsApp ou chat.`);
+        setTimeout(() => setShareFeedbackMsg(''), 4500);
+      }, 'image/png');
+    } catch (err) {
+      handleDownloadGoPng(memberName);
+    }
+  };
+
+  // Enviar / Compartilhar Escala com o Colaborador no Sistema (+ E-mail)
+  const handleSendScaleToCollaborator = async (memberName: string) => {
+    if (!memberName) return;
+    setIsSendingShare(true);
+    try {
+      const profile = getMemberProfile(memberName);
+      const authorEmail = currentUser?.email || 'lider@masterdeliveryexpress.com.br';
+      const monthLabel = `${MONTH_NAMES[currentMonthIndex]} de ${currentYear}`;
+
+      if (profile?.email) {
+        // 1. Insere notificação no sino do colaborador
+        await supabase.from('notifications').insert([{
+          user_email: profile.email,
+          message: `${authorEmail}||📅 Sua escala de ${monthLabel} foi compartilhada! Clique para abrir Minha Escala.`,
+          read: false
+        }]);
+
+        // 2. Dispara e-mail formatado (não bloqueante se SMTP não estiver configurado)
+        const s = memberMonthlyStats.get(memberName);
+        fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: profile.email,
+            subject: `📅 Sua Escala Mensal - ${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; background: #EFE7DC; padding: 28px; border-radius: 16px; max-width: 600px; margin: 0 auto; border: 1px solid #d6cbbd;">
+                <h2 style="color: #2557D6; text-align: center; letter-spacing: 3px; margin-bottom: 4px;">${memberName.toUpperCase()}</h2>
+                <h3 style="color: #000; text-align: center; letter-spacing: 2px; margin-top: 0;">${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}</h3>
+                <p style="text-align: center; color: #333; font-size: 14px;">Sua escala mensal foi publicada pela liderança. Acesse a aba <strong>Minha Escala</strong> no sistema para visualizar o calendário completo.</p>
+                <div style="background: #fff; padding: 16px; border-radius: 12px; margin-top: 16px; text-align: center;">
+                  <span style="display:inline-block; margin: 6px 12px;"><strong>Dias Trabalhados:</strong> ${s?.totalWork || 0}</span>
+                  <span style="display:inline-block; margin: 6px 12px;"><strong>Folgas:</strong> ${s?.totalOff || 0}</span>
+                  <span style="display:inline-block; margin: 6px 12px;"><strong>Férias:</strong> ${s?.totalVacation || 0}</span>
+                </div>
+              </div>
+            `
+          })
+        }).catch(() => {});
+
+        setShareFeedbackMsg(`✅ Escala de ${monthLabel} enviada para ${memberName} (${profile.email})!`);
+      } else {
+        setShareFeedbackMsg(`✅ Escala de ${memberName} disponível! (Colaborador sem e-mail vinculado — use Copiar ou Baixar PNG para enviar via WhatsApp).`);
+      }
+      setTimeout(() => setShareFeedbackMsg(''), 5000);
+    } catch (err: any) {
+      alert('Erro ao compartilhar escala: ' + err.message);
+    } finally {
+      setIsSendingShare(false);
+    }
+  };
+
+  // Compartilhar Escala com TODOS os Colaboradores da Equipe de uma só vez
+  const handleSendScaleToAllTeam = async () => {
+    if (allRosterMembers.length === 0) return;
+    setIsSendingShare(true);
+    try {
+      const authorEmail = currentUser?.email || 'lider@masterdeliveryexpress.com.br';
+      const monthLabel = `${MONTH_NAMES[currentMonthIndex]} de ${currentYear}`;
+      const notifsToInsert: any[] = [];
+
+      allRosterMembers.forEach(m => {
+        const p = getMemberProfile(m);
+        if (p?.email) {
+          notifsToInsert.push({
+            user_email: p.email,
+            message: `${authorEmail}||📅 Sua escala de ${monthLabel} foi publicada pela liderança! Clique para abrir Minha Escala.`,
+            read: false
+          });
+        }
+      });
+
+      if (notifsToInsert.length > 0) {
+        await supabase.from('notifications').insert(notifsToInsert);
+      }
+
+      setShareFeedbackMsg(`🚀 Escalas de ${monthLabel} enviadas para toda a equipe (${notifsToInsert.length} notificações disparadas)!`);
+      setTimeout(() => setShareFeedbackMsg(''), 5000);
+    } catch (err: any) {
+      alert('Erro ao compartilhar escalas em lote: ' + err.message);
+    } finally {
+      setIsSendingShare(false);
+    }
+  };
+
   // Navegação de Mês
   const handlePrevMonth = () => {
     const prev = new Date(selectedMonthDate);
@@ -1047,6 +1574,320 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     setNewTurnoName('');
   };
 
+  // Renderizador do Card Visual "GO" (Idêntico à imagem de referência)
+  const renderGoScheduleCard = (memberName: string, compact = false) => {
+    const targetName = memberName || selectedGoMember || allRosterMembers[0] || 'COLABORADOR';
+    const stats = memberMonthlyStats.get(targetName);
+    const groupObj = turnoGroups.find(g => g.members.includes(targetName));
+    const shiftLabel = groupObj?.name || 'Geral';
+
+    return (
+      <div className="flex flex-col items-center w-full">
+        {/* Barra rápida de resumo numérico acima do card */}
+        <div className="w-full max-w-[920px] mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+            <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 shadow-2xs text-slate-800">
+              Turno: <strong className="text-blue-700">{shiftLabel}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
+              Trabalha: <strong>{stats?.totalWork || 0} dias</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-green-50 border border-green-200 text-green-800">
+              Folgas: <strong>{stats?.totalOff || 0} dias</strong>
+            </span>
+            {(stats?.totalVacation || 0) > 0 && (
+              <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
+                Férias: <strong>{stats?.totalVacation} dias</strong>
+              </span>
+            )}
+          </div>
+
+          {canManageRoster && (
+            <span className="text-[11px] text-slate-500 font-medium">
+              💡 Dica: Clique em qualquer dia do card abaixo para alterar o status diretamente
+            </span>
+          )}
+        </div>
+
+        {/* CARD OFICIAL ESTILO IMAGEM DE REFERÊNCIA (#EFE7DC) */}
+        <div
+          className={`w-full max-w-[920px] bg-[#EFE7DC] rounded-2xl border-2 border-[#d5cbbd] shadow-xl overflow-hidden select-none ${
+            compact ? 'p-4 sm:p-6' : 'p-5 sm:p-8'
+          }`}
+        >
+          {/* TOPO: LOGO GO + NOME DO COLABORADOR / MÊS + LEGENDA */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-6">
+            
+            {/* Logotipo GO Azul com Seta */}
+            <div className="flex items-center justify-center shrink-0">
+              <svg
+                width={compact ? '110' : '135'}
+                height={compact ? '76' : '92'}
+                viewBox="0 0 150 100"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="drop-shadow-xs"
+              >
+                {/* Letra G estilizada */}
+                <path
+                  d="M52 24 A 30 30 0 1 0 52 80 L 52 54 L 35 54"
+                  stroke="#0B1A8E"
+                  strokeWidth="12"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {/* Letra O estilizada */}
+                <circle
+                  cx="104"
+                  cy="52"
+                  r="28"
+                  stroke="#0B1A8E"
+                  strokeWidth="12"
+                />
+                {/* Seta diagonal saindo do O */}
+                <path
+                  d="M116 38 L140 14 M140 14 L121 14 M140 14 L140 33"
+                  stroke="#0B1A8E"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+
+            {/* Centro: Nome em Azul + Mês e Ano em Preto */}
+            <div className="flex flex-col items-center text-center flex-1 px-2">
+              <h2
+                className={`${
+                  compact ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'
+                } font-black text-[#0B1A8E] uppercase tracking-wide leading-tight`}
+              >
+                {targetName}
+              </h2>
+              <p
+                className={`${
+                  compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'
+                } font-black text-[#111111] uppercase tracking-wider mt-1`}
+              >
+                {MONTH_NAMES[currentMonthIndex].toUpperCase()} {currentYear}
+              </p>
+            </div>
+
+            {/* Direita: Caixas de Legenda Idênticas à Imagem */}
+            <div className="flex flex-col gap-1.5 w-full md:w-[230px] shrink-0">
+              <div className="bg-[#A3D977] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
+                FOLGA SEMANA
+              </div>
+              <div className="bg-[#EFE7DC] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
+                TRABALHA
+              </div>
+              <div className="bg-[#F7D348] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
+                DAY OFF
+              </div>
+              <div className="bg-[#F28B44] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
+                FÉRIAS
+              </div>
+              <div className="bg-[#FF2B2B] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
+                FOLGA FDS
+              </div>
+            </div>
+          </div>
+
+          {/* TABELA DE CALENDÁRIO SEGUNDA A DOMINGO */}
+          <div className="w-full overflow-x-auto">
+            <table className="w-full border-collapse border-2 border-[#1E1E1E] table-fixed min-w-[600px]">
+              <thead>
+                <tr className="bg-[#EFE7DC] border-b-2 border-[#1E1E1E]">
+                  {['SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA', 'SÁBADO', 'DOMINGO'].map(dayHeader => (
+                    <th
+                      key={dayHeader}
+                      className="border-2 border-[#1E1E1E] py-2.5 px-1 text-center font-black text-xs sm:text-sm text-[#111111] uppercase tracking-wider"
+                    >
+                      {dayHeader}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {goCalendarWeeks.map((week, wIdx) => (
+                  <tr key={wIdx}>
+                    {week.map((cell, cIdx) => {
+                      if (!cell) {
+                        return (
+                          <td
+                            key={`empty_${wIdx}_${cIdx}`}
+                            className="border-2 border-[#1E1E1E] bg-[#EFE7DC] h-12 sm:h-14"
+                          />
+                        );
+                      }
+
+                      const cellStyle = resolveGoCellStyle(targetName, cell.dateStr, cell.dayOfWeek);
+                      const rawStatus = resolveCellStatus(targetName, cell.dateStr);
+
+                      return (
+                        <td
+                          key={cell.dateStr}
+                          onClick={(e) => {
+                            if (!canManageRoster) return;
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setActiveCellPopover({
+                              dateStr: cell.dateStr,
+                              operatorName: targetName,
+                              shiftName: shiftLabel,
+                              anchorRect: rect,
+                              currentCode: rawStatus.def?.code || '',
+                              currentTimeText: rawStatus.def?.isCustomTime ? rawStatus.customText : ''
+                            });
+                          }}
+                          style={{ backgroundColor: cellStyle.bgHex, color: cellStyle.textHex }}
+                          title={`${targetName} - Dia ${cell.dayNumber}: ${cellStyle.badge || 'Trabalha'}`}
+                          className={`border-2 border-[#1E1E1E] h-12 sm:h-14 text-center align-middle relative transition-transform ${
+                            canManageRoster ? 'cursor-pointer hover:brightness-95 active:scale-95' : ''
+                          }`}
+                        >
+                          <div className="flex flex-col items-center justify-center leading-none">
+                            <span className="text-lg sm:text-xl font-bold tracking-tight text-[#111111]">
+                              {cell.dayNumber}
+                            </span>
+                            {rawStatus.def && rawStatus.def.code !== 'PRESENCA' && (
+                              <span className="text-[9px] font-black uppercase tracking-tighter text-[#111111]/80 mt-0.5">
+                                {rawStatus.customText}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================================
+  // VISÃO EXCLUSIVA DO COLABORADOR COMUM (!isLeaderOrAdmin)
+  // ============================================================================
+  if (!isLeaderOrAdmin) {
+    const activeMemberForUser = selectedGoMember || matchedCurrentUserMember || allRosterMembers[0] || '';
+
+    return (
+      <div className="flex flex-col h-full w-full bg-slate-50 overflow-y-auto">
+        {/* Barra Superior Limpa para o Colaborador */}
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                Minha Escala Mensal
+                <span className="text-xs px-2.5 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-full">
+                  Visualização Individual
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Consulte seus dias de trabalho, folgas da semana, finais de semana e férias por mês
+              </p>
+            </div>
+          </div>
+
+          {/* Seletor de Mês e Ações do Colaborador */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Seletor de Colaborador (Caso queira consultar seu nome na lista) */}
+            {allRosterMembers.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-500 font-semibold">Colaborador:</span>
+                <select
+                  value={activeMemberForUser}
+                  onChange={e => setSelectedGoMember(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  {allRosterMembers.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Navegação de Mês */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={handlePrevMonth}
+                className="p-1.5 hover:bg-white text-slate-700 rounded-lg transition-all cursor-pointer"
+                title="Mês Anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="px-3 text-sm font-bold text-slate-800 capitalize flex items-center gap-1.5 min-w-[140px] justify-center">
+                <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                <span>{MONTH_NAMES[currentMonthIndex]} {currentYear}</span>
+              </div>
+              <button
+                onClick={handleNextMonth}
+                className="p-1.5 hover:bg-white text-slate-700 rounded-lg transition-all cursor-pointer"
+                title="Próximo Mês"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleCurrentMonth}
+                className="ml-1 px-2.5 py-1 text-xs font-semibold bg-white text-blue-700 hover:bg-blue-50 rounded-lg border border-slate-200/80 cursor-pointer"
+              >
+                Atual
+              </button>
+            </div>
+
+            {/* Botões de Baixar / Copiar Escala */}
+            {activeMemberForUser && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleCopyGoPng(activeMemberForUser)}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar Imagem</span>
+                </button>
+                <button
+                  onClick={() => handleDownloadGoPng(activeMemberForUser)}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Baixar Escala (PNG)</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {shareFeedbackMsg && (
+          <div className="mx-6 mt-4 bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between">
+            <span>{shareFeedbackMsg}</span>
+            <button onClick={() => setShareFeedbackMsg(null)} className="text-emerald-700 hover:text-emerald-950">✕</button>
+          </div>
+        )}
+
+        {/* Corpo com o Card GO Centralizado */}
+        <div className="flex-1 p-6 flex flex-col items-center justify-start">
+          {allRosterMembers.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-md my-auto shadow-xs">
+              <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <h3 className="font-bold text-slate-800 text-base">Escala ainda não publicada</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                O líder do seu setor ainda não cadastrou a escala mensal de {MONTH_NAMES[currentMonthIndex]} {currentYear}.
+              </p>
+            </div>
+          ) : (
+            renderGoScheduleCard(activeMemberForUser)
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full w-full bg-slate-50 overflow-hidden">
       
@@ -1068,7 +1909,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                   </span>
                 </h2>
                 <p className="text-xs text-slate-500 font-medium">
-                  Controle de vindas, folgas 5x2, férias e atestados da equipe
+                  Controle de vindas, folgas 5x2, férias e envio individual de escalas
                 </p>
               </div>
             </div>
@@ -1120,6 +1961,18 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
                 <span>Matriz Mensal</span>
+              </button>
+
+              <button
+                onClick={() => setActiveViewMode('go_card')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeViewMode === 'go_card' 
+                    ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60 font-bold' 
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Card Individual (GO)</span>
               </button>
 
               <button
@@ -1180,7 +2033,23 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                   <span>Lançar Escala & Folgas</span>
                 </button>
 
-                {/* 2. Adicionar Colaboradores (Individual ou em Grupo) */}
+                {/* 2. COMPARTILHAR / ENVIAR ESCALAS (NOVO BOTÃO SOLICITADO) */}
+                <button
+                  onClick={() => {
+                    if (!selectedGoMember && allRosterMembers.length > 0) {
+                      setSelectedGoMember(allRosterMembers[0]);
+                    }
+                    setShareFeedbackMsg(null);
+                    setIsShareModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Visualizar no formato GO e enviar a escala para o colaborador"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Compartilhar Escalas</span>
+                </button>
+
+                {/* 3. Adicionar Colaboradores (Individual ou em Grupo) */}
                 <button
                   onClick={() => setIsAddMemberModalOpen(true)}
                   className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1189,7 +2058,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                   <span>Adicionar Colaborador</span>
                 </button>
 
-                {/* 3. Gerenciar Equipe & Turnos */}
+                {/* 4. Gerenciar Equipe & Turnos */}
                 <button
                   onClick={() => setIsManageTeamsOpen(true)}
                   className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1346,6 +2215,88 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       <div className="flex-1 overflow-auto relative">
         
         {/* ============================================================== */}
+        {/* VISÃO ESPECIAL: CARD INDIVIDUAL (FORMATO GO DA IMAGEM) */}
+        {/* ============================================================== */}
+        {activeViewMode === 'go_card' && (
+          <div className="p-6 max-w-5xl mx-auto flex flex-col items-center gap-5">
+            {/* Barra de Seleção do Colaborador e Botões de Envio Rápido */}
+            <div className="w-full max-w-[920px] bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Colaborador:</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      const idx = allRosterMembers.indexOf(selectedGoMember);
+                      const prevIdx = idx > 0 ? idx - 1 : allRosterMembers.length - 1;
+                      if (allRosterMembers[prevIdx]) setSelectedGoMember(allRosterMembers[prevIdx]);
+                    }}
+                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer"
+                    title="Colaborador Anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <select
+                    value={selectedGoMember}
+                    onChange={e => setSelectedGoMember(e.target.value)}
+                    className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer min-w-[220px]"
+                  >
+                    {allRosterMembers.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      const idx = allRosterMembers.indexOf(selectedGoMember);
+                      const nextIdx = idx < allRosterMembers.length - 1 ? idx + 1 : 0;
+                      if (allRosterMembers[nextIdx]) setSelectedGoMember(allRosterMembers[nextIdx]);
+                    }}
+                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer"
+                    title="Próximo Colaborador"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => handleCopyGoPng(selectedGoMember)}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
+                  title="Copiar imagem para colar no WhatsApp ou Teams"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar Imagem</span>
+                </button>
+                <button
+                  onClick={() => handleDownloadGoPng(selectedGoMember)}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Baixar PNG</span>
+                </button>
+                <button
+                  onClick={() => handleSendScaleToCollaborator(selectedGoMember)}
+                  disabled={isSendingShare || !selectedGoMember}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isSendingShare ? 'Enviando...' : 'Enviar para Colaborador'}</span>
+                </button>
+              </div>
+            </div>
+
+            {shareFeedbackMsg && (
+              <div className="w-full max-w-[920px] bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-3 rounded-xl text-xs font-bold flex items-center justify-between shadow-2xs">
+                <span>{shareFeedbackMsg}</span>
+                <button onClick={() => setShareFeedbackMsg(null)} className="text-emerald-700 hover:text-emerald-950">✕</button>
+              </div>
+            )}
+
+            {renderGoScheduleCard(selectedGoMember)}
+          </div>
+        )}
+
+        {/* ============================================================== */}
         {/* VISÃO 1: MATRIZ MENSAL (PLANILHA DE REFERÊNCIA) */}
         {/* ============================================================== */}
         {activeViewMode === 'matriz' && (
@@ -1357,7 +2308,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                 
                 {/* COLGROUP COM LARGURAS RÍGIDAS PARA ALINHAMENTO PIXEL-PERFECT */}
                 <colgroup>
-                  <col style={{ width: '260px', minWidth: '260px' }} />
+                  <col style={{ width: '275px', minWidth: '275px' }} />
                   {monthDaysList.map(d => (
                     <col key={d.dateStr} style={{ width: '38px', minWidth: '38px' }} />
                   ))}
@@ -1462,7 +2413,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                           
                           {/* COLUNA FIXA: NOME DO COLABORADOR, TURNO E CARGO */}
                           <td className="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 px-3 py-2 border-r border-slate-200 shadow-2xs">
-                            <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center justify-between gap-1.5">
                               <div className="flex items-center gap-2.5 min-w-0">
                                 
                                 {/* Foto de Avatar Real ou Letra Inicial Fallback */}
@@ -1484,12 +2435,12 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                                   </span>
                                   <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                                     {/* Turno */}
-                                    <span className="text-[10px] font-semibold px-1.5 py-0.2 bg-blue-50 text-blue-700 rounded border border-blue-200/60 truncate max-w-[110px]" title={`Turno: ${item.turnoName}`}>
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.2 bg-blue-50 text-blue-700 rounded border border-blue-200/60 truncate max-w-[100px]" title={`Turno: ${item.turnoName}`}>
                                       {item.turnoName}
                                     </span>
                                     {/* Cargo */}
                                     {roleBadge ? (
-                                      <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border truncate max-w-[110px] ${roleBadge.bg}`} title={`Cargo: ${roleBadge.label}`}>
+                                      <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border truncate max-w-[100px] ${roleBadge.bg}`} title={`Cargo: ${roleBadge.label}`}>
                                         {roleBadge.label}
                                       </span>
                                     ) : (
@@ -1502,13 +2453,26 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                               </div>
 
                               {canManageRoster && (
-                                <button
-                                  onClick={() => handleRemoveMember(member, item.turnoName)}
-                                  className="opacity-0 group-hover/row:opacity-100 text-slate-400 hover:text-red-600 p-1 rounded transition-opacity cursor-pointer shrink-0"
-                                  title="Remover da Escala"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedGoMember(member);
+                                      setShareFeedbackMsg(null);
+                                      setIsShareModalOpen(true);
+                                    }}
+                                    className="opacity-0 group-hover/row:opacity-100 text-indigo-600 hover:bg-indigo-50 p-1 rounded transition-opacity cursor-pointer"
+                                    title={`Compartilhar / Enviar escala de ${member}`}
+                                  >
+                                    <Share2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveMember(member, item.turnoName)}
+                                    className="opacity-0 group-hover/row:opacity-100 text-slate-400 hover:text-red-600 p-1 rounded transition-opacity cursor-pointer"
+                                    title="Remover da Escala"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </td>
@@ -1759,16 +2723,29 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                         </div>
 
                         {canManageRoster && (
-                          <button
-                            onClick={() => {
-                              setScaleSelectedMembers([member]);
-                              setScaleSelectAll(false);
-                              setIsScaleWizardOpen(true);
-                            }}
-                            className="w-full py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold border border-blue-200 transition-colors text-center cursor-pointer"
-                          >
-                            Lançar Escala / Folgas
-                          </button>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              onClick={() => {
+                                setScaleSelectedMembers([member]);
+                                setScaleSelectAll(false);
+                                setIsScaleWizardOpen(true);
+                              }}
+                              className="w-full py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold border border-blue-200 transition-colors text-center cursor-pointer"
+                            >
+                              Lançar Escala / Folgas
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedGoMember(member);
+                                setShareFeedbackMsg(null);
+                                setIsShareModalOpen(true);
+                              }}
+                              className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              <span>Compartilhar Escala (GO)</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
@@ -1885,6 +2862,138 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
         )}
 
       </div>
+
+      {/* ============================================================== */}
+      {/* MODAL DE COMPARTILHAMENTO E ENVIO DE ESCALAS (FORMATO GO) */}
+      {/* ============================================================== */}
+      {isShareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full p-6 animate-in fade-in zoom-in-95 max-h-[94vh] flex flex-col">
+            
+            {/* Cabeçalho do Modal */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">
+                    Compartilhar & Enviar Escala Individual (Formato GO)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Envie a escala mensal diretamente para a conta do colaborador ou copie/baixe o card em alta definição
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsShareModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Barra de Seleção do Colaborador + Botões de Disparo */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 mb-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700">Colaborador:</span>
+                <button
+                  onClick={() => {
+                    const idx = allRosterMembers.indexOf(selectedGoMember);
+                    const prevIdx = idx > 0 ? idx - 1 : allRosterMembers.length - 1;
+                    if (allRosterMembers[prevIdx]) setSelectedGoMember(allRosterMembers[prevIdx]);
+                  }}
+                  className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <select
+                  value={selectedGoMember}
+                  onChange={e => setSelectedGoMember(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-blue-900 focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[200px]"
+                >
+                  {allRosterMembers.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    const idx = allRosterMembers.indexOf(selectedGoMember);
+                    const nextIdx = idx < allRosterMembers.length - 1 ? idx + 1 : 0;
+                    if (allRosterMembers[nextIdx]) setSelectedGoMember(allRosterMembers[nextIdx]);
+                  }}
+                  className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => handleCopyGoPng(selectedGoMember)}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Copiar imagem pronta para colar no WhatsApp"
+                >
+                  <Copy className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Copiar Imagem (WhatsApp)</span>
+                </button>
+
+                <button
+                  onClick={() => handleDownloadGoPng(selectedGoMember)}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Baixar PNG</span>
+                </button>
+
+                <button
+                  onClick={() => handleSendScaleToCollaborator(selectedGoMember)}
+                  disabled={isSendingShare || !selectedGoMember}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isSendingShare ? 'Enviando...' : `Enviar para ${selectedGoMember.split(' ')[0]}`}</span>
+                </button>
+
+                <button
+                  onClick={handleSendScaleToAllTeam}
+                  disabled={isSendingShare || allRosterMembers.length === 0}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Notificar todos os colaboradores do setor sobre a escala do mês"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Enviar p/ Toda Equipe</span>
+                </button>
+              </div>
+            </div>
+
+            {shareFeedbackMsg && (
+              <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between shrink-0">
+                <span>{shareFeedbackMsg}</span>
+                <button onClick={() => setShareFeedbackMsg(null)} className="text-emerald-700 hover:text-emerald-950">✕</button>
+              </div>
+            )}
+
+            {/* Pré-visualização ao Vivo do Card GO */}
+            <div className="flex-1 overflow-y-auto p-2 flex flex-col items-center">
+              {renderGoScheduleCard(selectedGoMember, true)}
+            </div>
+
+            {/* Rodapé do Modal */}
+            <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
+              <span>
+                O colaborador também pode acessar este card a qualquer momento na aba <strong>"Minha Escala"</strong> do seu painel.
+              </span>
+              <button
+                onClick={() => setIsShareModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============================================================== */}
       {/* MODAL PRINCIPAL: LANÇAR ESCALA & FOLGAS (5x2 DIFERENCIADA, MANUAL, ETC) */}
@@ -2056,7 +3165,10 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     >
                       <option value="alternate">
-                        🔄 Alternar: 1 semana Sábado (FG) e 1 semana Domingo (DOM)
+                        🔄 Alternar: 1ª semana Sábado (FG) / 2ª semana Domingo (DOM)
+                      </option>
+                      <option value="alternate_sun_first">
+                        🔄 Alternar (Invertido): 1ª semana Domingo (DOM) / 2ª semana Sábado (FG)
                       </option>
                       <option value="sat_fixed">Fixo no Sábado (FG)</option>
                       <option value="sun_fixed">Fixo no Domingo (DOM)</option>

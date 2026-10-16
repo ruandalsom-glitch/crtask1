@@ -220,6 +220,20 @@ export function NotificationBell() {
                          if (data?.board_id) {
                             window.location.href = `/boards/${data.board_id}?taskId=${notif.task_id}`;
                          }
+                      } else if (notif.message?.toLowerCase().includes('escala')) {
+                         const activeWs = localStorage.getItem('monday_active_workspace');
+                         let query = supabase.from('boards').select('id, name, created_by');
+                         if (activeWs) query = query.eq('workspace_id', activeWs);
+                         const { data: boardsList } = await query;
+                         if (boardsList && boardsList.length > 0) {
+                           const userPrefix = (userProfile?.email?.split('@')[0] || '').toLowerCase();
+                           const ownB = boardsList.find((b: any) => 
+                             b.created_by === userProfile?.id || 
+                             b.name?.toLowerCase().includes(userPrefix)
+                           ) || boardsList[0];
+                           setIsOpen(false);
+                           window.location.href = `/boards/${ownB.id}?tab=turnos`;
+                         }
                       }
                     }}
                     className={`p-4 border-b border-slate-50 cursor-pointer transition-colors ${notif.read ? 'bg-white opacity-60' : 'bg-blue-50/50 hover:bg-blue-50'}`}
