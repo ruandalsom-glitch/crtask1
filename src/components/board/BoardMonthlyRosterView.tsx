@@ -2941,11 +2941,21 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
         )}
 
         {/* ============================================================== */}
-        {/* VISÃO 2: CALENDÁRIO MENSAL TRADICIONAL */}
+        {/* VISÃO 2: CALENDÁRIO MENSAL TRADICIONAL (COM MENU SUSPENSO AO PASSAR O MOUSE) */}
         {/* ============================================================== */}
         {activeViewMode === 'calendario' && (
           <div className="p-6 max-w-7xl mx-auto flex flex-col gap-6">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                  <CalendarRange className="w-4 h-4 text-blue-600" />
+                  <span>Visão de Calendário da Equipe — {MONTH_NAMES[currentMonthIndex]} {currentYear}</span>
+                </div>
+                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                  💡 Passe o mouse sobre <strong className="text-emerald-700">Trabalhando</strong> ou <strong className="text-purple-700">Folga</strong> para ver os nomes no menu suspenso
+                </span>
+              </div>
+
               <div className="grid grid-cols-7 gap-2 text-center font-bold text-xs text-slate-600 mb-3 uppercase tracking-wider">
                 <div className="text-purple-600">Domingo</div>
                 <div>Segunda</div>
@@ -2958,36 +2968,171 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
               <div className="grid grid-cols-7 gap-2">
                 {Array.from({ length: new Date(currentYear, currentMonthIndex, 1).getDay() }).map((_, i) => (
-                  <div key={`empty_${i}`} className="min-h-[110px] bg-slate-50/60 rounded-xl border border-dashed border-slate-200/60 p-2"></div>
+                  <div key={`empty_${i}`} className="min-h-[115px] bg-slate-50/60 rounded-xl border border-dashed border-slate-200/60 p-2"></div>
                 ))}
 
                 {monthDaysList.map(d => {
-                  let workCount = 0;
-                  let offCount = 0;
-                  let vacCount = 0;
-                  let atCount = 0;
+                  type DayMemberEntry = {
+                    name: string;
+                    turno: string;
+                    def: StatusDefinition;
+                    customText: string;
+                  };
 
-                  turnoGroups.forEach(g => {
+                  const workList: DayMemberEntry[] = [];
+                  const offList: DayMemberEntry[] = [];
+                  const vacList: DayMemberEntry[] = [];
+                  const atList: DayMemberEntry[] = [];
+                  const seenInDay = new Set<string>();
+
+                  // 1. Membros dos grupos filtrados
+                  filteredGroups.forEach(g => {
                     g.members.forEach(m => {
+                      const normKey = normText(m);
+                      if (seenInDay.has(normKey)) return;
+                      seenInDay.add(normKey);
+
                       const res = resolveCellStatus(m, d.dateStr);
                       if (res.def) {
-                        if (res.def.category === 'work') workCount++;
-                        else if (res.def.category === 'off') offCount++;
-                        else if (res.def.category === 'vacation') vacCount++;
-                        else if (res.def.category === 'medical') atCount++;
+                        const entry: DayMemberEntry = {
+                          name: m,
+                          turno: g.name,
+                          def: res.def,
+                          customText: res.customText
+                        };
+                        if (res.def.category === 'work' || res.def.category === 'remote') workList.push(entry);
+                        else if (res.def.category === 'off') offList.push(entry);
+                        else if (res.def.category === 'vacation') vacList.push(entry);
+                        else if (res.def.category === 'medical' || res.def.category === 'special') atList.push(entry);
                       }
                     });
                   });
 
+                  // 2. Caso haja algum colaborador com turno lançado que ainda não esteja em um grupo
+                  if (filterTurno === 'all') {
+                    allRosterMembers.forEach(m => {
+                      const normKey = normText(m);
+                      if (seenInDay.has(normKey)) return;
+                      if (searchMember && !m.toLowerCase().includes(searchMember.toLowerCase())) return;
+                      seenInDay.add(normKey);
+
+                      const res = resolveCellStatus(m, d.dateStr);
+                      if (res.def) {
+                        const entry: DayMemberEntry = {
+                          name: m,
+                          turno: 'Geral',
+                          def: res.def,
+                          customText: res.customText
+                        };
+                        if (res.def.category === 'work' || res.def.category === 'remote') workList.push(entry);
+                        else if (res.def.category === 'off') offList.push(entry);
+                        else if (res.def.category === 'vacation') vacList.push(entry);
+                        else if (res.def.category === 'medical' || res.def.category === 'special') atList.push(entry);
+                      }
+                    });
+                  }
+
+                  const alignRight = d.dayOfWeek >= 5; // Sexta e Sábado alinham o menu suspenso à direita para não cortar na tela
+
+                  const renderHoverDropdown = (
+                    title: string,
+                    dotColor: string,
+                    headerBadgeClass: string,
+                    entries: DayMemberEntry[]
+                  ) => (
+                    <div
+                      className={`hidden group-hover/pill:block absolute top-full pt-1.5 z-50 w-68 ${
+                        alignRight ? 'right-0' : 'left-0'
+                      }`}
+                    >
+                      <div className="bg-[#0f172a] text-white rounded-xl shadow-2xl border border-slate-700/90 overflow-hidden ring-1 ring-black/20">
+                        {/* Cabeçalho do Menu Suspenso */}
+                        <div className="px-3 py-2 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${dotColor}`}></span>
+                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-100">
+                              {title} ({entries.length})
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+                            {d.label} ({d.dayNameShort})
+                          </span>
+                        </div>
+
+                        {/* Lista de Nomes dos Colaboradores */}
+                        <div className="max-h-56 overflow-y-auto divide-y divide-slate-800/70 p-1.5 flex flex-col gap-0.5">
+                          {entries.map(item => {
+                            const prof = getMemberProfile(item.name);
+                            const badgeLabel =
+                              item.def.code === 'PRESENCA'
+                                ? '✓ Trabalha'
+                                : item.def.code === 'FG'
+                                ? 'FG • Folga'
+                                : item.def.code === 'DOM'
+                                ? 'DOM • Folga'
+                                : item.def.code === 'DOFF'
+                                ? 'DAY OFF'
+                                : item.def.code === 'FERIAS'
+                                ? 'FÉRIAS'
+                                : item.def.code === 'EXT'
+                                ? 'EXT • Externo'
+                                : item.def.code === 'HOME'
+                                ? 'HOME'
+                                : item.customText || item.def.shortLabel;
+
+                            return (
+                              <div
+                                key={item.name}
+                                onClick={() => {
+                                  setSelectedGoMember(item.name);
+                                  setShareFeedbackMsg(null);
+                                  setIsShareModalOpen(true);
+                                }}
+                                className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800/90 transition-colors cursor-pointer"
+                                title={`Clique para abrir o card individual de ${item.name}`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {prof?.avatar_url ? (
+                                    <img
+                                      src={prof.avatar_url}
+                                      alt={item.name}
+                                      className="w-6 h-6 rounded-full object-cover border border-slate-600 shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full bg-indigo-600/40 border border-indigo-400/40 text-indigo-200 font-bold text-[10px] flex items-center justify-center shrink-0">
+                                      {item.name.charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div className="flex flex-col min-w-0 leading-tight">
+                                    <span className="text-xs font-bold text-white truncate">
+                                      {item.name}
+                                    </span>
+                                    <span className="text-[10px] font-medium text-slate-400 truncate">
+                                      {item.turno}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md shrink-0 ${headerBadgeClass}`}>
+                                  {badgeLabel}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+
                   return (
                     <div 
                       key={d.dateStr}
-                      className={`min-h-[110px] rounded-xl border p-2 flex flex-col justify-between transition-all ${
+                      className={`min-h-[115px] rounded-xl border p-2 flex flex-col justify-between transition-all relative hover:z-40 ${
                         d.isSunday 
                           ? 'bg-purple-50/30 border-purple-200/60' 
                           : d.isWeekend 
                             ? 'bg-amber-50/30 border-amber-200/60' 
-                            : 'bg-white border-slate-200 hover:shadow-xs'
+                            : 'bg-white border-slate-200 hover:shadow-sm'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -3000,28 +3145,75 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       </div>
 
                       <div className="flex flex-col gap-1 mt-1 text-[11px] font-bold">
-                        {workCount > 0 && (
-                          <div className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center justify-between">
-                            <span>Trabalhando:</span>
-                            <span>{workCount}</span>
+                        {workList.length > 0 && (
+                          <div className="group/pill relative">
+                            <div className="px-2 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200/90 text-emerald-900 border border-emerald-200/80 flex items-center justify-between cursor-pointer transition-colors">
+                              <span>Trabalhando:</span>
+                              <span className="flex items-center gap-1 font-extrabold">
+                                {workList.length}
+                                <span className="text-[9px] opacity-70">▾</span>
+                              </span>
+                            </div>
+                            {renderHoverDropdown(
+                              'Trabalhando',
+                              'bg-emerald-400',
+                              'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
+                              workList
+                            )}
                           </div>
                         )}
-                        {offCount > 0 && (
-                          <div className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 flex items-center justify-between">
-                            <span>Folga:</span>
-                            <span>{offCount}</span>
+
+                        {offList.length > 0 && (
+                          <div className="group/pill relative">
+                            <div className="px-2 py-1 rounded-lg bg-purple-100 hover:bg-purple-200/90 text-purple-900 border border-purple-200/80 flex items-center justify-between cursor-pointer transition-colors">
+                              <span>Folga:</span>
+                              <span className="flex items-center gap-1 font-extrabold">
+                                {offList.length}
+                                <span className="text-[9px] opacity-70">▾</span>
+                              </span>
+                            </div>
+                            {renderHoverDropdown(
+                              'De Folga',
+                              'bg-purple-400',
+                              'bg-purple-500/20 text-purple-300 border border-purple-500/30',
+                              offList
+                            )}
                           </div>
                         )}
-                        {vacCount > 0 && (
-                          <div className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center justify-between">
-                            <span>Férias:</span>
-                            <span>{vacCount}</span>
+
+                        {vacList.length > 0 && (
+                          <div className="group/pill relative">
+                            <div className="px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200/90 text-amber-900 border border-amber-200/80 flex items-center justify-between cursor-pointer transition-colors">
+                              <span>Férias:</span>
+                              <span className="flex items-center gap-1 font-extrabold">
+                                {vacList.length}
+                                <span className="text-[9px] opacity-70">▾</span>
+                              </span>
+                            </div>
+                            {renderHoverDropdown(
+                              'Em Férias',
+                              'bg-amber-400',
+                              'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+                              vacList
+                            )}
                           </div>
                         )}
-                        {atCount > 0 && (
-                          <div className="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 flex items-center justify-between">
-                            <span>Atestado:</span>
-                            <span>{atCount}</span>
+
+                        {atList.length > 0 && (
+                          <div className="group/pill relative">
+                            <div className="px-2 py-1 rounded-lg bg-sky-100 hover:bg-sky-200/90 text-sky-900 border border-sky-200/80 flex items-center justify-between cursor-pointer transition-colors">
+                              <span>Atestado / Outros:</span>
+                              <span className="flex items-center gap-1 font-extrabold">
+                                {atList.length}
+                                <span className="text-[9px] opacity-70">▾</span>
+                              </span>
+                            </div>
+                            {renderHoverDropdown(
+                              'Atestado / Outros',
+                              'bg-sky-400',
+                              'bg-sky-500/20 text-sky-300 border border-sky-500/30',
+                              atList
+                            )}
                           </div>
                         )}
                       </div>
