@@ -1011,109 +1011,131 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     }
   }, [isLeaderOrAdmin, matchedCurrentUserMember, allRosterMembers, selectedGoMember]);
 
-  // Resolve a cor e categoria de cada dia no formato visual GO (Segunda a Domingo)
+  // Resolve a cor e categoria de cada dia no padrão visual oficial CR TASK (Segunda a Domingo)
   const resolveGoCellStyle = (memberName: string, dateStr: string, dayOfWeek: number) => {
     const { def, customText } = resolveCellStatus(memberName, dateStr);
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
     if (!def || def.code === 'PRESENCA') {
       return {
-        bgHex: '#EFE7DC',
-        textHex: '#000000',
+        bgHex: '#1e293b',
+        borderHex: '#334155',
+        textHex: '#f8fafc',
+        subTextHex: '#34d399',
         category: 'trabalha' as const,
-        badge: ''
+        badge: '✓ Trabalha'
       };
     }
 
     if (def.code === 'FG' || def.code === 'FJ') {
       if (isWeekend) {
         return {
-          bgHex: '#FF2B2B',
-          textHex: '#000000',
+          bgHex: '#7c3aed',
+          borderHex: '#a78bfa',
+          textHex: '#ffffff',
+          subTextHex: '#ede9fe',
           category: 'folga_fds' as const,
-          badge: def.code === 'FJ' ? 'FJ' : ''
+          badge: def.code === 'FJ' ? 'FJ • FDS' : 'FG • FDS'
         };
       }
       return {
-        bgHex: '#A3D977',
-        textHex: '#000000',
+        bgHex: '#059669',
+        borderHex: '#34d399',
+        textHex: '#ffffff',
+        subTextHex: '#d1fae5',
         category: 'folga_semana' as const,
-        badge: def.code === 'FJ' ? 'FJ' : ''
+        badge: def.code === 'FJ' ? 'FJ • Semana' : 'FG • Folga'
       };
     }
 
     if (def.code === 'DOM') {
       return {
-        bgHex: '#FF2B2B',
-        textHex: '#000000',
+        bgHex: '#7c3aed',
+        borderHex: '#a78bfa',
+        textHex: '#ffffff',
+        subTextHex: '#ede9fe',
         category: 'folga_fds' as const,
-        badge: ''
+        badge: 'DOM • Folga'
       };
     }
 
     if (def.code === 'DOFF') {
       return {
-        bgHex: '#F7D348',
-        textHex: '#000000',
+        bgHex: '#e11d48',
+        borderHex: '#fb7185',
+        textHex: '#ffffff',
+        subTextHex: '#ffe4e6',
         category: 'day_off' as const,
-        badge: ''
+        badge: 'DAY OFF'
       };
     }
 
     if (def.code === 'FERIAS') {
       return {
-        bgHex: '#F28B44',
-        textHex: '#000000',
+        bgHex: '#f59e0b',
+        borderHex: '#fcd34d',
+        textHex: '#0f172a',
+        subTextHex: '#451a03',
         category: 'ferias' as const,
-        badge: ''
+        badge: 'FÉRIAS'
       };
     }
 
     if (def.code === 'EXT') {
       return {
-        bgHex: '#3949AB',
-        textHex: '#FFFFFF',
+        bgHex: '#4f46e5',
+        borderHex: '#818cf8',
+        textHex: '#ffffff',
+        subTextHex: '#e0e7ff',
         category: 'trabalha' as const,
-        badge: 'EXT'
+        badge: 'EXT • Externo'
       };
     }
 
     if (def.code === 'HOME') {
       return {
-        bgHex: '#F8BBD0',
-        textHex: '#880E4F',
+        bgHex: '#db2777',
+        borderHex: '#f472b6',
+        textHex: '#ffffff',
+        subTextHex: '#fce7f3',
         category: 'trabalha' as const,
-        badge: 'HOME'
+        badge: 'HOME OFFICE'
       };
     }
 
     if (def.code === 'AT') {
       return {
-        bgHex: '#4FC3F7',
-        textHex: '#01579B',
+        bgHex: '#0284c7',
+        borderHex: '#38bdf8',
+        textHex: '#ffffff',
+        subTextHex: '#e0f2fe',
         category: 'outros' as const,
-        badge: 'AT'
+        badge: 'ATESTADO'
       };
     }
 
     if (def.code === 'HORARIO' || def.code === 'FALTA') {
       return {
-        bgHex: '#D32F2F',
-        textHex: '#FFFFFF',
+        bgHex: '#dc2626',
+        borderHex: '#f87171',
+        textHex: '#ffffff',
+        subTextHex: '#fee2e2',
         category: 'outros' as const,
-        badge: customText || 'F'
+        badge: customText || 'FALTA'
       };
     }
 
     return {
-      bgHex: '#EFE7DC',
-      textHex: '#000000',
+      bgHex: '#1e293b',
+      borderHex: '#334155',
+      textHex: '#f8fafc',
+      subTextHex: '#94a3b8',
       category: 'trabalha' as const,
-      badge: customText !== 'x' ? customText : ''
+      badge: customText !== 'x' ? customText : 'Fora Escala'
     };
   };
 
-  // Matriz de semanas Segunda -> Domingo para o Card GO
+  // Matriz de semanas Segunda -> Domingo para o Card CR Task
   const goCalendarWeeks = useMemo(() => {
     const firstDayDate = new Date(currentYear, currentMonthIndex, 1);
     // 0 = Segunda, 1 = Terça, ..., 5 = Sábado, 6 = Domingo
@@ -1143,104 +1165,134 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     return weeks;
   }, [currentYear, currentMonthIndex, daysInCurrentMonth]);
 
-  // Gera um Canvas HTML5 de Alta Resolução idêntico à imagem GO de referência
-  const generateGoScheduleCanvas = (memberName: string): HTMLCanvasElement => {
+  // Gera um Canvas HTML5 de Alta Resolução com o visual oficial CR TASK e a logo /logo.png
+  const generateGoScheduleCanvas = async (memberName: string): Promise<HTMLCanvasElement> => {
     const canvas = document.createElement('canvas');
     const numWeeks = goCalendarWeeks.length;
     const width = 1280;
-    const rowH = 104;
-    const tableTop = 250;
-    const height = tableTop + 40 + numWeeks * rowH + 65;
+    const rowH = 102;
+    const rowGap = 10;
+    const tableTop = 235;
+    const height = tableTop + 56 + numWeeks * (rowH + rowGap) + 70;
 
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
 
-    // 1. Fundo Creme (#EFE7DC)
-    ctx.fillStyle = '#EFE7DC';
+    // 1. Fundo Escuro Oficial CR Task (#0f172a -> #090d16)
+    const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+    bgGrad.addColorStop(0, '#0f172a');
+    bgGrad.addColorStop(0.5, '#111827');
+    bgGrad.addColorStop(1, '#0b1120');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. Desenha Logo GO no canto superior esquerdo
+    // Borda externa sutil
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, width - 4, height - 4);
+
+    // 2. Carrega e desenha a Logo Oficial da CR (/logo.png) no canto superior esquerdo
+    const logoImg = await new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = '/logo.png';
+    });
+
+    // Caixa preta da logo CR
+    const logoBoxX = 56;
+    const logoBoxY = 38;
+    const logoBoxSize = 96;
     ctx.save();
-    // Letra G estilizada
-    ctx.fillStyle = '#1D59F2';
-    ctx.font = '900 108px Inter, Arial, sans-serif';
-    ctx.fillText('G', 72, 152);
-
-    // Círculo O azul com seta de navegação branca dentro
-    const cx = 218;
-    const cy = 114;
-    const r = 46;
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#1D59F2';
+    ctx.roundRect(logoBoxX, logoBoxY, logoBoxSize, logoBoxSize, 22);
+    ctx.fillStyle = '#000000';
     ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#334155';
+    ctx.stroke();
+    ctx.clip();
 
-    // Seta branca inclinada dentro do O
-    ctx.beginPath();
-    ctx.moveTo(cx + 18, cy - 16);
-    ctx.lineTo(cx - 20, cy - 3);
-    ctx.lineTo(cx - 3, cy + 4);
-    ctx.lineTo(cx + 3, cy + 20);
-    ctx.closePath();
-    ctx.fillStyle = '#EFE7DC';
-    ctx.fill();
-
-    // Cantoneira azul superior direita do logo GO
-    ctx.beginPath();
-    ctx.moveTo(cx + 22, cy - 58);
-    ctx.lineTo(cx + 60, cy - 48);
-    ctx.lineTo(cx + 72, cy - 10);
-    ctx.lineTo(cx + 60, cy - 15);
-    ctx.lineTo(cx + 51, cy - 39);
-    ctx.lineTo(cx + 26, cy - 46);
-    ctx.closePath();
-    ctx.fillStyle = '#1D59F2';
-    ctx.fill();
+    if (logoImg) {
+      ctx.drawImage(logoImg, logoBoxX + 8, logoBoxY + 8, logoBoxSize - 16, logoBoxSize - 16);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 36px Inter, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('CR', logoBoxX + logoBoxSize / 2, logoBoxY + logoBoxSize / 2);
+    }
     ctx.restore();
 
-    // 3. Nome do Colaborador em Azul (Centralizado, Caixa Alta, Espaçado)
-    const displayFirstName = (memberName.split(' ')[0] || memberName).toUpperCase();
-    const spacedName = displayFirstName.split('').join(' ');
-    ctx.fillStyle = '#2557D6';
-    ctx.font = '900 38px Inter, Arial, sans-serif';
+    // Texto de Marca ao lado da Logo
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 24px Inter, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('CR TASK', logoBoxX + logoBoxSize + 18, logoBoxY + 18);
+
+    ctx.fillStyle = '#818cf8';
+    ctx.font = '700 12px Inter, Arial, sans-serif';
+    ctx.fillText('GESTÃO OPERACIONAL', logoBoxX + logoBoxSize + 18, logoBoxY + 50);
+
+    const groupObj = turnoGroups.find(g => g.members.includes(memberName));
+    const shiftLabel = groupObj?.name || 'Geral';
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 12px Inter, Arial, sans-serif';
+    ctx.fillText(`Turno: ${shiftLabel}`, logoBoxX + logoBoxSize + 18, logoBoxY + 70);
+
+    // 3. Nome do Colaborador e Mês/Ano no Centro
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 40px Inter, Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(spacedName, width / 2, 74);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(memberName.toUpperCase(), width / 2, 68);
 
-    // 4. Mês e Ano em Preto (Centralizado, Caixa Alta, Espaçado)
+    // Badge do Mês e Ano
     const monthUpper = `${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}`;
-    const spacedMonth = monthUpper.split('').join(' ');
-    ctx.fillStyle = '#000000';
-    ctx.font = '900 38px Inter, Arial, sans-serif';
-    ctx.fillText(spacedMonth, width / 2, 124);
+    const mBadgeW = 260;
+    const mBadgeH = 38;
+    ctx.beginPath();
+    ctx.roundRect(width / 2 - mBadgeW / 2, 98, mBadgeW, mBadgeH, 12);
+    ctx.fillStyle = 'rgba(79, 70, 229, 0.22)';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#6366f1';
+    ctx.stroke();
 
-    // 5. Pílulas de Legenda
+    ctx.fillStyle = '#a5b4fc';
+    ctx.font = '800 18px Inter, Arial, sans-serif';
+    ctx.fillText(monthUpper, width / 2, 98 + mBadgeH / 2 + 1);
+
+    // 4. Pílulas de Legenda CR Task
     const pills = [
-      { label: 'FOLGA SEMANA', bg: '#A3D977' },
-      { label: 'TRABALHA', bg: '#EFE7DC' },
-      { label: 'DAY OFF', bg: '#F7D348' },
-      { label: 'FÉRIAS', bg: '#F28B44' },
-      { label: 'FOLGA FDS', bg: '#FF2B2B' }
+      { label: '✓ TRABALHA', bg: '#1e293b', border: '#475569', text: '#f8fafc' },
+      { label: 'FOLGA SEMANA (FG)', bg: '#059669', border: '#34d399', text: '#ffffff' },
+      { label: 'FOLGA FDS (DOM)', bg: '#7c3aed', border: '#a78bfa', text: '#ffffff' },
+      { label: 'DAY OFF', bg: '#e11d48', border: '#fb7185', text: '#ffffff' },
+      { label: 'FÉRIAS', bg: '#f59e0b', border: '#fcd34d', text: '#0f172a' },
+      { label: 'EXTERNO (EXT)', bg: '#4f46e5', border: '#818cf8', text: '#ffffff' }
     ];
-    const pillW = 136;
-    const pillH = 36;
-    const pillGap = 14;
+    const pillW = 165;
+    const pillH = 34;
+    const pillGap = 12;
     const totalPillsW = pills.length * pillW + (pills.length - 1) * pillGap;
     let startPillX = (width - totalPillsW) / 2;
-    const pillY = 152;
+    const pillY = 162;
 
     pills.forEach(p => {
-      // Sombra/borda arredondada
       ctx.beginPath();
-      ctx.roundRect(startPillX, pillY, pillW, pillH, 18);
+      ctx.roundRect(startPillX, pillY, pillW, pillH, 10);
       ctx.fillStyle = p.bg;
       ctx.fill();
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = '#1E1E1E';
+      ctx.strokeStyle = p.border;
       ctx.stroke();
 
-      ctx.fillStyle = '#000000';
-      ctx.font = '800 12px Inter, Arial, sans-serif';
+      ctx.fillStyle = p.text;
+      ctx.font = '800 11px Inter, Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(p.label, startPillX + pillW / 2, pillY + pillH / 2 + 1);
@@ -1248,77 +1300,108 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       startPillX += pillW + pillGap;
     });
 
-    // 6. Cabeçalho dos Dias da Semana (SEGUNDA a DOMINGO)
-    const tableLeft = 68;
+    // 5. Cabeçalho dos Dias da Semana (SEGUNDA a DOMINGO)
+    const tableLeft = 56;
     const tableWidth = width - tableLeft * 2;
-    const colW = tableWidth / 7;
+    const colGap = 10;
+    const colW = (tableWidth - colGap * 6) / 7;
     const dowHeaders = ['SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA', 'SÁBADO', 'DOMINGO'];
 
-    ctx.fillStyle = '#000000';
-    ctx.font = '800 16px Inter, Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     dowHeaders.forEach((h, idx) => {
-      ctx.fillText(h, tableLeft + idx * colW + colW / 2, tableTop + 16);
+      const hx = tableLeft + idx * (colW + colGap);
+      ctx.beginPath();
+      ctx.roundRect(hx, tableTop, colW, 40, 10);
+      ctx.fillStyle = idx >= 5 ? '#1e1b4b' : '#1e293b';
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = idx >= 5 ? '#4338ca' : '#334155';
+      ctx.stroke();
+
+      ctx.fillStyle = idx >= 5 ? '#a5b4fc' : '#cbd5e1';
+      ctx.font = '800 13px Inter, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(h, hx + colW / 2, tableTop + 21);
     });
 
-    // 7. Grade das Semanas
-    const gridStartY = tableTop + 36;
+    // 6. Grade de Cards dos Dias
+    const gridStartY = tableTop + 52;
     goCalendarWeeks.forEach((week, rIdx) => {
-      const y = gridStartY + rIdx * rowH;
+      const y = gridStartY + rIdx * (rowH + rowGap);
       week.forEach((cell, cIdx) => {
-        const x = tableLeft + cIdx * colW;
-        let bg = '#EFE7DC';
-        let txtColor = '#000000';
-        let badge = '';
+        const x = tableLeft + cIdx * (colW + colGap);
 
-        if (cell) {
-          const st = resolveGoCellStyle(memberName, cell.dateStr, cell.dayOfWeek);
-          bg = st.bgHex;
-          txtColor = st.textHex;
-          badge = st.badge;
+        if (!cell) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, colW, rowH, 14);
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#1e293b';
+          ctx.stroke();
+          return;
         }
 
-        ctx.fillStyle = bg;
-        ctx.fillRect(x, y, colW, rowH);
+        const st = resolveGoCellStyle(memberName, cell.dateStr, cell.dayOfWeek);
 
-        ctx.lineWidth = 1.4;
-        ctx.strokeStyle = '#3A3630';
-        ctx.strokeRect(x, y, colW, rowH);
+        ctx.beginPath();
+        ctx.roundRect(x, y, colW, rowH, 14);
+        ctx.fillStyle = st.bgHex;
+        ctx.fill();
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = st.borderHex;
+        ctx.stroke();
 
-        if (cell) {
-          ctx.fillStyle = txtColor;
-          ctx.font = '800 18px Inter, Arial, sans-serif';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          ctx.fillText(String(cell.dayNumber), x + 10, y + 10);
+        // Número do Dia
+        ctx.fillStyle = st.textHex;
+        ctx.font = '900 26px Inter, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(cell.dayNumber), x + colW / 2, y + rowH / 2 - 10);
 
-          if (badge) {
-            ctx.font = '800 12px Inter, Arial, sans-serif';
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'bottom';
-            ctx.fillText(badge, x + colW - 10, y + rowH - 10);
-          }
+        // Badge / Status embaixo
+        if (st.badge) {
+          ctx.fillStyle = st.subTextHex;
+          ctx.font = '800 11px Inter, Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(st.badge.toUpperCase(), x + colW / 2, y + rowH - 20);
         }
       });
     });
 
+    // 7. Rodapé Oficial CR Task
+    const stats = memberMonthlyStats.get(memberName);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '600 13px Inter, Arial, sans-serif';
+    ctx.textAlign = 'between' as any;
+    ctx.textAlign = 'left';
+    ctx.fillText(
+      `Resumo do Mês:   Trabalha: ${stats?.totalWork || 0} dias   •   Folgas: ${stats?.totalOff || 0} dias   •   Férias: ${stats?.totalVacation || 0} dias`,
+      tableLeft,
+      height - 30
+    );
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#475569';
+    ctx.fillText('Gerado via CR Task • Gestão Operacional', width - tableLeft, height - 30);
+
     return canvas;
   };
 
-  // Baixar PNG da Escala no Formato GO
-  const handleDownloadGoPng = (memberName: string) => {
+  // Baixar PNG da Escala no Formato Oficial CR Task
+  const handleDownloadGoPng = async (memberName: string) => {
     if (!memberName) return;
-    const canvas = generateGoScheduleCanvas(memberName);
+    const canvas = await generateGoScheduleCanvas(memberName);
     const dataUrl = canvas.toDataURL('image/png');
     const link = document.createElement('a');
     const cleanName = memberName.toLowerCase().replace(/\s+/g, '_');
-    link.download = `escala_${cleanName}_${MONTH_SHORT[currentMonthIndex]}_${currentYear}.png`;
+    link.download = `escala_crtask_${cleanName}_${MONTH_SHORT[currentMonthIndex]}_${currentYear}.png`;
     link.href = dataUrl;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setShareFeedbackMsg(`📥 Imagem da escala de ${memberName} baixada com sucesso!`);
+    setShareFeedbackMsg(`📥 Imagem da escala CR Task de ${memberName} baixada com sucesso!`);
     setTimeout(() => setShareFeedbackMsg(''), 4000);
   };
 
@@ -1326,17 +1409,17 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   const handleCopyGoPng = async (memberName: string) => {
     if (!memberName) return;
     try {
-      const canvas = generateGoScheduleCanvas(memberName);
+      const canvas = await generateGoScheduleCanvas(memberName);
       canvas.toBlob(async (blob) => {
         if (!blob) return;
         await navigator.clipboard.write([
           new ClipboardItem({ 'image/png': blob })
         ]);
-        setShareFeedbackMsg(`📋 Escala de ${memberName} copiada! Basta colar (Ctrl+V) no WhatsApp ou chat.`);
+        setShareFeedbackMsg(`📋 Escala CR Task de ${memberName} copiada! Basta colar (Ctrl+V) no WhatsApp ou chat.`);
         setTimeout(() => setShareFeedbackMsg(''), 4500);
       }, 'image/png');
     } catch (err) {
-      handleDownloadGoPng(memberName);
+      await handleDownloadGoPng(memberName);
     }
   };
 
@@ -1357,23 +1440,26 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           read: false
         }]);
 
-        // 2. Dispara e-mail formatado (não bloqueante se SMTP não estiver configurado)
+        // 2. Dispara e-mail formatado no padrão visual CR Task
         const s = memberMonthlyStats.get(memberName);
         fetch('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: profile.email,
-            subject: `📅 Sua Escala Mensal - ${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}`,
+            subject: `📅 Sua Escala Mensal CR Task - ${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}`,
             html: `
-              <div style="font-family: Arial, sans-serif; background: #EFE7DC; padding: 28px; border-radius: 16px; max-width: 600px; margin: 0 auto; border: 1px solid #d6cbbd;">
-                <h2 style="color: #2557D6; text-align: center; letter-spacing: 3px; margin-bottom: 4px;">${memberName.toUpperCase()}</h2>
-                <h3 style="color: #000; text-align: center; letter-spacing: 2px; margin-top: 0;">${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}</h3>
-                <p style="text-align: center; color: #333; font-size: 14px;">Sua escala mensal foi publicada pela liderança. Acesse a aba <strong>Minha Escala</strong> no sistema para visualizar o calendário completo.</p>
-                <div style="background: #fff; padding: 16px; border-radius: 12px; margin-top: 16px; text-align: center;">
-                  <span style="display:inline-block; margin: 6px 12px;"><strong>Dias Trabalhados:</strong> ${s?.totalWork || 0}</span>
-                  <span style="display:inline-block; margin: 6px 12px;"><strong>Folgas:</strong> ${s?.totalOff || 0}</span>
-                  <span style="display:inline-block; margin: 6px 12px;"><strong>Férias:</strong> ${s?.totalVacation || 0}</span>
+              <div style="font-family: Inter, Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 32px; border-radius: 20px; max-width: 620px; margin: 0 auto; border: 1px solid #1e293b;">
+                <div style="text-align: center; margin-bottom: 16px;">
+                  <span style="background: #4f46e5; color: #fff; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 999px; letter-spacing: 1.5px;">CR TASK • GESTÃO OPERACIONAL</span>
+                </div>
+                <h2 style="color: #ffffff; text-align: center; letter-spacing: 1px; margin-bottom: 4px; font-size: 26px;">${memberName.toUpperCase()}</h2>
+                <h3 style="color: #818cf8; text-align: center; letter-spacing: 2px; margin-top: 0; font-size: 16px;">${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}</h3>
+                <p style="text-align: center; color: #cbd5e1; font-size: 14px; line-height: 1.6;">Sua escala mensal foi publicada pela liderança. Acesse a aba <strong style="color: #fff;">Minha Escala</strong> no CR Task para visualizar seu calendário completo.</p>
+                <div style="background: #1e293b; padding: 16px; border-radius: 14px; margin-top: 20px; text-align: center; border: 1px solid #334155;">
+                  <span style="display:inline-block; margin: 6px 12px; color: #34d399;"><strong>✓ Trabalha:</strong> ${s?.totalWork || 0} dias</span>
+                  <span style="display:inline-block; margin: 6px 12px; color: #a78bfa;"><strong>Folgas:</strong> ${s?.totalOff || 0} dias</span>
+                  <span style="display:inline-block; margin: 6px 12px; color: #fbbf24;"><strong>Férias:</strong> ${s?.totalVacation || 0} dias</span>
                 </div>
               </div>
             `
@@ -1382,7 +1468,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
         setShareFeedbackMsg(`✅ Escala de ${monthLabel} enviada para ${memberName} (${profile.email})!`);
       } else {
-        setShareFeedbackMsg(`✅ Escala de ${memberName} disponível! (Colaborador sem e-mail vinculado — use Copiar ou Baixar PNG para enviar via WhatsApp).`);
+        setShareFeedbackMsg(`✅ Escala de ${memberName} pronta! (Colaborador sem e-mail vinculado — use Copiar ou Baixar PNG para enviar via WhatsApp).`);
       }
       setTimeout(() => setShareFeedbackMsg(''), 5000);
     } catch (err: any) {
@@ -1574,25 +1660,27 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     setNewTurnoName('');
   };
 
-  // Renderizador do Card Visual "GO" (Idêntico à imagem de referência)
+  // Renderizador do Card Visual Oficial "CR TASK" (Com logotipo /logo.png e cores do sistema)
   const renderGoScheduleCard = (memberName: string, compact = false) => {
     const targetName = memberName || selectedGoMember || allRosterMembers[0] || 'COLABORADOR';
     const stats = memberMonthlyStats.get(targetName);
     const groupObj = turnoGroups.find(g => g.members.includes(targetName));
     const shiftLabel = groupObj?.name || 'Geral';
+    const profile = getMemberProfile(targetName);
+    const roleBadge = getRoleBadge(profile?.role);
 
     return (
       <div className="flex flex-col items-center w-full">
         {/* Barra rápida de resumo numérico acima do card */}
-        <div className="w-full max-w-[920px] mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+        <div className="w-full max-w-[940px] mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
             <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 shadow-2xs text-slate-800">
-              Turno: <strong className="text-blue-700">{shiftLabel}</strong>
+              Turno: <strong className="text-indigo-600">{shiftLabel}</strong>
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
               Trabalha: <strong>{stats?.totalWork || 0} dias</strong>
             </span>
-            <span className="px-2.5 py-1 rounded-lg bg-green-50 border border-green-200 text-green-800">
+            <span className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-800">
               Folgas: <strong>{stats?.totalOff || 0} dias</strong>
             </span>
             {(stats?.totalVacation || 0) > 0 && (
@@ -1609,159 +1697,194 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           )}
         </div>
 
-        {/* CARD OFICIAL ESTILO IMAGEM DE REFERÊNCIA (#EFE7DC) */}
+        {/* CARD OFICIAL CR TASK (TEMA DARK SLATE / INDIGO COM LOGO CR) */}
         <div
-          className={`w-full max-w-[920px] bg-[#EFE7DC] rounded-2xl border-2 border-[#d5cbbd] shadow-xl overflow-hidden select-none ${
+          className={`w-full max-w-[940px] bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1120] rounded-2xl border border-slate-700/80 shadow-2xl overflow-hidden select-none text-white ${
             compact ? 'p-4 sm:p-6' : 'p-5 sm:p-8'
           }`}
         >
-          {/* TOPO: LOGO GO + NOME DO COLABORADOR / MÊS + LEGENDA */}
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-6">
+          {/* TOPO: LOGO CR TASK + COLABORADOR & MÊS + LEGENDA */}
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-6 mb-6 pb-5 border-b border-slate-800/90">
             
-            {/* Logotipo GO Azul com Seta */}
-            <div className="flex items-center justify-center shrink-0">
-              <svg
-                width={compact ? '110' : '135'}
-                height={compact ? '76' : '92'}
-                viewBox="0 0 150 100"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="drop-shadow-xs"
-              >
-                {/* Letra G estilizada */}
-                <path
-                  d="M52 24 A 30 30 0 1 0 52 80 L 52 54 L 35 54"
-                  stroke="#0B1A8E"
-                  strokeWidth="12"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+            {/* Esquerda: Logotipo Oficial CR (/logo.png) + Selo CR Task */}
+            <div className="flex items-center gap-3.5 shrink-0">
+              <div className={`${compact ? 'w-16 h-16' : 'w-20 h-20'} bg-black rounded-2xl border border-slate-700/80 shadow-xl p-1.5 flex items-center justify-center shrink-0`}>
+                <img
+                  src="/logo.png"
+                  alt="CR Task Logo"
+                  className="w-full h-full object-contain rounded-xl"
                 />
-                {/* Letra O estilizada */}
-                <circle
-                  cx="104"
-                  cy="52"
-                  r="28"
-                  stroke="#0B1A8E"
-                  strokeWidth="12"
-                />
-                {/* Seta diagonal saindo do O */}
-                <path
-                  d="M116 38 L140 14 M140 14 L121 14 M140 14 L140 33"
-                  stroke="#0B1A8E"
-                  strokeWidth="10"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              </div>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg sm:text-xl font-black tracking-tight text-white">
+                    CR TASK
+                  </span>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Oficial
+                  </span>
+                </div>
+                <span className="text-xs font-semibold text-slate-400">
+                  Gestão Operacional • Escala Mensal
+                </span>
+                <span className="text-[11px] font-bold text-indigo-400 mt-0.5">
+                  Setor / Turno: {shiftLabel}
+                </span>
+              </div>
             </div>
 
-            {/* Centro: Nome em Azul + Mês e Ano em Preto */}
+            {/* Centro: Avatar + Nome do Colaborador + Mês/Ano */}
             <div className="flex flex-col items-center text-center flex-1 px-2">
-              <h2
-                className={`${
-                  compact ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'
-                } font-black text-[#0B1A8E] uppercase tracking-wide leading-tight`}
-              >
-                {targetName}
-              </h2>
-              <p
-                className={`${
-                  compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'
-                } font-black text-[#111111] uppercase tracking-wider mt-1`}
-              >
-                {MONTH_NAMES[currentMonthIndex].toUpperCase()} {currentYear}
-              </p>
+              <div className="flex items-center gap-3 mb-1.5">
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={targetName}
+                    className="w-10 h-10 rounded-full object-cover ring-2 ring-indigo-500/60 shadow-md shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-indigo-600/30 border border-indigo-400/40 text-indigo-200 font-black text-base flex items-center justify-center shrink-0">
+                    {targetName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <h2
+                  className={`${
+                    compact ? 'text-2xl sm:text-3xl' : 'text-2xl sm:text-4xl'
+                  } font-black text-white uppercase tracking-tight leading-tight`}
+                >
+                  {targetName}
+                </h2>
+              </div>
+
+              <div className="flex items-center gap-2 mt-1">
+                <span className="px-4 py-1 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-black text-sm sm:text-base uppercase tracking-widest shadow-xs">
+                  📅 {MONTH_NAMES[currentMonthIndex].toUpperCase()} {currentYear}
+                </span>
+                {roleBadge && (
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-slate-300">
+                    {roleBadge.label}
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Direita: Caixas de Legenda Idênticas à Imagem */}
-            <div className="flex flex-col gap-1.5 w-full md:w-[230px] shrink-0">
-              <div className="bg-[#A3D977] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
-                FOLGA SEMANA
+            {/* Direita: Pílulas de Legenda no Estilo CR Task */}
+            <div className="grid grid-cols-2 gap-1.5 w-full lg:w-[270px] shrink-0">
+              <div className="bg-[#1e293b] border border-slate-600 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-slate-200">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+                <span className="truncate">TRABALHA</span>
               </div>
-              <div className="bg-[#EFE7DC] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
-                TRABALHA
+              <div className="bg-emerald-600/90 border border-emerald-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-200 shrink-0"></span>
+                <span className="truncate">FOLGA SEMANA</span>
               </div>
-              <div className="bg-[#F7D348] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
-                DAY OFF
+              <div className="bg-purple-600/90 border border-purple-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-200 shrink-0"></span>
+                <span className="truncate">FOLGA FDS</span>
               </div>
-              <div className="bg-[#F28B44] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
-                FÉRIAS
+              <div className="bg-rose-600/90 border border-rose-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-200 shrink-0"></span>
+                <span className="truncate">DAY OFF</span>
               </div>
-              <div className="bg-[#FF2B2B] border-[1.5px] border-[#1E1E1E] py-1 px-3 text-center font-extrabold text-xs text-[#111111] uppercase tracking-wide shadow-2xs">
-                FOLGA FDS
+              <div className="bg-amber-500 border border-amber-300 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-extrabold text-slate-950">
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-950 shrink-0"></span>
+                <span className="truncate">FÉRIAS</span>
+              </div>
+              <div className="bg-indigo-600/90 border border-indigo-400/50 rounded-lg py-1.5 px-2.5 flex items-center gap-2 text-[11px] font-bold text-white">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-200 shrink-0"></span>
+                <span className="truncate">EXTERNO (EXT)</span>
               </div>
             </div>
           </div>
 
-          {/* TABELA DE CALENDÁRIO SEGUNDA A DOMINGO */}
+          {/* GRADE MODERNA DE CALENDÁRIO SEGUNDA A DOMINGO (ESTILO CR TASK) */}
           <div className="w-full overflow-x-auto">
-            <table className="w-full border-collapse border-2 border-[#1E1E1E] table-fixed min-w-[600px]">
-              <thead>
-                <tr className="bg-[#EFE7DC] border-b-2 border-[#1E1E1E]">
-                  {['SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA', 'SÁBADO', 'DOMINGO'].map(dayHeader => (
-                    <th
-                      key={dayHeader}
-                      className="border-2 border-[#1E1E1E] py-2.5 px-1 text-center font-black text-xs sm:text-sm text-[#111111] uppercase tracking-wider"
-                    >
-                      {dayHeader}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {goCalendarWeeks.map((week, wIdx) => (
-                  <tr key={wIdx}>
-                    {week.map((cell, cIdx) => {
-                      if (!cell) {
-                        return (
-                          <td
-                            key={`empty_${wIdx}_${cIdx}`}
-                            className="border-2 border-[#1E1E1E] bg-[#EFE7DC] h-12 sm:h-14"
-                          />
-                        );
-                      }
-
-                      const cellStyle = resolveGoCellStyle(targetName, cell.dateStr, cell.dayOfWeek);
-                      const rawStatus = resolveCellStatus(targetName, cell.dateStr);
-
-                      return (
-                        <td
-                          key={cell.dateStr}
-                          onClick={(e) => {
-                            if (!canManageRoster) return;
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setActiveCellPopover({
-                              dateStr: cell.dateStr,
-                              operatorName: targetName,
-                              shiftName: shiftLabel,
-                              anchorRect: rect,
-                              currentCode: rawStatus.def?.code || '',
-                              currentTimeText: rawStatus.def?.isCustomTime ? rawStatus.customText : ''
-                            });
-                          }}
-                          style={{ backgroundColor: cellStyle.bgHex, color: cellStyle.textHex }}
-                          title={`${targetName} - Dia ${cell.dayNumber}: ${cellStyle.badge || 'Trabalha'}`}
-                          className={`border-2 border-[#1E1E1E] h-12 sm:h-14 text-center align-middle relative transition-transform ${
-                            canManageRoster ? 'cursor-pointer hover:brightness-95 active:scale-95' : ''
-                          }`}
-                        >
-                          <div className="flex flex-col items-center justify-center leading-none">
-                            <span className="text-lg sm:text-xl font-bold tracking-tight text-[#111111]">
-                              {cell.dayNumber}
-                            </span>
-                            {rawStatus.def && rawStatus.def.code !== 'PRESENCA' && (
-                              <span className="text-[9px] font-black uppercase tracking-tighter text-[#111111]/80 mt-0.5">
-                                {rawStatus.customText}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
+            <div className="min-w-[620px] flex flex-col gap-2">
+              {/* Cabeçalho dos Dias da Semana */}
+              <div className="grid grid-cols-7 gap-2">
+                {['SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA', 'SÁBADO', 'DOMINGO'].map((dayHeader, idx) => (
+                  <div
+                    key={dayHeader}
+                    className={`py-2.5 px-1 text-center font-extrabold text-xs uppercase tracking-wider rounded-xl border ${
+                      idx >= 5
+                        ? 'bg-indigo-950/70 border-indigo-700/60 text-indigo-300'
+                        : 'bg-slate-800/90 border-slate-700/80 text-slate-300'
+                    }`}
+                  >
+                    {dayHeader}
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Semanas e Células Arredondadas */}
+              {goCalendarWeeks.map((week, wIdx) => (
+                <div key={wIdx} className="grid grid-cols-7 gap-2">
+                  {week.map((cell, cIdx) => {
+                    if (!cell) {
+                      return (
+                        <div
+                          key={`empty_${wIdx}_${cIdx}`}
+                          className="h-14 sm:h-16 rounded-xl bg-slate-900/40 border border-slate-800/60"
+                        />
+                      );
+                    }
+
+                    const cellStyle = resolveGoCellStyle(targetName, cell.dateStr, cell.dayOfWeek);
+                    const rawStatus = resolveCellStatus(targetName, cell.dateStr);
+
+                    return (
+                      <div
+                        key={cell.dateStr}
+                        onClick={(e) => {
+                          if (!canManageRoster) return;
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setActiveCellPopover({
+                            dateStr: cell.dateStr,
+                            operatorName: targetName,
+                            shiftName: shiftLabel,
+                            anchorRect: rect,
+                            currentCode: rawStatus.def?.code || '',
+                            currentTimeText: rawStatus.def?.isCustomTime ? rawStatus.customText : ''
+                          });
+                        }}
+                        style={{
+                          backgroundColor: cellStyle.bgHex,
+                          borderColor: cellStyle.borderHex,
+                          color: cellStyle.textHex
+                        }}
+                        title={`${targetName} - Dia ${cell.dayNumber}: ${cellStyle.badge || 'Trabalha'}`}
+                        className={`h-14 sm:h-16 rounded-xl border-[1.5px] flex flex-col items-center justify-center relative transition-all shadow-sm ${
+                          canManageRoster
+                            ? 'cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95'
+                            : ''
+                        }`}
+                      >
+                        <span className="text-lg sm:text-xl font-black tracking-tight leading-none">
+                          {cell.dayNumber}
+                        </span>
+                        <span
+                          style={{ color: cellStyle.subTextHex }}
+                          className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-tight mt-1 truncate max-w-[90%]"
+                        >
+                          {cellStyle.badge}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Rodapé do Card CR Task */}
+          <div className="mt-5 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-medium">
+            <span>
+              Resumo Mensal: <strong className="text-emerald-400">{stats?.totalWork || 0} dias trabalhados</strong> • <strong className="text-purple-400">{stats?.totalOff || 0} folgas</strong>
+              {(stats?.totalVacation || 0) > 0 ? ` • ${stats?.totalVacation} dias de férias` : ''}
+            </span>
+            <span className="text-slate-500 font-semibold">
+              CR Task • Painel Operacional
+            </span>
           </div>
         </div>
       </div>
@@ -1786,7 +1909,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 Minha Escala Mensal
                 <span className="text-xs px-2.5 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-full">
-                  Visualização Individual
+                  CR Task
                 </span>
               </h2>
               <p className="text-xs text-slate-500">
@@ -1870,7 +1993,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           </div>
         )}
 
-        {/* Corpo com o Card GO Centralizado */}
+        {/* Corpo com o Card CR Task Centralizado */}
         <div className="flex-1 p-6 flex flex-col items-center justify-start">
           {allRosterMembers.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-md my-auto shadow-xs">
@@ -1972,7 +2095,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Card Individual (GO)</span>
+                <span>Card Individual (CR)</span>
               </button>
 
               <button
@@ -2743,7 +2866,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                               className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                               <Share2 className="w-3.5 h-3.5" />
-                              <span>Compartilhar Escala (GO)</span>
+                              <span>Compartilhar Escala (CR)</span>
                             </button>
                           </div>
                         )}
@@ -2864,7 +2987,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       </div>
 
       {/* ============================================================== */}
-      {/* MODAL DE COMPARTILHAMENTO E ENVIO DE ESCALAS (FORMATO GO) */}
+      {/* MODAL DE COMPARTILHAMENTO E ENVIO DE ESCALAS (PADRÃO CR TASK) */}
       {/* ============================================================== */}
       {isShareModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
@@ -2878,10 +3001,10 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 text-base">
-                    Compartilhar & Enviar Escala Individual (Formato GO)
+                    Compartilhar & Enviar Escala Individual (CR Task)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Envie a escala mensal diretamente para a conta do colaborador ou copie/baixe o card em alta definição
+                    Envie a escala mensal diretamente para a conta do colaborador ou copie/baixe o card oficial CR Task em alta definição
                   </p>
                 </div>
               </div>
