@@ -1,21 +1,55 @@
 'use client';
 
 import { useState, use, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { BoardTableView } from '@/components/board/BoardTableView';
-import { BoardKanbanView } from '@/components/board/BoardKanbanView';
-import { BoardCalendarView } from '@/components/board/BoardCalendarView';
-import { BoardRoutineView } from '@/components/board/BoardRoutineView';
-import { BoardShiftView } from '@/components/board/BoardShiftView';
-import { BoardMonthlyRosterView } from '@/components/board/BoardMonthlyRosterView';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
+
+const TabLoadingSkeleton = () => (
+  <div className="flex h-full w-full items-center justify-center bg-slate-50/60 p-8">
+    <div className="flex flex-col items-center">
+      <div className="w-7 h-7 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-2.5"></div>
+      <p className="text-slate-500 text-xs font-medium">Carregando visualização...</p>
+    </div>
+  </div>
+);
+
+const BoardKanbanView = dynamic(
+  () => import('@/components/board/BoardKanbanView').then(m => m.BoardKanbanView),
+  { loading: () => <TabLoadingSkeleton /> }
+);
+const BoardCalendarView = dynamic(
+  () => import('@/components/board/BoardCalendarView').then(m => m.BoardCalendarView),
+  { loading: () => <TabLoadingSkeleton /> }
+);
+const BoardRoutineView = dynamic(
+  () => import('@/components/board/BoardRoutineView').then(m => m.BoardRoutineView),
+  { loading: () => <TabLoadingSkeleton /> }
+);
+const BoardShiftView = dynamic(
+  () => import('@/components/board/BoardShiftView').then(m => m.BoardShiftView),
+  { loading: () => <TabLoadingSkeleton /> }
+);
+const BoardMonthlyRosterView = dynamic(
+  () => import('@/components/board/BoardMonthlyRosterView').then(m => m.BoardMonthlyRosterView),
+  { loading: () => <TabLoadingSkeleton /> }
+);
 
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos'>('tabela');
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos'>(() => {
+    if (typeof window !== 'undefined') {
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam === 'turnos' || tabParam === 'minha-escala') return 'turnos';
+      if (tabParam === 'escala') return 'escala';
+    }
+    return 'tabela';
+  });
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -32,29 +66,41 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   const { data: accessCheck, isLoading } = useQuery({
     queryKey: ['board_access_check', boardId],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getFastUser();
       if (!user) return { allowed: false, reason: 'unauthenticated', userRole: 'user' };
 
-      // Executa as consultas de permissão em paralelo para velocidade máxima
-      const [boardRes, profileRes, profilesRes] = await Promise.all([
+      // Executa todas as consultas em um único round-trip paralelo (sem cascata sequencial)
+      const [boardRes, profiles, workspacesRes] = await Promise.all([
         supabase.from('boards').select('id, name, workspace_id, created_by').eq('id', boardId).single(),
-        supabase.from('profiles').select('role').eq('id', user.id).single(),
-        supabase.from('profiles').select('id, email, role')
+        queryClient.fetchQuery({
+          queryKey: ['all_profiles'],
+          queryFn: async () => {
+            const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
+            return data || [];
+          },
+          staleTime: 5 * 60 * 1000
+        }),
+        queryClient.fetchQuery({
+          queryKey: ['all_workspaces_meta'],
+          queryFn: async () => {
+            const { data } = await supabase.from('workspaces').select('id, name, visibility_mode').order('created_at');
+            return data || [];
+          },
+          staleTime: 5 * 60 * 1000
+        })
       ]);
 
       const board = boardRes.data;
       if (!board) return { allowed: false, reason: 'not_found', userRole: 'user' };
 
-      // Buscar visibilidade do workspace
-      const { data: workspaceRes } = await supabase
-        .from('workspaces')
-        .select('visibility_mode')
-        .eq('id', board.workspace_id)
-        .maybeSingle();
+      // Semeia o cache individual do quadro para evitar que as views busquem 'boards' novamente
+      queryClient.setQueryData(['board_info', boardId], { name: board.name, workspace_id: board.workspace_id });
+      queryClient.setQueryData(['board_workspace_roster', boardId], { workspace_id: board.workspace_id, name: board.name });
+      queryClient.setQueryData(['board_workspace_shift', boardId], { workspace_id: board.workspace_id, name: board.name });
 
-      const visibilityMode = workspaceRes?.visibility_mode || 'own_only';
-      const profile = profileRes.data;
-      const profiles = profilesRes.data || [];
+      const workspace = (workspacesRes || []).find((w: any) => w.id === board.workspace_id);
+      const visibilityMode = workspace?.visibility_mode || 'own_only';
+      const profile = (profiles || []).find((p: any) => p.id === user.id || p.email === user.email);
       const userRole = profile?.role || 'user';
 
       const allowed = canUserAccessBoard({

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { AssigneeCell } from './AssigneeCell';
 import { Search, PlusCircle, Trash2, CheckCircle2, RotateCcw, X, Clock, History, MessageSquare, Send, AlertTriangle, Loader2, Check } from 'lucide-react';
 
@@ -48,16 +48,14 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
 
   const { data: userProfile } = useQuery({
     queryKey: ['current_user'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    }
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
   });
 
   const { data: workspaceUsers } = useQuery({
-    queryKey: ['all_profiles_routine'],
+    queryKey: ['all_profiles'],
     queryFn: async () => {
-      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role').order('email');
+      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
       return profiles || [];
     },
     staleTime: 5 * 60 * 1000
@@ -70,9 +68,10 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
   const { data: boardInfo } = useQuery({
     queryKey: ['board_info', boardId],
     queryFn: async () => {
-      const { data } = await supabase.from('boards').select('name').eq('id', boardId).single();
+      const { data } = await supabase.from('boards').select('name, workspace_id').eq('id', boardId).single();
       return data;
-    }
+    },
+    staleTime: 10 * 60 * 1000
   });
 
   const canEditBoard = !isReadOnly;
@@ -89,7 +88,9 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000
+    staleTime: 60 * 1000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false
   });
 
   const [commentDayFilter, setCommentDayFilter] = useState<string>('all');

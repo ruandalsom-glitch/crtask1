@@ -1,10 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { CheckSquare, Calendar, LayoutTemplate } from 'lucide-react';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
 
 const STATUS_COLORS: any = {
   'Feito': 'bg-[#00c875]',
@@ -21,13 +20,12 @@ const PRIORITY_COLORS: any = {
 };
 
 export default function MyWorkPage() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setUserEmail(user.email || '');
-    });
-  }, []);
+  const { data: currentUser } = useQuery({
+    queryKey: ['current_user'],
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
+  });
+  const userEmail = currentUser?.email || null;
 
   const { data: myTasks, isLoading } = useQuery({
     queryKey: ['my_work', userEmail],

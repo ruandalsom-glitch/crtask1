@@ -1,21 +1,42 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { LogOut, User, Image as ImageIcon, ShieldCheck, Mail, MailWarning, BarChart3, Moon, Sun } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 
 export function UserProfile() {
   const [isOpen, setIsOpen] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
-  const [email, setEmail] = useState<string>('');
+  const [localProfileOverride, setLocalProfileOverride] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const queryClient = useQueryClient();
+
+  const { data: currentUser } = useQuery({
+    queryKey: ['current_user'],
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
+  });
+
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
+      return data || [];
+    },
+    enabled: !!currentUser?.id,
+    staleTime: 5 * 60 * 1000
+  });
+
+  const email = currentUser?.email || '';
+  const baseProfile = allProfiles?.find((p: any) => p.id === currentUser?.id || p.email === currentUser?.email) || null;
+  const profile = localProfileOverride ? { ...baseProfile, ...localProfileOverride } : baseProfile;
+  const setProfile = (next: any) => setLocalProfileOverride(next);
 
   useEffect(() => {
     // Carregar preferencia de tema salva
@@ -46,25 +67,6 @@ export function UserProfile() {
   };
 
   useEffect(() => {
-    async function loadUser() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setEmail(user.email || '');
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-        
-        if (profileData) {
-          setProfile(profileData);
-        }
-      }
-    }
-    loadUser();
-  }, []);
-
-  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
         dropdownRef.current && 
@@ -75,11 +77,12 @@ export function UserProfile() {
         setIsOpen(false);
       }
     }
+    const handleResize = () => setIsOpen(false);
     document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', () => setIsOpen(false));
+    window.addEventListener('resize', handleResize);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', () => setIsOpen(false));
+      window.removeEventListener('resize', handleResize);
     };
   }, []);
 
@@ -106,7 +109,7 @@ export function UserProfile() {
       }
 
       const file = event.target.files[0];
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getFastUser();
       if (!user) throw new Error('Usuário não autenticado.');
 
       const fileExt = file.name.split('.').pop();
@@ -139,6 +142,7 @@ export function UserProfile() {
       }
 
       setProfile({ ...profile, avatar_url: avatarUrl });
+      queryClient.invalidateQueries({ queryKey: ['all_profiles'] });
       queryClient.invalidateQueries({ queryKey: ['workspace_users'] });
     } catch (error: any) {
       alert(error.message || 'Erro ao fazer upload do avatar!');

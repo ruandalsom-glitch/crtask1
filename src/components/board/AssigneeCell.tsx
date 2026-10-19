@@ -40,66 +40,73 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
     }
   };
 
-  // Buscar todos os setores (workspaces)
-  const { data: allWorkspaces } = useQuery({
-    queryKey: ['all_workspaces'],
+  // Reutiliza o cache global de perfis para renderizar avatares instantaneamente (0 queries extras por linha)
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles'],
     queryFn: async () => {
-      const { data } = await supabase.from('workspaces').select('id, name').order('name');
+      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
       return data || [];
     },
     staleTime: 5 * 60 * 1000
   });
 
-  // Buscar workspace_id do quadro atual para filtrar o Setor Atual corretamente
-  const { data: boardWorkspaceId } = useQuery({
-    queryKey: ['board_workspace_id', task.board_id],
+  // Buscar setores e membros APENAS quando o usuário abre o menu suspenso (isOpen === true)
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['all_workspaces_meta'],
     queryFn: async () => {
-      if (task.boards?.workspace_id) return task.boards.workspace_id;
-      if (!task.board_id) return null;
-      const { data } = await supabase.from('boards').select('workspace_id').eq('id', task.board_id).single();
-      return data?.workspace_id || null;
+      const { data } = await supabase.from('workspaces').select('id, name, visibility_mode').order('created_at');
+      return data || [];
     },
-    enabled: !!task.board_id,
-    staleTime: 10 * 60 * 1000
-  });
-
-  // Buscar todos os perfis e membros dos setores
-  const { data: profilesData } = useQuery({
-    queryKey: ['all_profiles_and_members'],
-    queryFn: async () => {
-      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role');
-      const { data: members } = await supabase.from('workspace_members').select('workspace_id, user_id');
-      return {
-        profiles: profiles || [],
-        members: members || []
-      };
-    },
+    enabled: isOpen,
     staleTime: 5 * 60 * 1000
   });
 
-  const currentWorkspaceId = task.boards?.workspace_id || boardWorkspaceId;
+  const { data: boardInfo } = useQuery({
+    queryKey: ['board_info', task.board_id],
+    queryFn: async () => {
+      if (task.boards?.workspace_id) return { workspace_id: task.boards.workspace_id };
+      if (!task.board_id) return null;
+      const { data } = await supabase.from('boards').select('name, workspace_id').eq('id', task.board_id).single();
+      return data || null;
+    },
+    enabled: isOpen && !!task.board_id,
+    staleTime: 10 * 60 * 1000
+  });
+
+  const { data: workspaceMembers } = useQuery({
+    queryKey: ['all_workspace_members'],
+    queryFn: async () => {
+      const { data } = await supabase.from('workspace_members').select('workspace_id, user_id');
+      return data || [];
+    },
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000
+  });
+
+  const currentWorkspaceId = task.boards?.workspace_id || boardInfo?.workspace_id;
 
   const teamMembers = useMemo(() => {
-    const profiles = profilesData?.profiles || [];
-    const members = profilesData?.members || [];
+    const profiles = allProfiles || [];
+    if (!isOpen) return profiles;
+    const members = workspaceMembers || [];
 
     let filteredProfiles = profiles;
 
     if (selectedSectorId === 'current') {
       if (currentWorkspaceId) {
         const memberUserIds = new Set(members.filter((m: any) => m.workspace_id === currentWorkspaceId).map((m: any) => m.user_id));
-        filteredProfiles = profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+        filteredProfiles = profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
       }
     } else if (selectedSectorId !== 'all') {
       const memberUserIds = new Set(members.filter((m: any) => m.workspace_id === selectedSectorId).map((m: any) => m.user_id));
-      filteredProfiles = profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+      filteredProfiles = profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
     }
 
     if (search.trim()) {
-      return filteredProfiles.filter(u => u.email.toLowerCase().includes(search.toLowerCase()));
+      return filteredProfiles.filter((u: any) => u.email.toLowerCase().includes(search.toLowerCase()));
     }
     return filteredProfiles;
-  }, [profilesData, selectedSectorId, currentWorkspaceId, search]);
+  }, [allProfiles, workspaceMembers, isOpen, selectedSectorId, currentWorkspaceId, search]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -150,7 +157,6 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['all_profiles_and_members'] });
       setIsOpen(false);
     }
   });
@@ -214,13 +220,14 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
     return (
       <div className="flex -space-x-2">
         {currentEmails.map((email: string, i: number) => {
-          const userProfile = profilesData?.profiles?.find((u: any) => u.email === email);
+          const userProfile = allProfiles?.find((u: any) => u.email === email);
           const avatarSrc = userProfile?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${email}`;
           return (
             <img 
               key={email} 
               src={avatarSrc} 
               alt={email}
+              loading="lazy"
               className="w-8 h-8 rounded-full border border-slate-200 object-cover bg-white shadow-sm hover:z-10 hover:ring-2 ring-blue-400 transition-all" 
               style={{ zIndex: currentEmails.length - i }}
             />
@@ -315,7 +322,7 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
           {currentEmails.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 mb-4">
               {currentEmails.map((email: string) => {
-                const userProfile = profilesData?.profiles?.find(u => u.email === email);
+                const userProfile = allProfiles?.find((u: any) => u.email === email);
                 const avatarSrc = userProfile?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${email}`;
                 return (
                   <div key={email} className="flex items-center bg-slate-100 rounded-full pl-1 pr-3 py-1 gap-2 border border-slate-200">

@@ -1,15 +1,16 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from "@/components/layout/Sidebar";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { UserProfile } from "@/components/layout/UserProfile";
-import { Briefcase, Search, Sparkles } from "lucide-react";
+import { Briefcase, Search } from "lucide-react";
 import { useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   
   const INACTIVITY_LIMIT = 12 * 60 * 60 * 1000; // 12 horas em ms
 
@@ -23,9 +24,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (pathname === '/login') return;
 
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: NodeJS.Timeout = setTimeout(handleLogout, INACTIVITY_LIMIT);
+    let lastReset = Date.now();
 
     const resetTimer = () => {
+      const now = Date.now();
+      // Throttle de 30s para não recriar timers a cada pixel de mousemove/scroll
+      if (now - lastReset < 30000) return;
+      lastReset = now;
       clearTimeout(timeoutId);
       timeoutId = setTimeout(handleLogout, INACTIVITY_LIMIT);
     };
@@ -33,10 +39,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
     
     events.forEach(event => {
-      document.addEventListener(event, resetTimer);
+      document.addEventListener(event, resetTimer, { passive: true });
     });
-
-    resetTimer();
 
     return () => {
       clearTimeout(timeoutId);
@@ -44,21 +48,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         document.removeEventListener(event, resetTimer);
       });
     };
-  }, [pathname, handleLogout]);
+  }, [pathname, handleLogout, INACTIVITY_LIMIT]);
 
   // Checagem global de Lembretes do Calendário
   useEffect(() => {
     if (pathname === '/login') return;
 
     const checkReminders = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0];
       const hours = String(today.getHours()).padStart(2, '0');
       const mins = String(today.getMinutes()).padStart(2, '0');
       const timeStr = `${hours}:${mins}`;
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const user = await getFastUser();
+      if (!user?.email) return;
 
       const { data } = await supabase
         .from('tasks')
@@ -82,7 +87,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               });
               n.onclick = () => {
                 window.focus();
-                window.location.href = `/boards/${lembrete.board_id}`;
+                router.push(`/boards/${lembrete.board_id}`);
               };
             }
           }
@@ -90,11 +95,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       }
     };
 
-    checkReminders();
+    const initialTimer = setTimeout(checkReminders, 3000);
     const intervalId = setInterval(checkReminders, 60000);
     
-    return () => clearInterval(intervalId);
-  }, [pathname]);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalId);
+    };
+  }, [pathname, router]);
 
   if (pathname === '/login') {
     return <main className="flex-1 w-full bg-[#0a0a0a] min-h-screen">{children}</main>;
@@ -105,7 +113,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Primary Navigation Rail (Dark Theme - Linear / Monday Style) */}
       <aside className="w-16 bg-[#0f172a] text-slate-300 flex flex-col items-center py-4 shrink-0 z-50 relative border-r border-slate-800/80 shadow-2xl">
         <div 
-          onClick={() => window.location.href = '/'}
+          onClick={() => router.push('/')}
           className="w-10 h-10 bg-slate-950 rounded-xl mb-6 flex items-center justify-center shadow-lg cursor-pointer overflow-hidden border border-slate-800 p-0.5 hover:border-indigo-500/50 hover:scale-105 transition-all group relative"
           title="CR Operacional - Início"
         >
@@ -115,7 +123,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         
         <nav className="flex flex-col gap-4 items-center flex-1 w-full">
           <button 
-            onClick={() => window.location.href = '/'}
+            onClick={() => router.push('/')}
             className="w-full flex justify-center py-3 text-white border-l-[3px] border-indigo-500 bg-slate-800/60 transition-all relative group cursor-pointer"
             title="Espaços de Trabalho"
           >
@@ -132,7 +140,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <button 
             onClick={() => {
               const term = prompt('Pesquisa global por tarefas ou quadros:');
-              if (term) window.location.href = `/?search=${encodeURIComponent(term)}`;
+              if (term) router.push(`/?search=${encodeURIComponent(term)}`);
             }}
             className="w-full flex justify-center py-3 text-slate-400 hover:text-white transition-all border-l-[3px] border-transparent hover:border-slate-500 relative group cursor-pointer"
             title="Pesquisa Rápida"

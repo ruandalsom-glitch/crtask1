@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { StatusCell } from './StatusCell';
 import { PriorityCell } from './PriorityCell';
 import { EffortCell } from './EffortCell';
@@ -96,7 +96,8 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
       return data;
     },
     enabled: !!taskDetailsOpen?.id,
-    refetchInterval: 10000 // Polling otimizado a cada 10s para evitar re-renders excessivos
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false
   });
 
   const { data: activityLogs } = useQuery({
@@ -111,44 +112,52 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
       if (error) return [];
       return data;
     },
-    enabled: !!taskDetailsOpen?.id,
-    refetchInterval: 30000
+    enabled: !!taskDetailsOpen?.id && drawerTab === 'activity',
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false
   });
 
   const { data: userProfile } = useQuery({
     queryKey: ['current_user'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    }
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
   });
 
-  const { data: workspaceUsers } = useQuery({
-    queryKey: ['workspace_users', boardId],
+  const { data: boardInfo } = useQuery({
+    queryKey: ['board_info', boardId],
     queryFn: async () => {
-      const { data: board } = await supabase.from('boards').select('workspace_id').eq('id', boardId).single();
-      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role');
-      
-      if (!board?.workspace_id) return profiles || [];
+      const { data } = await supabase.from('boards').select('name, workspace_id').eq('id', boardId).single();
+      return data;
+    },
+    staleTime: 10 * 60 * 1000
+  });
 
-      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', board.workspace_id);
-      const memberUserIds = new Set(members?.map(m => m.user_id) || []);
-
-      return (profiles || []).filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
+      return data || [];
     },
     staleTime: 5 * 60 * 1000
   });
 
-  const currentUserProfile = workspaceUsers?.find((u: any) => u.email === userProfile?.email);
-  const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
-  
-  const { data: boardInfo } = useQuery({
-    queryKey: ['board_info', boardId],
+  const { data: workspaceUsers } = useQuery({
+    queryKey: ['workspace_users', boardId, boardInfo?.workspace_id],
     queryFn: async () => {
-      const { data } = await supabase.from('boards').select('name').eq('id', boardId).single();
-      return data;
-    }
+      const profiles = allProfiles || [];
+      if (!boardInfo?.workspace_id) return profiles;
+
+      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardInfo.workspace_id);
+      const memberUserIds = new Set(members?.map(m => m.user_id) || []);
+
+      return profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
+    },
+    enabled: !!allProfiles && boardInfo !== undefined,
+    staleTime: 5 * 60 * 1000
   });
+
+  const currentUserProfile = (allProfiles || workspaceUsers)?.find((u: any) => u.email === userProfile?.email);
+  const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
 
   const canEditBoard = !isReadOnly;
 
@@ -313,7 +322,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
       if (error) throw error;
       return data || [];
     },
-    staleTime: 10000
+    staleTime: 60 * 1000
   });
 
   const deleteTask = useMutation({

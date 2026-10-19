@@ -2,7 +2,7 @@
 
 import { useState, useMemo, Fragment, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { isBoardOwnedByUser } from '@/lib/privacy';
 import { 
   Calendar, ChevronLeft, ChevronRight, Plus, Search, Filter, 
@@ -273,19 +273,34 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   const startOfMonthStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-01`;
   const endOfMonthStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(daysInCurrentMonth).padStart(2, '0')}`;
 
-  // 1. Busca Usuário Atual e Perfil para Permissões
-  const { data: currentUser } = useQuery({
-    queryKey: ['current_user_roster'],
+  // 1. Busca Todos os Perfis do Sistema (compartilhado no cache global 'all_profiles')
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data: profile } = await supabase.from('profiles').select('id, email, role').eq('id', user.id).maybeSingle();
-      return { ...user, profile };
+      const { data, error } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
+      if (error) {
+        console.warn('Erro ao carregar perfis para foto e cargo:', error);
+        return [];
+      }
+      return data || [];
     },
     staleTime: 5 * 60 * 1000
   });
 
-  // 2. Busca Workspace do Quadro
+  // 1.5. Busca Usuário Atual (0ms via sessão local) e vincula ao perfil em memória
+  const { data: authUser } = useQuery({
+    queryKey: ['current_user'],
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
+  });
+
+  const currentUser = useMemo(() => {
+    if (!authUser) return null;
+    const profile = (allProfiles || []).find((p: any) => p.id === authUser.id || p.email === authUser.email) || null;
+    return { ...authUser, profile };
+  }, [authUser, allProfiles]);
+
+  // 2. Busca Workspace do Quadro (já semeado pelo BoardPage no carregamento inicial)
   const { data: boardData } = useQuery({
     queryKey: ['board_workspace_roster', boardId],
     queryFn: async () => {
@@ -295,33 +310,20 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     staleTime: 10 * 60 * 1000
   });
 
-  // 3. Busca Membros do Workspace / Setor
+  // 3. Busca Membros do Workspace / Setor reutilizando allProfiles
   const { data: sectorMembersList } = useQuery({
-    queryKey: ['sector_members_for_roster_v2', boardData?.workspace_id],
+    queryKey: ['sector_members_for_roster_v2', boardData?.workspace_id, allProfiles?.length],
     queryFn: async () => {
-      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role').order('email');
-      if (!profiles) return [];
+      const profiles = allProfiles || [];
+      if (profiles.length === 0) return [];
       if (!boardData?.workspace_id) return profiles;
 
       const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardData.workspace_id);
       const memberUserIds = new Set((members || []).map((m: any) => m.user_id));
 
-      return profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+      return profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
     },
-    staleTime: 5 * 60 * 1000
-  });
-
-  // 3.5. Busca Todos os Perfis do Sistema para Lookup de Foto e Cargo
-  const { data: allProfiles } = useQuery({
-    queryKey: ['all_profiles_lookup_roster'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('profiles').select('id, email, avatar_url, role').order('email');
-      if (error) {
-        console.warn('Erro ao carregar perfis para foto e cargo:', error);
-        return [];
-      }
-      return data || [];
-    },
+    enabled: !!allProfiles && boardData !== undefined,
     staleTime: 5 * 60 * 1000
   });
 
@@ -415,10 +417,11 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       if (!ids.includes(boardId)) ids.push(boardId);
       return ids;
     },
+    enabled: boardData !== undefined,
     staleTime: 5 * 60 * 1000
   });
 
-  // 4. Configurações dos Turnos e Colaboradores Salvas no Banco (Unificadas no Setor)
+  // 4. Configurações dos Turnos e Colaboradores Salvas no Banco (Unificadas no Setor — executa 1 única vez após workspaceBoardIds)
   const { data: rosterSettings } = useQuery({
     queryKey: ['operational_shift_settings_roster', boardId, boardData?.workspace_id, workspaceBoardIds],
     queryFn: async () => {
@@ -443,10 +446,11 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
         Array.isArray(row.shifts) && row.shifts.some((s: any) => Array.isArray(s.members))
       );
       return withMembersArray || data[0];
-    }
+    },
+    enabled: !!workspaceBoardIds
   });
 
-  // 5. Busca Todas as Escalas do Mês Atual (Unificadas no Setor)
+  // 5. Busca Todas as Escalas do Mês Atual (Unificadas no Setor — executa 1 única vez após workspaceBoardIds)
   const { data: rawShiftsData } = useQuery({
     queryKey: ['operational_shifts_roster', boardId, boardData?.workspace_id, workspaceBoardIds, startOfMonthStr, endOfMonthStr],
     queryFn: async () => {
@@ -465,7 +469,8 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
         return [];
       }
       return data || [];
-    }
+    },
+    enabled: !!workspaceBoardIds
   });
 
   // Grupos de Turnos estruturados (com deduplicação case-insensitive para nunca duplicar Davis.lmarques e DAVIS.LMARQUES)

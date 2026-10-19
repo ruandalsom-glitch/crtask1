@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { SmilePlus } from 'lucide-react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 
@@ -25,13 +25,12 @@ export function Reactions({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
 
-  const { data: userEmail } = useQuery({
-    queryKey: ['current_user_email'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user?.email || null;
-    }
+  const { data: currentUser } = useQuery({
+    queryKey: ['current_user'],
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
   });
+  const userEmail = currentUser?.email || null;
 
   const safeReactions = typeof reactions === 'object' && reactions !== null ? reactions : {};
 

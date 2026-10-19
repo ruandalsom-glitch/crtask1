@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { 
   Calendar, ChevronLeft, ChevronRight, Plus, Search, Filter, 
   Trash2, Edit, User, MapPin, Clock, CheckCircle2, AlertCircle, 
@@ -70,19 +70,30 @@ export function BoardShiftView({
   // Comentários do Modal de Detalhes
   const [newCommentText, setNewCommentText] = useState('');
 
-  // 1. Busca dados do Usuário Atual e Perfil
-  const { data: currentUser } = useQuery({
-    queryKey: ['current_user_shift_v3'],
+  // 1. Busca Perfis (compartilhado no cache global 'all_profiles')
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data: profile } = await supabase.from('profiles').select('id, email, avatar_url, role').eq('id', user.id).maybeSingle();
-      return { ...user, profile };
+      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
+      return data || [];
     },
     staleTime: 5 * 60 * 1000
   });
 
-  // 2. Busca o workspace_id do quadro
+  // 1.5. Busca dados do Usuário Atual (0ms via sessão local)
+  const { data: authUser } = useQuery({
+    queryKey: ['current_user'],
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
+  });
+
+  const currentUser = useMemo(() => {
+    if (!authUser) return null;
+    const profile = (allProfiles || []).find((p: any) => p.id === authUser.id || p.email === authUser.email) || null;
+    return { ...authUser, profile };
+  }, [authUser, allProfiles]);
+
+  // 2. Busca o workspace_id do quadro (já semeado pelo BoardPage)
   const { data: boardData } = useQuery({
     queryKey: ['board_workspace_shift', boardId],
     queryFn: async () => {
@@ -94,17 +105,18 @@ export function BoardShiftView({
 
   // 3. Busca Perfis e Filtra por Integrantes do Setor (Workspace)
   const { data: teamMembers } = useQuery({
-    queryKey: ['sector_members_for_shift', boardData?.workspace_id],
+    queryKey: ['sector_members_for_shift', boardData?.workspace_id, allProfiles?.length],
     queryFn: async () => {
-      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role').order('email');
-      if (!profiles) return [];
+      const profiles = allProfiles || [];
+      if (profiles.length === 0) return [];
       if (!boardData?.workspace_id) return profiles;
 
       const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardData.workspace_id);
       const memberUserIds = new Set((members || []).map((m: any) => m.user_id));
 
-      return profiles.filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+      return profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
     },
+    enabled: !!allProfiles && boardData !== undefined,
     staleTime: 5 * 60 * 1000
   });
 
@@ -136,7 +148,8 @@ export function BoardShiftView({
         operator_types: data.operator_types || TYPES_DEFAULT,
         statuses: data.statuses || STATUSES_DEFAULT
       };
-    }
+    },
+    enabled: boardData !== undefined
   });
 
   const availableShifts = shiftSettings?.shifts || SHIFTS_DEFAULT;

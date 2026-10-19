@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 import { DndContext, DragEndEvent, DragStartEvent, useDraggable, useDroppable, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -265,43 +265,52 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000
+    staleTime: 60 * 1000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false
   });
 
   const { data: userProfile } = useQuery({
     queryKey: ['current_user'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    }
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
   });
 
-  const { data: workspaceUsers } = useQuery({
-    queryKey: ['workspace_users', boardId],
+  const { data: boardInfo } = useQuery({
+    queryKey: ['board_info', boardId],
     queryFn: async () => {
-      const { data: board } = await supabase.from('boards').select('workspace_id').eq('id', boardId).single();
-      const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role');
-      
-      if (!board?.workspace_id) return profiles || [];
+      const { data } = await supabase.from('boards').select('name, workspace_id').eq('id', boardId).single();
+      return data;
+    },
+    staleTime: 10 * 60 * 1000
+  });
 
-      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', board.workspace_id);
-      const memberUserIds = new Set(members?.map(m => m.user_id) || []);
-
-      return (profiles || []).filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
+      return data || [];
     },
     staleTime: 5 * 60 * 1000
   });
 
-  const currentUserProfile = workspaceUsers?.find((u: any) => u.email === userProfile?.email);
-  const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
-  
-  const { data: boardInfo } = useQuery({
-    queryKey: ['board_info', boardId],
+  const { data: workspaceUsers } = useQuery({
+    queryKey: ['workspace_users', boardId, boardInfo?.workspace_id],
     queryFn: async () => {
-      const { data } = await supabase.from('boards').select('name').eq('id', boardId).single();
-      return data;
-    }
+      const profiles = allProfiles || [];
+      if (!boardInfo?.workspace_id) return profiles;
+
+      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardInfo.workspace_id);
+      const memberUserIds = new Set(members?.map(m => m.user_id) || []);
+
+      return profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
+    },
+    enabled: !!allProfiles && boardInfo !== undefined,
+    staleTime: 5 * 60 * 1000
   });
+
+  const currentUserProfile = (allProfiles || workspaceUsers)?.find((u: any) => u.email === userProfile?.email);
+  const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
 
   const canEditBoard = !isReadOnly;
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { canUserAccessBoard } from '@/lib/privacy';
 
 export default function Home() {
@@ -13,22 +13,23 @@ export default function Home() {
   useEffect(() => {
     async function redirectUserToAllowedSectorBoard() {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = await getFastUser();
         
         if (!user) {
-          router.push('/login');
+          router.replace('/login');
           return;
         }
 
-        // 1. Busca perfil do usuário, setores e perfis gerais para permissão
-        const [profileRes, allWorkspacesRes, membersRes, profilesRes] = await Promise.all([
-          supabase.from('profiles').select('role').eq('id', user.id).single(),
+        // 1. Executa TODAS as consultas em 1 único round-trip paralelo (sem esperar workspaces para buscar boards)
+        const [allWorkspacesRes, membersRes, profilesRes, allBoardsRes] = await Promise.all([
           supabase.from('workspaces').select('*').order('created_at'),
           supabase.from('workspace_members').select('workspaces(*)').eq('user_id', user.id),
-          supabase.from('profiles').select('id, email, role')
+          supabase.from('profiles').select('id, email, role'),
+          supabase.from('boards').select('id, name, created_by, workspace_id').order('created_at')
         ]);
 
-        const profile = profileRes.data;
+        const profiles = profilesRes.data || [];
+        const profile = profiles.find((p: any) => p.id === user.id || p.email === user.email);
         let allowedWorkspaces: any[] = [];
 
         if (profile?.role === 'admin') {
@@ -54,19 +55,11 @@ export default function Home() {
 
         localStorage.setItem('monday_active_workspace', activeWorkspace.id);
 
-        // 3. Busca quadros do setor ativo
-        const { data: boards, error: boardsError } = await supabase
-          .from('boards')
-          .select('id, name, created_by')
-          .eq('workspace_id', activeWorkspace.id)
-          .order('created_at');
-
-        if (boardsError) throw boardsError;
-
-        const profiles = profilesRes.data || [];
+        // 3. Filtra os quadros do setor ativo em memória (0ms extra de rede)
+        const boards = (allBoardsRes.data || []).filter((b: any) => b.workspace_id === activeWorkspace.id);
         const visibilityMode = activeWorkspace.visibility_mode || 'own_only';
 
-        const allowedBoards = (boards || []).filter(board =>
+        const allowedBoards = boards.filter(board =>
           canUserAccessBoard({
             board: { name: board.name, created_by: board.created_by },
             user: { id: user.id, email: user.email || '' },
@@ -77,7 +70,7 @@ export default function Home() {
         );
 
         if (allowedBoards.length > 0) {
-          router.push(`/boards/${allowedBoards[0].id}`);
+          router.replace(`/boards/${allowedBoards[0].id}`);
         } else {
           setError(`Você não possui quadros visíveis no seu setor (${activeWorkspace.name}). Caso ache que isso é um engano, entre em contato com o seu líder.`);
           setLoading(false);

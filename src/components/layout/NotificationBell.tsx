@@ -3,29 +3,31 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, Check } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { isBoardOwnedByUser, canUserAccessBoard } from '@/lib/privacy';
+import { useRouter } from 'next/navigation';
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const { data: userProfile } = useQuery({
     queryKey: ['current_user'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    }
+    queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
   });
 
   const { data: workspaceUsers } = useQuery({
-    queryKey: ['workspace_users'],
+    queryKey: ['all_profiles'],
     queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('*');
+      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
       return data || [];
-    }
+    },
+    enabled: !!userProfile?.id,
+    staleTime: 5 * 60 * 1000
   });
 
   // Redireciona com segurança para o próprio quadro do colaborador na aba "Minha Escala" (sem cair em quadro restrito de outro colega)
@@ -33,16 +35,15 @@ export function NotificationBell() {
     if (!userProfile) return;
     const activeWs = typeof window !== 'undefined' ? localStorage.getItem('monday_active_workspace') : null;
 
-    const [boardsRes, profilesRes, workspacesRes] = await Promise.all([
+    const [boardsRes, workspacesRes] = await Promise.all([
       supabase.from('boards').select('id, name, created_by, workspace_id'),
-      supabase.from('profiles').select('id, email, role'),
       supabase.from('workspaces').select('id, visibility_mode')
     ]);
 
     const allBoards = boardsRes.data || [];
     if (allBoards.length === 0) return;
 
-    const profiles = profilesRes.data || [];
+    const profiles = workspaceUsers || [];
     const currentProf = profiles.find((p: any) => p.id === userProfile.id || p.email === userProfile.email);
     const userRole = currentProf?.role || 'user';
     const wsMap = new Map((workspacesRes.data || []).map((w: any) => [w.id, w.visibility_mode || 'own_only']));
@@ -65,7 +66,7 @@ export function NotificationBell() {
 
     if (ownBoard) {
       setIsOpen(false);
-      window.location.href = `/boards/${ownBoard.id}?tab=turnos`;
+      router.push(`/boards/${ownBoard.id}?tab=turnos`);
       return;
     }
 
@@ -82,7 +83,7 @@ export function NotificationBell() {
 
     if (accessibleBoard) {
       setIsOpen(false);
-      window.location.href = `/boards/${accessibleBoard.id}?tab=turnos`;
+      router.push(`/boards/${accessibleBoard.id}?tab=turnos`);
     }
   };
 
@@ -104,7 +105,8 @@ export function NotificationBell() {
       return data;
     },
     enabled: !!userProfile?.email,
-    refetchInterval: 15000 // Polling otimizado a cada 15s
+    refetchInterval: 30000, // Polling leve a cada 30s apenas com aba visível
+    refetchIntervalInBackground: false
   });
 
   const markAsRead = useMutation({

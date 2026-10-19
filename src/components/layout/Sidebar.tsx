@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
@@ -20,32 +20,28 @@ export function Sidebar() {
 
   const { data: userProfile } = useQuery({
     queryKey: ['current_user'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    },
+    queryFn: () => getFastUser(),
     staleTime: 5 * 60 * 1000
   });
 
-  const { data: userRole } = useQuery({
-    queryKey: ['sidebar_user_role', userProfile?.id],
+  const { data: allProfiles } = useQuery({
+    queryKey: ['all_profiles'],
     queryFn: async () => {
-      if (!userProfile?.id) return null;
-      const { data } = await supabase.from('profiles').select('role').eq('id', userProfile.id).single();
-      return data?.role || 'user';
+      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
+      return data || [];
     },
     enabled: !!userProfile?.id,
     staleTime: 5 * 60 * 1000
   });
 
+  const userRole = allProfiles?.find((p: any) => p.id === userProfile?.id || p.email === userProfile?.email)?.role || 'user';
+
   const { data: workspaces, isLoading: isLoadingWorkspaces } = useQuery({
-    queryKey: ['sidebar_workspaces', userProfile?.id],
+    queryKey: ['sidebar_workspaces', userProfile?.id, userRole],
     queryFn: async () => {
       if (!userProfile?.id) return [];
-      
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', userProfile.id).single();
-      
-      if (profile?.role === 'admin') {
+
+      if (userRole === 'admin') {
         const { data } = await supabase.from('workspaces').select('*').order('created_at');
         return data || [];
       } else {
@@ -54,7 +50,7 @@ export function Sidebar() {
         return mapped;
       }
     },
-    enabled: !!userProfile?.id,
+    enabled: !!userProfile?.id && !!allProfiles,
     staleTime: 5 * 60 * 1000
   });
 
@@ -77,16 +73,18 @@ export function Sidebar() {
     queryFn: async () => {
       if (!activeWorkspaceId || !userProfile?.id) return [];
 
-      const [boardsRes, workspaceRes, profilesRes] = await Promise.all([
+      const activeWsObj = workspaces?.find((w: any) => w.id === activeWorkspaceId);
+      const [boardsRes, workspaceRes] = await Promise.all([
         supabase.from('boards').select('id, name, workspace_id, created_by').eq('workspace_id', activeWorkspaceId).order('created_at'),
-        supabase.from('workspaces').select('visibility_mode').eq('id', activeWorkspaceId).maybeSingle(),
-        supabase.from('profiles').select('id, email, role')
+        activeWsObj?.visibility_mode
+          ? Promise.resolve({ data: { visibility_mode: activeWsObj.visibility_mode } })
+          : supabase.from('workspaces').select('visibility_mode').eq('id', activeWorkspaceId).maybeSingle()
       ]);
 
       if (boardsRes.error) throw boardsRes.error;
       const data = boardsRes.data || [];
       const visibilityMode = workspaceRes.data?.visibility_mode || 'own_only';
-      const profiles = profilesRes.data || [];
+      const profiles = allProfiles || [];
 
       // Administradores e Líderes visualizam TODOS os quadros do setor
       if (userRole === 'admin' || userRole === 'leader') {
@@ -106,7 +104,7 @@ export function Sidebar() {
 
       return allowedBoards;
     },
-    enabled: !!activeWorkspaceId && !!userProfile?.id,
+    enabled: !!activeWorkspaceId && !!userProfile?.id && !!allProfiles,
     staleTime: 5 * 60 * 1000
   });
 
