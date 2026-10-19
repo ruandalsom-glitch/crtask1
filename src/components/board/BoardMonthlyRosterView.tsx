@@ -254,6 +254,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
   // Campos da Escolha Manual de Folgas
   const [manualOffDates, setManualOffDates] = useState<string[]>([]);
+  const [preserveSpecialDays, setPreserveSpecialDays] = useState<boolean>(true);
 
   // Campos de Período Contínuo (ex: Férias 15 dias)
   const [periodStartDate, setPeriodStartDate] = useState('');
@@ -552,266 +553,6 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     }
   });
 
-  // Salvar / Alterar Célula Individual
-  const updateCellMutation = useMutation({
-    mutationFn: async ({
-      operatorName,
-      shiftName,
-      shiftDate,
-      statusCode,
-      customTimeText
-    }: {
-      operatorName: string;
-      shiftName: string;
-      shiftDate: string;
-      statusCode: string;
-      customTimeText?: string;
-    }) => {
-      if (!canManageRoster) throw new Error("Apenas Líderes e Administradores podem editar a escala.");
-
-      const key = `${operatorName.toLowerCase().trim()}_${shiftDate}`;
-      const existing = cellShiftMap.get(key);
-
-      // Se for vazio ou limpar: remove a linha existente
-      if (!statusCode || statusCode === 'CLEAR') {
-        if (existing?.id) {
-          const { error } = await supabase.from('operational_shifts').delete().eq('id', existing.id);
-          if (error) throw error;
-        }
-        return;
-      }
-
-      let dbStatus = statusCode;
-      let notes = customTimeText || '';
-
-      if (statusCode === 'PRESENCA') {
-        dbStatus = 'Confirmado';
-      } else if (statusCode === 'HORARIO' && customTimeText) {
-        dbStatus = customTimeText;
-      }
-
-      if (existing?.id) {
-        const { error } = await supabase
-          .from('operational_shifts')
-          .update({
-            status: dbStatus,
-            notes: notes,
-            shift_name: shiftName || existing.shift_name || 'Geral'
-          })
-          .eq('id', existing.id);
-        if (error) throw error;
-      } else {
-        const payload: any = {
-          board_id: boardId,
-          shift_date: shiftDate,
-          shift_name: shiftName || 'Geral',
-          shift_time: customTimeText || '08:00 - 18:00',
-          region_name: 'Geral',
-          operator_name: operatorName,
-          operator_type: 'Turno Mensal',
-          status: dbStatus,
-          notes: notes
-        };
-        if (boardData?.workspace_id) payload.workspace_id = boardData.workspace_id;
-
-        const { error } = await supabase.from('operational_shifts').insert([payload]);
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['operational_shifts_roster'] });
-      setActiveCellPopover(null);
-    },
-    onError: (err: any) => {
-      alert("Erro ao atualizar escala: " + err.message);
-    }
-  });
-
-  // Mutação para Aplicação Inteligente de Escala (5x2 Diferenciada, Escolha Manual de Folgas, Período)
-  const applySmartScaleMutation = useMutation({
-    mutationFn: async () => {
-      if (!canManageRoster) throw new Error("Apenas Líderes e Administradores podem lançar escalas.");
-      if (scaleSelectedMembers.length === 0) throw new Error("Selecione pelo menos um colaborador.");
-
-      const rowsToInsert: any[] = [];
-      const datesToClear: string[] = [];
-
-      // MODO 1: ESCALA 5x2 DIFERENCIADA (1 DIA DA SEMANA + 1 DIA DO FIM DE SEMANA)
-      if (scaleTabMode === '5x2') {
-        const firstDayMonOffset = (new Date(currentYear, currentMonthIndex, 1).getDay() + 6) % 7;
-
-        for (let d = 1; d <= daysInCurrentMonth; d++) {
-          const dStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          datesToClear.push(dStr);
-
-          const dateObj = new Date(currentYear, currentMonthIndex, d);
-          const dow = dateObj.getDay(); // 0=dom, 1=seg, 2=ter, 3=qua, 4=qui, 5=sex, 6=sab
-
-          // Determina a linha da semana no calendário (Segunda a Domingo: 0, 1, 2, 3, 4, 5)
-          const weekIndex = Math.floor((firstDayMonOffset + d - 1) / 7);
-
-          // Folga no final de semana alternada
-          let isWeekendOff = false;
-          let weekendStatus = 'FG';
-
-          if (scaleWeekendOffMode === 'alternate') {
-            if (weekIndex % 2 === 0) {
-              // Semana par: folga no Sábado
-              if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
-            } else {
-              // Semana ímpar: folga no Domingo
-              if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
-            }
-          } else if (scaleWeekendOffMode === 'alternate_sun_first') {
-            if (weekIndex % 2 === 0) {
-              // Semana par: folga no Domingo
-              if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
-            } else {
-              // Semana ímpar: folga no Sábado
-              if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
-            }
-          } else if (scaleWeekendOffMode === 'sat_fixed') {
-            if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
-          } else if (scaleWeekendOffMode === 'sun_fixed') {
-            if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
-          }
-
-          // Folga no dia da semana escolhido
-          const isWeekdayOff = (dow === scaleWeekdayOff);
-
-          scaleSelectedMembers.forEach(memberName => {
-            const group = turnoGroups.find(g => g.members.includes(memberName));
-            const shiftName = group?.name || 'Geral';
-
-            let finalStatus = '';
-            if (isWeekdayOff) {
-              finalStatus = 'FG';
-            } else if (isWeekendOff) {
-              finalStatus = weekendStatus;
-            } else {
-              // Demais dias: conforme opção escolhida
-              if (scaleRestFillMode === 'PRESENCA') finalStatus = 'Confirmado';
-              else if (scaleRestFillMode === 'EXT') finalStatus = 'EXT';
-              else if (scaleRestFillMode === 'HOME') finalStatus = 'HOME';
-            }
-
-            if (finalStatus) {
-              rowsToInsert.push({
-                board_id: boardId,
-                workspace_id: boardData?.workspace_id || null,
-                shift_date: dStr,
-                shift_name: shiftName,
-                region_name: 'Geral',
-                operator_name: memberName,
-                operator_type: 'Turno Mensal',
-                status: finalStatus,
-                notes: ''
-              });
-            }
-          });
-        }
-      } 
-      // MODO 2: ESCOLHA MANUAL DE FOLGAS NO MÊS
-      else if (scaleTabMode === 'manual_days') {
-        if (manualOffDates.length === 0) throw new Error("Selecione os dias de folga no calendário.");
-
-        for (let d = 1; d <= daysInCurrentMonth; d++) {
-          const dStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          datesToClear.push(dStr);
-
-          const dateObj = new Date(currentYear, currentMonthIndex, d);
-          const dow = dateObj.getDay();
-          const isMarkedOff = manualOffDates.includes(dStr);
-
-          scaleSelectedMembers.forEach(memberName => {
-            const group = turnoGroups.find(g => g.members.includes(memberName));
-            const shiftName = group?.name || 'Geral';
-
-            let finalStatus = '';
-            if (isMarkedOff) {
-              finalStatus = (dow === 0) ? 'DOM' : 'FG';
-            } else {
-              if (scaleRestFillMode === 'PRESENCA') finalStatus = 'Confirmado';
-              else if (scaleRestFillMode === 'EXT') finalStatus = 'EXT';
-              else if (scaleRestFillMode === 'HOME') finalStatus = 'HOME';
-            }
-
-            if (finalStatus) {
-              rowsToInsert.push({
-                board_id: boardId,
-                workspace_id: boardData?.workspace_id || null,
-                shift_date: dStr,
-                shift_name: shiftName,
-                region_name: 'Geral',
-                operator_name: memberName,
-                operator_type: 'Turno Mensal',
-                status: finalStatus,
-                notes: ''
-              });
-            }
-          });
-        }
-      }
-      // MODO 3: PERÍODO CONTÍNUO (FÉRIAS / ATESTADO)
-      else if (scaleTabMode === 'period') {
-        if (!periodStartDate || !periodEndDate) throw new Error("Informe a data de início e fim.");
-        const start = new Date(`${periodStartDate}T00:00:00`);
-        const end = new Date(`${periodEndDate}T00:00:00`);
-        if (start > end) throw new Error("A data inicial deve ser anterior à final.");
-
-        let curr = new Date(start);
-        while (curr <= end) {
-          const dStr = curr.toISOString().split('T')[0];
-          datesToClear.push(dStr);
-
-          scaleSelectedMembers.forEach(memberName => {
-            const group = turnoGroups.find(g => g.members.includes(memberName));
-            const shiftName = group?.name || 'Geral';
-
-            rowsToInsert.push({
-              board_id: boardId,
-              workspace_id: boardData?.workspace_id || null,
-              shift_date: dStr,
-              shift_name: shiftName,
-              region_name: 'Geral',
-              operator_name: memberName,
-              operator_type: 'Turno Mensal',
-              status: periodStatusCode,
-              notes: ''
-            });
-          });
-
-          curr.setDate(curr.getDate() + 1);
-        }
-      }
-
-      // Deleta dados existentes para estes membros e datas no setor
-      const targetBoardIds = workspaceBoardIds && workspaceBoardIds.length > 0 ? workspaceBoardIds : [boardId];
-      for (const m of scaleSelectedMembers) {
-        await supabase
-          .from('operational_shifts')
-          .delete()
-          .in('board_id', targetBoardIds)
-          .eq('operator_name', m)
-          .in('shift_date', datesToClear);
-      }
-
-      // Insere as novas células
-      if (rowsToInsert.length > 0) {
-        const { error } = await supabase.from('operational_shifts').insert(rowsToInsert);
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['operational_shifts_roster'] });
-      setIsScaleWizardOpen(false);
-      alert("Escala lançada com sucesso!");
-    },
-    onError: (err: any) => {
-      alert("Erro ao lançar escala: " + err.message);
-    }
-  });
-
   const normText = (s: string) =>
     (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
@@ -920,6 +661,351 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
     return { def: ROSTER_STATUSES.PRESENCA, customText: raw, rawStatus: raw };
   };
+
+  // Salvar / Alterar Célula Individual (Limpando eventuais duplicatas de caixa alta/baixa na mesma data)
+  const updateCellMutation = useMutation({
+    mutationFn: async ({
+      operatorName,
+      shiftName,
+      shiftDate,
+      statusCode,
+      customTimeText
+    }: {
+      operatorName: string;
+      shiftName: string;
+      shiftDate: string;
+      statusCode: string;
+      customTimeText?: string;
+    }) => {
+      if (!canManageRoster) throw new Error("Apenas Líderes e Administradores podem editar a escala.");
+
+      // Localiza todas as linhas existentes deste mesmo colaborador nesta data (mesmo se salvas com grafia/caixa diferente)
+      const matchingRows = (rawShiftsData || []).filter(
+        (r: any) =>
+          r.shift_name !== '__ESC_ENVIADA__' &&
+          r.shift_date === shiftDate &&
+          r.operator_name &&
+          isSameCollaborator(r.operator_name, operatorName)
+      );
+
+      // Se for vazio ou limpar: remove todas as linhas daquele dia para este colaborador
+      if (!statusCode || statusCode === 'CLEAR') {
+        const ids = matchingRows.map((r: any) => r.id).filter(Boolean);
+        if (ids.length > 0) {
+          const { error } = await supabase.from('operational_shifts').delete().in('id', ids);
+          if (error) throw error;
+        }
+        return;
+      }
+
+      let dbStatus = statusCode;
+      let notes = customTimeText || '';
+
+      if (statusCode === 'PRESENCA') {
+        dbStatus = 'Confirmado';
+      } else if (statusCode === 'HORARIO' && customTimeText) {
+        dbStatus = customTimeText;
+      }
+
+      if (matchingRows.length > 0) {
+        const primaryRow = matchingRows[0];
+        const duplicateIds = matchingRows.slice(1).map((r: any) => r.id).filter(Boolean);
+        if (duplicateIds.length > 0) {
+          await supabase.from('operational_shifts').delete().in('id', duplicateIds);
+        }
+
+        const { error } = await supabase
+          .from('operational_shifts')
+          .update({
+            operator_name: formatCollaboratorName(operatorName),
+            status: dbStatus,
+            notes: notes,
+            shift_name: shiftName || primaryRow.shift_name || 'Geral'
+          })
+          .eq('id', primaryRow.id);
+        if (error) throw error;
+      } else {
+        const payload: any = {
+          board_id: boardId,
+          shift_date: shiftDate,
+          shift_name: shiftName || 'Geral',
+          shift_time: customTimeText || '08:00 - 18:00',
+          region_name: 'Geral',
+          operator_name: formatCollaboratorName(operatorName),
+          operator_type: 'Turno Mensal',
+          status: dbStatus,
+          notes: notes
+        };
+        if (boardData?.workspace_id) payload.workspace_id = boardData.workspace_id;
+
+        const { error } = await supabase.from('operational_shifts').insert([payload]);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['operational_shifts_roster'] });
+      setActiveCellPopover(null);
+    },
+    onError: (err: any) => {
+      alert("Erro ao atualizar escala: " + err.message);
+    }
+  });
+
+  // Mutação para Aplicação Inteligente de Escala (Sem interferência entre Folgas e Férias ou entre Colaboradores)
+  const applySmartScaleMutation = useMutation({
+    mutationFn: async () => {
+      if (!canManageRoster) throw new Error("Apenas Líderes e Administradores podem lançar escalas.");
+      if (scaleSelectedMembers.length === 0) throw new Error("Selecione pelo menos um colaborador.");
+
+      const rowsToInsert: any[] = [];
+      // Guarda exatamente quais pares (memberName, dateStr) devem substituir registros anteriores
+      const targetPairs: { memberName: string; dateStr: string }[] = [];
+
+      const isProtectedSpecialStatus = (memberName: string, dateStr: string) => {
+        if (!preserveSpecialDays) return false;
+        const existing = resolveCellStatus(memberName, dateStr);
+        if (!existing.def) return false;
+        return ['FERIAS', 'AT', 'DOFF', 'FJ'].includes(existing.def.code);
+      };
+
+      // MODO 1: ESCALA 5x2 DIFERENCIADA (1 DIA DA SEMANA + 1 DIA DO FIM DE SEMANA)
+      if (scaleTabMode === '5x2') {
+        const firstDayMonOffset = (new Date(currentYear, currentMonthIndex, 1).getDay() + 6) % 7;
+
+        for (let d = 1; d <= daysInCurrentMonth; d++) {
+          const dStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const dateObj = new Date(currentYear, currentMonthIndex, d);
+          const dow = dateObj.getDay(); // 0=dom, 1=seg, 2=ter, 3=qua, 4=qui, 5=sex, 6=sab
+
+          // Determina a linha da semana no calendário (Segunda a Domingo: 0, 1, 2, 3, 4, 5)
+          const weekIndex = Math.floor((firstDayMonOffset + d - 1) / 7);
+
+          // Folga no final de semana alternada
+          let isWeekendOff = false;
+          let weekendStatus = 'FG';
+
+          if (scaleWeekendOffMode === 'alternate') {
+            if (weekIndex % 2 === 0) {
+              if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
+            } else {
+              if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
+            }
+          } else if (scaleWeekendOffMode === 'alternate_sun_first') {
+            if (weekIndex % 2 === 0) {
+              if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
+            } else {
+              if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
+            }
+          } else if (scaleWeekendOffMode === 'sat_fixed') {
+            if (dow === 6) { isWeekendOff = true; weekendStatus = 'FG'; }
+          } else if (scaleWeekendOffMode === 'sun_fixed') {
+            if (dow === 0) { isWeekendOff = true; weekendStatus = 'DOM'; }
+          }
+
+          const isWeekdayOff = (dow === scaleWeekdayOff);
+
+          scaleSelectedMembers.forEach(memberName => {
+            // Se o colaborador já tem Férias, Atestado ou Day Off neste dia, preserva sem sobrescrever!
+            if (isProtectedSpecialStatus(memberName, dStr)) {
+              return;
+            }
+
+            const group = turnoGroups.find(g => g.members.some(m => isSameCollaborator(m, memberName)));
+            const shiftName = group?.name || 'Geral';
+
+            let finalStatus = '';
+            if (isWeekdayOff) {
+              finalStatus = 'FG';
+            } else if (isWeekendOff) {
+              finalStatus = weekendStatus;
+            } else {
+              if (scaleRestFillMode === 'PRESENCA') finalStatus = 'Confirmado';
+              else if (scaleRestFillMode === 'EXT') finalStatus = 'EXT';
+              else if (scaleRestFillMode === 'HOME') finalStatus = 'HOME';
+            }
+
+            // Se scaleRestFillMode === 'EMPTY' ("Apenas marcar as folgas"), só altera os dias que são folga
+            if (finalStatus) {
+              targetPairs.push({ memberName, dateStr: dStr });
+              rowsToInsert.push({
+                board_id: boardId,
+                workspace_id: boardData?.workspace_id || null,
+                shift_date: dStr,
+                shift_name: shiftName,
+                region_name: 'Geral',
+                operator_name: formatCollaboratorName(memberName),
+                operator_type: 'Turno Mensal',
+                status: finalStatus,
+                notes: ''
+              });
+            }
+          });
+        }
+      } 
+      // MODO 2: ESCOLHA MANUAL DE FOLGAS NO MÊS
+      else if (scaleTabMode === 'manual_days') {
+        if (manualOffDates.length === 0) throw new Error("Selecione os dias de folga no calendário.");
+
+        for (let d = 1; d <= daysInCurrentMonth; d++) {
+          const dStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const dateObj = new Date(currentYear, currentMonthIndex, d);
+          const dow = dateObj.getDay();
+          const isMarkedOff = manualOffDates.includes(dStr);
+
+          scaleSelectedMembers.forEach(memberName => {
+            // Se não foi clicado manualmente como folga e já possui Férias/Atestado/DayOff, preserva intacto!
+            if (!isMarkedOff && isProtectedSpecialStatus(memberName, dStr)) {
+              return;
+            }
+
+            const group = turnoGroups.find(g => g.members.some(m => isSameCollaborator(m, memberName)));
+            const shiftName = group?.name || 'Geral';
+
+            let finalStatus = '';
+            if (isMarkedOff) {
+              finalStatus = (dow === 0) ? 'DOM' : 'FG';
+            } else {
+              if (scaleRestFillMode === 'PRESENCA') finalStatus = 'Confirmado';
+              else if (scaleRestFillMode === 'EXT') finalStatus = 'EXT';
+              else if (scaleRestFillMode === 'HOME') finalStatus = 'HOME';
+            }
+
+            // Quando scaleRestFillMode === 'EMPTY' ("Manter demais dias como estão"),
+            // apenas os dias marcados em manualOffDates são atualizados ou se uma folga anterior (FG/DOM) foi desmarcada
+            if (finalStatus) {
+              targetPairs.push({ memberName, dateStr: dStr });
+              rowsToInsert.push({
+                board_id: boardId,
+                workspace_id: boardData?.workspace_id || null,
+                shift_date: dStr,
+                shift_name: shiftName,
+                region_name: 'Geral',
+                operator_name: formatCollaboratorName(memberName),
+                operator_type: 'Turno Mensal',
+                status: finalStatus,
+                notes: ''
+              });
+            } else if (scaleRestFillMode === 'EMPTY') {
+              // Se o dia tinha FG ou DOM antes e o gestor desmarcou no calendário manual, volta para Presença (Confirmado) sem afetar Férias
+              const existing = resolveCellStatus(memberName, dStr);
+              if (existing.def && (existing.def.code === 'FG' || existing.def.code === 'DOM')) {
+                targetPairs.push({ memberName, dateStr: dStr });
+                rowsToInsert.push({
+                  board_id: boardId,
+                  workspace_id: boardData?.workspace_id || null,
+                  shift_date: dStr,
+                  shift_name: shiftName,
+                  region_name: 'Geral',
+                  operator_name: formatCollaboratorName(memberName),
+                  operator_type: 'Turno Mensal',
+                  status: 'Confirmado',
+                  notes: ''
+                });
+              }
+            }
+          });
+        }
+      }
+      // MODO 3: PERÍODO CONTÍNUO (FÉRIAS / ATESTADO / DAY OFF)
+      else if (scaleTabMode === 'period') {
+        if (!periodStartDate || !periodEndDate) throw new Error("Informe a data de início e fim.");
+        const start = new Date(`${periodStartDate}T00:00:00`);
+        const end = new Date(`${periodEndDate}T00:00:00`);
+        if (start > end) throw new Error("A data inicial deve ser anterior à final.");
+
+        const curr = new Date(start);
+        while (curr <= end) {
+          const y = curr.getFullYear();
+          const m = String(curr.getMonth() + 1).padStart(2, '0');
+          const day = String(curr.getDate()).padStart(2, '0');
+          const dStr = `${y}-${m}-${day}`;
+
+          scaleSelectedMembers.forEach(memberName => {
+            const group = turnoGroups.find(g => g.members.some(mem => isSameCollaborator(mem, memberName)));
+            const shiftName = group?.name || 'Geral';
+
+            targetPairs.push({ memberName, dateStr: dStr });
+            rowsToInsert.push({
+              board_id: boardId,
+              workspace_id: boardData?.workspace_id || null,
+              shift_date: dStr,
+              shift_name: shiftName,
+              region_name: 'Geral',
+              operator_name: formatCollaboratorName(memberName),
+              operator_type: 'Turno Mensal',
+              status: periodStatusCode,
+              notes: ''
+            });
+          });
+
+          curr.setDate(curr.getDate() + 1);
+        }
+      }
+
+      // Localiza exatamente os IDs das linhas que serão substituídas (case-insensitive via isSameCollaborator)
+      // Assim nunca apaga Férias ao lançar Folgas, nem apaga Folgas fora do período de Férias!
+      const idsToDelete: string[] = [];
+      (rawShiftsData || []).forEach((row: any) => {
+        if (row.shift_name === '__ESC_ENVIADA__' || !row.id || !row.operator_name || !row.shift_date) return;
+        const shouldReplace = targetPairs.some(
+          p => p.dateStr === row.shift_date && isSameCollaborator(p.memberName, row.operator_name)
+        );
+        if (shouldReplace) {
+          idsToDelete.push(row.id);
+        }
+      });
+
+      if (idsToDelete.length > 0) {
+        const { error: delErr } = await supabase
+          .from('operational_shifts')
+          .delete()
+          .in('id', idsToDelete);
+        if (delErr) throw delErr;
+      }
+
+      // Caso o período de férias abranja datas fora do mês atualmente carregado em rawShiftsData, limpa também por data exata
+      if (scaleTabMode === 'period') {
+        const outOfMonthDates = Array.from(
+          new Set(
+            targetPairs
+              .map(p => p.dateStr)
+              .filter(d => d < startOfMonthStr || d > endOfMonthStr)
+          )
+        );
+        if (outOfMonthDates.length > 0) {
+          const targetBoardIds = workspaceBoardIds && workspaceBoardIds.length > 0 ? workspaceBoardIds : [boardId];
+          for (const m of scaleSelectedMembers) {
+            await supabase
+              .from('operational_shifts')
+              .delete()
+              .in('board_id', targetBoardIds)
+              .ilike('operator_name', m.trim())
+              .in('shift_date', outOfMonthDates);
+          }
+        }
+      }
+
+      // Insere as novas células
+      if (rowsToInsert.length > 0) {
+        let { error } = await supabase.from('operational_shifts').insert(rowsToInsert);
+        if (error && error.message?.includes('workspace_id')) {
+          const cleanRows = rowsToInsert.map(({ workspace_id, ...rest }) => rest);
+          const retry = await supabase.from('operational_shifts').insert(cleanRows);
+          if (retry.error) throw retry.error;
+        } else if (error) {
+          throw error;
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['operational_shifts_roster'] });
+      setIsScaleWizardOpen(false);
+      alert("Escala atualizada com sucesso!");
+    },
+    onError: (err: any) => {
+      alert("Erro ao lançar escala: " + err.message);
+    }
+  });
 
   // Lista completa de todos os colaboradores do setor/escala (deduplicada case-insensitively para nunca exibir Davis.lmarques e DAVIS.LMARQUES duplicados)
   const allRosterMembers = useMemo(() => {
@@ -2408,11 +2494,29 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                 <button
                   onClick={() => {
                     const allM = turnoGroups.flatMap(g => g.members);
-                    setScaleSelectedMembers(allM);
-                    setScaleSelectAll(true);
-                    setManualOffDates([]);
+                    const initialMember =
+                      activeViewMode === 'go_card' && selectedGoMember
+                        ? selectedGoMember
+                        : allM.length === 1
+                        ? allM[0]
+                        : '';
+                    const initialList = initialMember ? [initialMember] : [];
+                    setScaleSelectedMembers(initialList);
+                    setScaleSelectAll(initialList.length > 0 && initialList.length === allM.length);
+                    if (initialMember) {
+                      const existingOffs = monthDaysList
+                        .filter(d => {
+                          const code = resolveCellStatus(initialMember, d.dateStr).def?.code;
+                          return code === 'FG' || code === 'DOM';
+                        })
+                        .map(d => d.dateStr);
+                      setManualOffDates(existingOffs);
+                    } else {
+                      setManualOffDates([]);
+                    }
+                    setPreserveSpecialDays(true);
                     setPeriodStartDate(startOfMonthStr);
-                    setPeriodEndDate(endOfMonthStr);
+                    setPeriodEndDate(startOfMonthStr);
                     setIsScaleWizardOpen(true);
                   }}
                   className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
@@ -3647,10 +3751,21 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => {
-                            if (isChecked) {
-                              setScaleSelectedMembers(prev => prev.filter(m => m !== member));
-                            } else {
-                              setScaleSelectedMembers(prev => [...prev, member]);
+                            const nextSelected = isChecked
+                              ? scaleSelectedMembers.filter(m => m !== member)
+                              : [...scaleSelectedMembers, member];
+                            setScaleSelectedMembers(nextSelected);
+
+                            // Se ficar exatamente 1 colaborador selecionado, pré-carregar as folgas atuais dele no mês
+                            if (nextSelected.length === 1) {
+                              const singleM = nextSelected[0];
+                              const existingOffs = monthDaysList
+                                .filter(d => {
+                                  const sc = resolveCellStatus(singleM, d.dateStr).def?.code;
+                                  return sc === 'FG' || sc === 'DOM';
+                                })
+                                .map(d => d.dateStr);
+                              setManualOffDates(existingOffs);
                             }
                           }}
                           className="rounded text-blue-600 focus:ring-blue-500 shrink-0"
@@ -3769,9 +3884,22 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       <option value="PRESENCA">✓ Presença / Veio Trabalhar (Normal)</option>
                       <option value="EXT">EXT (Trabalho Externo)</option>
                       <option value="HOME">HOME (Home Office)</option>
-                      <option value="EMPTY">Deixar em branco (Apenas marcar as folgas)</option>
+                      <option value="EMPTY">Manter demais dias como estão (Apenas aplicar as folgas)</option>
                     </select>
                   </div>
+
+                  {/* Proteção de Férias / Atestados já lançados */}
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={preserveSpecialDays}
+                      onChange={e => setPreserveSpecialDays(e.target.checked)}
+                      className="mt-0.5 rounded text-amber-600 focus:ring-amber-500 shrink-0"
+                    />
+                    <span className="text-[11px] text-amber-900 font-semibold leading-snug">
+                      Manter <strong>Férias, Atestados, Day Off e Folgas Justificadas</strong> já lançados no mês (não sobrescrever esses dias ao aplicar a escala 5x2).
+                    </span>
+                  </label>
                 </div>
               )}
 
@@ -3779,13 +3907,18 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
               {scaleTabMode === 'manual_days' && (
                 <div className="flex flex-col gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <div className="text-xs text-slate-600 font-medium">
-                    Clique nos dias do mês abaixo que serão <strong>FOLGA</strong> deste(s) colaborador(es). Os demais dias serão automaticamente preenchidos como presença de trabalho.
+                    Clique nos dias do mês abaixo que serão <strong>FOLGA</strong> deste(s) colaborador(es). Dias que já possuem <strong>Férias ou Atestado</strong> aparecem destacados em amarelo e são preservados automaticamente.
                   </div>
 
                   {/* Grade rápida dos dias do mês */}
                   <div className="grid grid-cols-7 gap-1.5">
                     {monthDaysList.map(d => {
                       const isOff = manualOffDates.includes(d.dateStr);
+                      const specialStatuses = scaleSelectedMembers
+                        .map(m => resolveCellStatus(m, d.dateStr).def?.code)
+                        .filter(st => st === 'FERIAS' || st === 'AT' || st === 'DOFF' || st === 'FJ');
+                      const hasProtectedSpecial = preserveSpecialDays && specialStatuses.length > 0;
+                      const specialLabel = specialStatuses[0] === 'FERIAS' ? 'FÉR' : specialStatuses[0];
 
                       return (
                         <button
@@ -3803,13 +3936,19 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                               ? d.isSunday 
                                 ? 'bg-purple-600 text-white border-purple-700 shadow-xs' 
                                 : 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                              : hasProtectedSpecial
+                                ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                           }`}
                         >
                           <span className="block text-sm">{d.dayNumber}</span>
                           <span className="text-[9px] uppercase opacity-80">{d.dayNameShort}</span>
                           <span className="text-[9px] block mt-0.5">
-                            {isOff ? (d.isSunday ? 'DOM' : 'FG') : '✓'}
+                            {isOff
+                              ? (d.isSunday ? 'DOM' : 'FG')
+                              : hasProtectedSpecial
+                                ? `🏖️ ${specialLabel}`
+                                : '✓'}
                           </span>
                         </button>
                       );
@@ -3828,15 +3967,31 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                       <option value="PRESENCA">✓ Presença / Veio Trabalhar</option>
                       <option value="EXT">EXT (Trabalho Externo)</option>
                       <option value="HOME">HOME (Home Office)</option>
-                      <option value="EMPTY">Deixar em branco</option>
+                      <option value="EMPTY">Manter demais dias como estão (Apenas aplicar as folgas marcadas)</option>
                     </select>
                   </div>
+
+                  {/* Proteção de Férias / Atestados já lançados */}
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={preserveSpecialDays}
+                      onChange={e => setPreserveSpecialDays(e.target.checked)}
+                      className="mt-0.5 rounded text-amber-600 focus:ring-amber-500 shrink-0"
+                    />
+                    <span className="text-[11px] text-amber-900 font-semibold leading-snug">
+                      Manter <strong>Férias, Atestados, Day Off e Folgas Justificadas</strong> já lançados no mês nos dias não clicados.
+                    </span>
+                  </label>
                 </div>
               )}
 
               {/* CONTEÚDO DA ABA 3: PERÍODO CONTÍNUO (FÉRIAS, ATESTADO) */}
               {scaleTabMode === 'period' && (
                 <div className="flex flex-col gap-4 bg-amber-50/40 p-4 rounded-xl border border-amber-200">
+                  <div className="text-xs text-amber-900 leading-relaxed font-medium">
+                    Aplica o status selecionado <strong>exclusivamente entre a Data Inicial e a Data Final</strong>, preservando integralmente as folgas e escalas 5x2 do restante do mês.
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-bold text-slate-700 mb-1 block">Data Inicial:</label>
