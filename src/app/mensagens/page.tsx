@@ -1,14 +1,22 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { 
-  Calendar, ChevronLeft, ChevronRight, Copy, Download, 
-  RefreshCw, Trash2, CheckCircle2, Check, Users, MessageSquare, 
-  Share2, Sparkles, Clock, AlertCircle
+  Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
+  Check, Users, MessageSquare, Clock, Plus, Edit2, RotateCcw, X
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
+
+interface MensagemItem {
+  id: string;
+  ultimo_check: string;
+  tipo: string;
+  mensagem: string;
+  horario: string;
+  obs?: string;
+}
 
 export default function MensagensPage() {
   const queryClient = useQueryClient();
@@ -18,27 +26,26 @@ export default function MensagensPage() {
     return new Date().toISOString().split('T')[0];
   });
 
-  // Base Selecionada (Padrão: Primeira base do config)
-  const bases = mensagensConfig.bases;
-  const [selectedBase, setSelectedBase] = useState<string>(bases[0] || 'SP Sumarezinho');
+  // Bases restritas estritamente para: Sumarezinho, Recreio, Aldeota
+  const bases = useMemo(() => ['Sumarezinho', 'Recreio', 'Aldeota'], []);
+  const [selectedBase, setSelectedBase] = useState<string>('Sumarezinho');
 
   const [shareFeedbackMsg, setShareFeedbackMsg] = useState<string>('');
   const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
+
+  // Modal de Adicionar / Editar Mensagem
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<MensagemItem | null>(null);
+  const [formMensagem, setFormMensagem] = useState('');
+  const [formHorario, setFormHorario] = useState('08:00');
+  const [formTipo, setFormTipo] = useState('GRUPO');
+  const [formUltimoCheck, setFormUltimoCheck] = useState('FIXA (14/09)');
+  const [formObs, setFormObs] = useState('');
 
   // Usuário Logado
   const { data: currentUser } = useQuery({
     queryKey: ['current_user'],
     queryFn: () => getFastUser(),
-    staleTime: 5 * 60 * 1000
-  });
-
-  // Lista de Perfis (para sugestões nos seletores de equipe)
-  const { data: profiles } = useQuery({
-    queryKey: ['all_profiles_select'],
-    queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role').order('email');
-      return data || [];
-    },
     staleTime: 5 * 60 * 1000
   });
 
@@ -52,11 +59,44 @@ export default function MensagensPage() {
       .join(' ');
   }, [currentUser]);
 
-  // Lista de Mensagens da Base Selecionada
-  const mensagensList = useMemo(() => {
-    const map = mensagensConfig.mensagens_por_base as Record<string, any[]>;
+  // =========================================================================
+  // GESTÃO DINÂMICA DE MENSAGENS (TEMPLATES POR BASE SALVOS NO SUPABASE)
+  // Usamos data = '1970-01-01' como reservada para a definição de templates
+  // =========================================================================
+  const { data: dbTemplates, refetch: refetchTemplates } = useQuery({
+    queryKey: ['mensagens_templates', selectedBase],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('mensagens_checklist')
+        .select('*')
+        .eq('data', '1970-01-01')
+        .eq('base', selectedBase)
+        .order('horario_envio', { ascending: true });
+
+      if (error) {
+        console.error('[Mensagens] Erro ao buscar templates customizados:', error);
+        return [];
+      }
+      return data || [];
+    },
+    staleTime: 30 * 1000
+  });
+
+  // Lista efetiva de mensagens (Personalizadas do Supabase ou Padrão do JSON)
+  const mensagensList: MensagemItem[] = useMemo(() => {
+    if (dbTemplates && dbTemplates.length > 0) {
+      return dbTemplates.map(row => ({
+        id: row.msg_id,
+        ultimo_check: row.supervisor || 'FIXA',
+        tipo: row.enviado_por || 'GRUPO',
+        mensagem: row.analista || '',
+        horario: row.horario_envio || '',
+        obs: row.assistente || ''
+      }));
+    }
+    const map = mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>;
     return map[selectedBase] || [];
-  }, [selectedBase]);
+  }, [selectedBase, dbTemplates]);
 
   // Busca o estado do checklist no Supabase para a data e base atuais
   const { data: checklistRows, isLoading, refetch } = useQuery({
@@ -77,7 +117,7 @@ export default function MensagensPage() {
     staleTime: 10 * 1000
   });
 
-  // Realtime: Escuta alterações na tabela para atualizar a tela instantaneamente
+  // Realtime: Escuta alterações na tabela
   useEffect(() => {
     const channel = supabase
       .channel(`mensagens-realtime-${selectedDate}-${selectedBase}`)
@@ -87,10 +127,11 @@ export default function MensagensPage() {
           event: '*',
           schema: 'public',
           table: 'mensagens_checklist',
-          filter: `data=eq.${selectedDate}`
+          filter: `base=eq.${selectedBase}`
         },
         () => {
           queryClient.invalidateQueries({ queryKey: ['mensagens_checklist', selectedDate, selectedBase] });
+          queryClient.invalidateQueries({ queryKey: ['mensagens_templates', selectedBase] });
         }
       )
       .subscribe();
@@ -137,7 +178,7 @@ export default function MensagensPage() {
     const willCheck = !current?.checked;
     const nowTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-    // Atualização otimista no cache do React Query
+    // Atualização otimista
     queryClient.setQueryData(['mensagens_checklist', selectedDate, selectedBase], (old: any[] = []) => {
       const filtered = old.filter(r => r.msg_id !== msgId);
       return [
@@ -198,7 +239,6 @@ export default function MensagensPage() {
       updated_at: new Date().toISOString()
     };
 
-    // Atualização otimista
     queryClient.setQueryData(['mensagens_checklist', selectedDate, selectedBase], (old: any[] = []) => {
       const filtered = old.filter(r => r.msg_id !== '__equipe__');
       return [...filtered, payload];
@@ -209,8 +249,140 @@ export default function MensagensPage() {
       .upsert(payload, { onConflict: 'data,base,msg_id' });
   };
 
-  // Limpa/Reinicia os checks da base no dia atual
-  const handleResetBase = async () => {
+  // =========================================================================
+  // MODAL: ADICIONAR OU EDITAR MENSAGEM
+  // =========================================================================
+  const openAddModal = () => {
+    setEditingItem(null);
+    setFormMensagem('');
+    setFormHorario('08:00');
+    setFormTipo('GRUPO');
+    setFormUltimoCheck('FIXA (14/09)');
+    setFormObs('');
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (item: MensagemItem) => {
+    setEditingItem(item);
+    setFormMensagem(item.mensagem);
+    setFormHorario(item.horario);
+    setFormTipo(item.tipo);
+    setFormUltimoCheck(item.ultimo_check);
+    setFormObs(item.obs || '');
+    setIsModalOpen(true);
+  };
+
+  const handleSaveModalMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formMensagem.trim() || !formHorario.trim()) {
+      alert('Por favor, informe a Mensagem e o Horário programado.');
+      return;
+    }
+
+    // Se a base ainda não tinha registros customizados no banco, semeia os já existentes primeiro
+    if (!dbTemplates || dbTemplates.length === 0) {
+      const currentDefaults = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
+      const seedPayloads = currentDefaults.map(item => ({
+        data: '1970-01-01',
+        base: selectedBase,
+        msg_id: item.id,
+        checked: false,
+        horario_envio: item.horario,
+        enviado_por: item.tipo,
+        supervisor: item.ultimo_check,
+        analista: item.mensagem,
+        assistente: item.obs || '',
+        updated_at: new Date().toISOString()
+      }));
+      if (seedPayloads.length > 0) {
+        await supabase.from('mensagens_checklist').upsert(seedPayloads, { onConflict: 'data,base,msg_id' });
+      }
+    }
+
+    const msgId = editingItem ? editingItem.id : `msg_${Date.now()}`;
+    const payload = {
+      data: '1970-01-01',
+      base: selectedBase,
+      msg_id: msgId,
+      checked: false,
+      horario_envio: formHorario.trim(),
+      enviado_por: formTipo,
+      supervisor: formUltimoCheck.trim(),
+      analista: formMensagem.trim(),
+      assistente: formObs.trim(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase
+      .from('mensagens_checklist')
+      .upsert(payload, { onConflict: 'data,base,msg_id' });
+
+    if (error) {
+      alert('Erro ao salvar mensagem: ' + error.message);
+    } else {
+      setIsModalOpen(false);
+      refetchTemplates();
+      setShareFeedbackMsg(editingItem ? '✓ Mensagem atualizada!' : '✓ Nova mensagem adicionada à base!');
+      setTimeout(() => setShareFeedbackMsg(''), 4000);
+    }
+  };
+
+  // Remover Mensagem da Base
+  const handleDeleteMessage = async (item: MensagemItem) => {
+    const ok = window.confirm(`Deseja realmente remover a mensagem "${item.mensagem}" (${item.horario}) da base ${selectedBase}?`);
+    if (!ok) return;
+
+    // Se ainda não tinha registros customizados no banco, semeia todos exceto o deletado
+    if (!dbTemplates || dbTemplates.length === 0) {
+      const currentDefaults = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
+      const remaining = currentDefaults.filter(m => m.id !== item.id);
+      const seedPayloads = remaining.map(m => ({
+        data: '1970-01-01',
+        base: selectedBase,
+        msg_id: m.id,
+        checked: false,
+        horario_envio: m.horario,
+        enviado_por: m.tipo,
+        supervisor: m.ultimo_check,
+        analista: m.mensagem,
+        assistente: m.obs || '',
+        updated_at: new Date().toISOString()
+      }));
+      await supabase.from('mensagens_checklist').upsert(seedPayloads, { onConflict: 'data,base,msg_id' });
+    } else {
+      await supabase
+        .from('mensagens_checklist')
+        .delete()
+        .eq('data', '1970-01-01')
+        .eq('base', selectedBase)
+        .eq('msg_id', item.id);
+    }
+
+    refetchTemplates();
+    setShareFeedbackMsg(`🗑️ Mensagem removida da base ${selectedBase}!`);
+    setTimeout(() => setShareFeedbackMsg(''), 4000);
+  };
+
+  // Restaurar mensagens originais da base
+  const handleRestoreDefaultMessages = async () => {
+    const ok = window.confirm(
+      `Deseja restaurar a lista padrão de mensagens para a base "${selectedBase}"?\nIsso removerá as alterações customizadas desta base.`
+    );
+    if (!ok) return;
+
+    await supabase
+      .from('mensagens_checklist')
+      .delete()
+      .eq('data', '1970-01-01')
+      .eq('base', selectedBase);
+
+    refetchTemplates();
+    setShareFeedbackMsg(`🔄 Lista padrão de ${selectedBase} restaurada!`);
+    setTimeout(() => setShareFeedbackMsg(''), 4000);
+  };
+
+  // Limpa/Reinicia os checks do dia
+  const handleResetDayChecks = async () => {
     const ok = window.confirm(
       `Deseja realmente ZERAR todos os checks de hoje da base "${selectedBase}"?\nIsso permitirá iniciar um novo ciclo de envios.`
     );
@@ -224,15 +396,15 @@ export default function MensagensPage() {
       .neq('msg_id', '__equipe__');
 
     queryClient.invalidateQueries({ queryKey: ['mensagens_checklist', selectedDate, selectedBase] });
-    setShareFeedbackMsg(`🧹 Checklist de ${selectedBase} reiniciado!`);
+    setShareFeedbackMsg(`🧹 Checklist de hoje de ${selectedBase} reiniciado!`);
     setTimeout(() => setShareFeedbackMsg(''), 4000);
   };
 
   // =========================================================================
-  // GERAÇÃO DO CANVAS HTML5 DE ALTA RESOLUÇÃO (ESTILO PLANILHA OFICIAL)
+  // GERAÇÃO DO CANVAS HTML5 DE ALTA RESOLUÇÃO
   // =========================================================================
   const generateReportCanvas = async (): Promise<HTMLCanvasElement> => {
-    const scale = 2; // Resolução Retina 2x para nitidez perfeita
+    const scale = 2;
     const width = 1040 * scale;
     const headerH = 240 * scale;
     const rowH = 36 * scale;
@@ -261,7 +433,7 @@ export default function MensagensPage() {
     ctx.textAlign = 'center';
     ctx.fillText('Relatório de Mensagens', width / 2, 38 * scale);
 
-    // Nome da Base em Ciano / Verde Neon Vibrante
+    // Nome da Base em Ciano / Verde Neon Vibrante (Sumarezinho, Recreio ou Aldeota)
     ctx.fillStyle = '#00FFA3';
     ctx.font = `bold ${32 * scale}px "Segoe UI", Inter, sans-serif`;
     ctx.fillText(selectedBase, width / 2, 80 * scale);
@@ -293,14 +465,12 @@ export default function MensagensPage() {
     ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
 
     equipeRows.forEach(([c1, c2]) => {
-      // Coluna 1
       ctx.fillStyle = '#3A7CB9';
       roundRect(ctx, xCol1, currY, colW, 22 * scale, 5 * scale);
       ctx.fill();
       ctx.fillStyle = '#FFFFFF';
       ctx.fillText(c1, xCol1 + (12 * scale), currY + (16 * scale));
 
-      // Coluna 2
       ctx.fillStyle = '#3A7CB9';
       roundRect(ctx, xCol2, currY, colW, 22 * scale, 5 * scale);
       ctx.fill();
@@ -338,7 +508,6 @@ export default function MensagensPage() {
       }
       currX += col.w;
 
-      // Linha separadora vertical do cabeçalho
       ctx.strokeStyle = '#B0C4DE';
       ctx.lineWidth = 1 * scale;
       ctx.beginPath();
@@ -351,7 +520,6 @@ export default function MensagensPage() {
     let rowY = tableY + thH;
 
     mensagensList.forEach((item, idx) => {
-      // Fundo zebrado
       ctx.fillStyle = idx % 2 === 1 ? '#F2F6FA' : '#FFFFFF';
       ctx.fillRect(0, rowY, width, rowH);
 
@@ -363,35 +531,30 @@ export default function MensagensPage() {
         const cellW = col.w;
 
         if (cIdx === 0) {
-          // Último Check
           const val = item.ultimo_check || '';
           ctx.fillStyle = val.includes('(') ? '#C53030' : '#111827';
           ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
           ctx.textAlign = 'center';
           ctx.fillText(val, cellX + cellW / 2, rowY + (23 * scale));
         } else if (cIdx === 1) {
-          // Tipo
           const val = item.tipo || 'GRUPO';
           ctx.fillStyle = val.includes('STATUS') ? '#2563EB' : '#111827';
           ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
           ctx.textAlign = 'center';
           ctx.fillText(val, cellX + cellW / 2, rowY + (23 * scale));
         } else if (cIdx === 2) {
-          // Mensagem
           const val = item.mensagem || '';
           ctx.fillStyle = '#111827';
           ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
           ctx.textAlign = 'left';
           ctx.fillText(val, cellX + (14 * scale), rowY + (23 * scale));
         } else if (cIdx === 3) {
-          // Horário Programado
           const val = item.horario || '';
           ctx.fillStyle = '#111827';
           ctx.font = `${12 * scale}px "Segoe UI", Inter, sans-serif`;
           ctx.textAlign = 'center';
           ctx.fillText(val, cellX + cellW / 2, rowY + (23 * scale));
         } else if (cIdx === 4) {
-          // Checkbox Quadrado
           const bx = cellX + (cellW - (18 * scale)) / 2;
           const by = rowY + (rowH - (18 * scale)) / 2;
           ctx.strokeStyle = '#0D3559';
@@ -407,7 +570,6 @@ export default function MensagensPage() {
             ctx.fillText('✓', bx + (9 * scale), by + (14 * scale));
           }
         } else if (cIdx === 5) {
-          // Horário Check / Envio
           if (isChecked) {
             let txt = `✓ ${state.horario_envio}`;
             if (state.enviado_por) txt += ` (${state.enviado_por})`;
@@ -424,7 +586,6 @@ export default function MensagensPage() {
         }
 
         cellX += cellW;
-        // Borda vertical da célula
         ctx.strokeStyle = '#D1D5DB';
         ctx.lineWidth = 1 * scale;
         ctx.beginPath();
@@ -433,7 +594,6 @@ export default function MensagensPage() {
         ctx.stroke();
       });
 
-      // Linha horizontal da linha
       ctx.strokeStyle = '#D1D5DB';
       ctx.lineWidth = 1 * scale;
       ctx.beginPath();
@@ -444,7 +604,6 @@ export default function MensagensPage() {
       rowY += rowH;
     });
 
-    // Rodapé de Autenticidade
     ctx.fillStyle = '#6B7280';
     ctx.font = `${11 * scale}px "Segoe UI", Inter, sans-serif`;
     ctx.textAlign = 'left';
@@ -457,7 +616,6 @@ export default function MensagensPage() {
     return canvas;
   };
 
-  // Helper para desenhar retângulos arredondados no canvas
   function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
     if (w < 2 * r) r = w / 2;
     if (h < 2 * r) r = h / 2;
@@ -487,7 +645,6 @@ export default function MensagensPage() {
       }, 'image/png');
     } catch (err) {
       console.error('Erro ao copiar imagem:', err);
-      // Fallback: faz o download caso o navegador bloqueie a escrita direta
       await handleDownloadImage();
       setIsGeneratingImage(false);
     }
@@ -546,7 +703,7 @@ export default function MensagensPage() {
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500">
-                  Controle diário de envios para grupos e status do WhatsApp com troca de turnos
+                  Controle diário de envios para grupos e status das bases: Sumarezinho, Recreio e Aldeota
                 </p>
               </div>
             </div>
@@ -554,7 +711,7 @@ export default function MensagensPage() {
 
           {/* BARRA DE AÇÕES: BASE, DATA E BOTÕES */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Seletor de Base */}
+            {/* Seletor de Base (Apenas Sumarezinho, Recreio, Aldeota) */}
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
               <span className="text-[11px] font-bold text-slate-500 uppercase">Base:</span>
               <select
@@ -581,6 +738,16 @@ export default function MensagensPage() {
               />
             </div>
 
+            {/* Botão Adicionar Nova Mensagem */}
+            <button
+              onClick={openAddModal}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-3.5 py-2 rounded-lg shadow-sm transition-all cursor-pointer hover:shadow-blue-500/20 active:scale-95"
+              title="Adicionar nova mensagem à programação desta base"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Adicionar Mensagem</span>
+            </button>
+
             {/* Botão Copiar Imagem WhatsApp */}
             <button
               onClick={handleCopyImage}
@@ -596,7 +763,7 @@ export default function MensagensPage() {
             <button
               onClick={handleDownloadImage}
               disabled={isGeneratingImage}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-sm px-3.5 py-2 rounded-lg shadow-sm transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-sm px-3 py-2 rounded-lg shadow-sm transition-all cursor-pointer active:scale-95 disabled:opacity-50"
               title="Baixar imagem em formato PNG"
             >
               <Download className="w-4 h-4 text-slate-500" />
@@ -605,16 +772,19 @@ export default function MensagensPage() {
 
             {/* Atualizar */}
             <button
-              onClick={() => refetch()}
+              onClick={() => {
+                refetch();
+                refetchTemplates();
+              }}
               className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
               title="Atualizar dados da nuvem"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
 
-            {/* Limpar Base */}
+            {/* Limpar Checks do Dia */}
             <button
-              onClick={handleResetBase}
+              onClick={handleResetDayChecks}
               className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
               title="Zerar os checks de hoje desta base"
             >
@@ -632,7 +802,7 @@ export default function MensagensPage() {
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-600" />
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
-                Equipe Responsável da Base (Escala do Dia)
+                Equipe Responsável da Base (Escala do Dia - {selectedBase})
               </h2>
             </div>
             <div className="text-xs text-slate-400">
@@ -641,7 +811,6 @@ export default function MensagensPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Supervisor */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Supervisor</label>
               <input
@@ -653,7 +822,6 @@ export default function MensagensPage() {
               />
             </div>
 
-            {/* Analistas */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Analistas</label>
               <input
@@ -665,7 +833,6 @@ export default function MensagensPage() {
               />
             </div>
 
-            {/* Assistente */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Assistente</label>
               <input
@@ -677,7 +844,6 @@ export default function MensagensPage() {
               />
             </div>
 
-            {/* Responsável Manhã */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Resp. Manhã</label>
               <input
@@ -689,7 +855,6 @@ export default function MensagensPage() {
               />
             </div>
 
-            {/* Intermédio */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Intermédio</label>
               <input
@@ -701,7 +866,6 @@ export default function MensagensPage() {
               />
             </div>
 
-            {/* Responsável Tarde */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Resp. Tarde</label>
               <input
@@ -713,7 +877,6 @@ export default function MensagensPage() {
               />
             </div>
 
-            {/* Apoio Manhã */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Apoio Manhã</label>
               <input
@@ -725,7 +888,6 @@ export default function MensagensPage() {
               />
             </div>
 
-            {/* Apoio Tarde */}
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase">Apoio Tarde</label>
               <input
@@ -739,24 +901,38 @@ export default function MensagensPage() {
           </div>
         </div>
 
-        {/* BARRA DE PROGRESSO DO DIA */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
+        {/* BARRA DE PROGRESSO & GESTÃO DA BASE */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
               <Clock className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-xs font-bold text-slate-500 uppercase">Progresso dos Envios de Hoje</span>
+              <span className="text-xs font-bold text-slate-500 uppercase">Progresso de Envios ({selectedBase})</span>
               <div className="text-sm font-extrabold text-slate-900">
                 {checkedCount} de {totalMsgs} comunicados enviados ({progressPct}%)
               </div>
             </div>
           </div>
-          <div className="w-48 bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200">
-            <div
-              className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
-              style={{ width: `${progressPct}%` }}
-            />
+
+          <div className="flex items-center gap-4">
+            <div className="w-44 bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200">
+              <div
+                className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+
+            {dbTemplates && dbTemplates.length > 0 && (
+              <button
+                onClick={handleRestoreDefaultMessages}
+                className="text-xs text-slate-400 hover:text-amber-600 flex items-center gap-1 font-semibold transition-colors cursor-pointer"
+                title="Voltar para as mensagens padrão desta base"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restaurar Padrão</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -766,25 +942,32 @@ export default function MensagensPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#0D3559] text-white text-[12px] font-bold tracking-wider uppercase">
-                  <th className="py-3 px-4 text-center w-[140px] border-r border-[#1B5288]">Último Check</th>
+                  <th className="py-3 px-4 text-center w-[130px] border-r border-[#1B5288]">Último Check</th>
                   <th className="py-3 px-4 text-center w-[130px] border-r border-[#1B5288]">Tipo</th>
                   <th className="py-3 px-6 border-r border-[#1B5288]">Mensagens</th>
-                  <th className="py-3 px-4 text-center w-[100px] border-r border-[#1B5288]">Horário</th>
-                  <th className="py-3 px-4 text-center w-[75px] border-r border-[#1B5288]">Check</th>
-                  <th className="py-3 px-6 text-center w-[220px]">Horário Check / Envio</th>
+                  <th className="py-3 px-4 text-center w-[90px] border-r border-[#1B5288]">Horário</th>
+                  <th className="py-3 px-4 text-center w-[70px] border-r border-[#1B5288]">Check</th>
+                  <th className="py-3 px-6 text-center w-[210px] border-r border-[#1B5288]">Horário Check / Envio</th>
+                  <th className="py-3 px-3 text-center w-[80px]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-slate-400">
+                    <td colSpan={7} className="text-center py-12 text-slate-400">
                       Carregando mensagens da base...
                     </td>
                   </tr>
                 ) : mensagensList.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-slate-400">
-                      Nenhuma mensagem cadastrada para a base selecionada.
+                    <td colSpan={7} className="text-center py-12 text-slate-400 space-y-2">
+                      <div>Nenhuma mensagem cadastrada para a base {selectedBase}.</div>
+                      <button
+                        onClick={openAddModal}
+                        className="text-blue-600 hover:underline font-bold text-xs"
+                      >
+                        + Clique aqui para adicionar a primeira mensagem
+                      </button>
                     </td>
                   </tr>
                 ) : (
@@ -795,7 +978,7 @@ export default function MensagensPage() {
                     return (
                       <tr
                         key={item.id}
-                        className={`transition-colors hover:bg-blue-50/50 ${
+                        className={`transition-colors group hover:bg-blue-50/50 ${
                           index % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'
                         }`}
                       >
@@ -848,7 +1031,7 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Horário Check / Envio */}
-                        <td className="py-3 px-6 text-center font-bold whitespace-nowrap">
+                        <td className="py-3 px-6 text-center font-bold whitespace-nowrap border-r border-slate-100">
                           {isChecked ? (
                             <span className="text-emerald-600 flex items-center justify-center gap-1">
                               ✓ {state.horario_envio} {state.enviado_por && `(${state.enviado_por})`}
@@ -859,6 +1042,26 @@ export default function MensagensPage() {
                             <span className="text-slate-300">-</span>
                           )}
                         </td>
+
+                        {/* Ações: Editar e Excluir */}
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => openEditModal(item)}
+                              className="p-1 hover:bg-slate-200 text-slate-600 rounded transition-colors"
+                              title="Editar Mensagem"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMessage(item)}
+                              className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded transition-colors"
+                              title="Remover Mensagem"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
@@ -868,6 +1071,119 @@ export default function MensagensPage() {
           </div>
         </div>
       </div>
+
+      {/* MODAL DE ADICIONAR / EDITAR MENSAGEM */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-[#0D3559] px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-base">
+                  {editingItem ? 'Editar Mensagem' : `Adicionar Mensagem (${selectedBase})`}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-300 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveModalMessage} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Mensagem / Assunto *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formMensagem}
+                  onChange={e => setFormMensagem(e.target.value)}
+                  placeholder="Ex: BOM DIA, ADIANTAMENTO, REGULARIZE O MEI"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Horário Programado *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formHorario}
+                    onChange={e => setFormHorario(e.target.value)}
+                    placeholder="Ex: 07:00, 14:30"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Tipo de Envio
+                  </label>
+                  <select
+                    value={formTipo}
+                    onChange={e => setFormTipo(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all cursor-pointer"
+                  >
+                    <option value="GRUPO">GRUPO</option>
+                    <option value="STATUS">STATUS</option>
+                    <option value="GRUPO + STATUS">GRUPO + STATUS</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Último Check / Validade
+                  </label>
+                  <input
+                    type="text"
+                    value={formUltimoCheck}
+                    onChange={e => setFormUltimoCheck(e.target.value)}
+                    placeholder="Ex: FIXA (14/09), TEMPORÁRIA"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Obs / Dias da Semana
+                  </label>
+                  <input
+                    type="text"
+                    value={formObs}
+                    onChange={e => setFormObs(e.target.value)}
+                    placeholder="Ex: QUINTA, SEG Á SÁB"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-all cursor-pointer"
+                >
+                  {editingItem ? 'Salvar Alterações' : 'Adicionar à Base'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
