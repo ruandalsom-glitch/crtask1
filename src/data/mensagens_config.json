@@ -1,0 +1,67 @@
+{
+  "bases": [
+    "SP Sumarezinho",
+    "FOR Aldeota",
+    "RJ Madureira",
+    "SP Livre",
+    "FOR Geral"
+  ],
+  "equipe_padrao": {
+    "supervisores": ["Kelly Bezerra", "Ruan Dalson", "Fabiano Jesus", "Outro"],
+    "analistas": ["Raquel Nunes", "Wallisson Sousa", "Gabriel Santos", "Davis", "Outro"],
+    "assistentes": ["Davis", "Francisco", "Matias", "Outro"],
+    "responsaveis": ["Manhã", "Wallisson", "Gabriel Santos", "Davis", "Raquel Nunes", "Outro"],
+    "apoios": ["Manhã", "Intermédio", "Tarde", "Davis", "Wallisson", "Outro"]
+  },
+  "mensagens_por_base": {
+    "SP Sumarezinho": [
+      { "id": "sp_01", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "BOM DIA", "horario": "06:00", "obs": "06:00" },
+      { "id": "sp_02", "ultimo_check": "FIXA (14/09)", "tipo": "STATUS", "mensagem": "REGULARIZE O MEI (QUINTA)", "horario": "07:30", "obs": "QUINTA" },
+      { "id": "sp_03", "ultimo_check": "FIXA (31/10)", "tipo": "GRUPO + STATUS", "mensagem": "INDIQUE E GANHE (ATÉ 31/10)", "horario": "08:30", "obs": "08:30" },
+      { "id": "sp_04", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "ANTECIPAÇÃO (SEGUNDA A SÁBADO)", "horario": "09:00", "obs": "09:00" },
+      { "id": "sp_05", "ultimo_check": "TEMPORÁRIA (07/10)", "tipo": "GRUPO + STATUS", "mensagem": "RODOU GANHOU (ATÉ 31/10)", "horario": "10:00", "obs": "10:00" },
+      { "id": "sp_06", "ultimo_check": "TEMPORÁRIA (08/11)", "tipo": "GRUPO + STATUS", "mensagem": "TROPA DOS 20 (ATÉ 08/11)", "horario": "10:20", "obs": "" },
+      { "id": "sp_07", "ultimo_check": "TEMPORÁRIA (23/10)", "tipo": "GRUPO + STATUS", "mensagem": "CAFÉ ESPECIAL (ATÉ 23/10)", "horario": "10:30", "obs": "" },
+      { "id": "sp_08", "ultimo_check": "TEMPORÁRIA (23/10)", "tipo": "GRUPO + STATUS", "mensagem": "ENTREGO COMPLEMENTA (ATÉ 22/10)", "horario": "11:00", "obs": "" },
+      { "id": "sp_09", "ultimo_check": "TEMPORÁRIA (23/10)", "tipo": "GRUPO + STATUS", "mensagem": "CONQUISTAR SEU APARTAMENTO (ATÉ 23/10)", "horario": "12:30", "obs": "" },
+      { "id": "sp_10", "ultimo_check": "FIXA (14/09)", "tipo": "STATUS", "mensagem": "LISTA DE DEDICADOS (TERÇA)", "horario": "13:10", "obs": "TERÇA" },
+      { "id": "sp_11", "ultimo_check": "TEMPORÁRIA (08/11)", "tipo": "GRUPO + STATUS", "mensagem": "TROPA DOS 20 PRIME (ATÉ 08/11)", "horario": "13:30", "obs": "" },
+      { "id": "sp_12", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "ELITE DEDICADO (QUARTA)", "horario": "14:30", "obs": "" },
+      { "id": "sp_13", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "DESCONTO EM COMBUSTÍVEL (SEGUNDA|QUARTA|SÁBADO)", "horario": "15:00", "obs": "" },
+      { "id": "sp_14", "ultimo_check": "TEMPORÁRIA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "FAZ A DIFERENÇA (TERÇA|QUINTA|SEXTA - INDETERMINADO)", "horario": "15:00", "obs": "TERÇA|QUINTA|SEXTA" },
+      { "id": "sp_15", "ultimo_check": "TEMPORÁRIA (07/11)", "tipo": "GRUPO + STATUS", "mensagem": "PESQUISA RAPIDA (ATÉ 07/11)", "horario": "15:20", "obs": "" },
+      { "id": "sp_16", "ultimo_check": "TEMPORÁRIA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "VEM AÍ", "horario": "16:00", "obs": "" },
+      { "id": "sp_17", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "BASE DE APOIO", "horario": "16:30", "obs": "" },
+      { "id": "sp_18", "ultimo_check": "TEMPORÁRIA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "PROMOÇÃO ESPECIAL - FROTA ESTRATÉGICA (ATÉ 25/10)", "horario": "17:00", "obs": "" },
+      { "id": "sp_19", "ultimo_check": "FIXA (14/09)", "tipo": "STATUS", "mensagem": "MOSTRA TEU CORRE (SEGUNDA|QUARTA|SEXTA)", "horario": "17:30", "obs": "" },
+      { "id": "sp_20", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "CHIP ELITE (TERÇA|QUINTA)", "horario": "18:15", "obs": "TERÇA|QUINTA" },
+      { "id": "sp_21", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "CHIP ELITE - VÍDEO (SEXTA)", "horario": "18:15", "obs": "SEXTA" },
+      { "id": "sp_22", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "COMUNICAÇÃO TELEGRAM (QUARTA)", "horario": "18:50", "obs": "" }
+    ],
+    "FOR Aldeota": [
+      { "id": "for_01", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "MENSAGEM DE BOM DIA", "horario": "07:00", "obs": "07:00" },
+      { "id": "for_02", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "ADIANTAMENTO (ZAPCASH) (SEG Á SÁB)", "horario": "09:30", "obs": "SEG Á SÁB" },
+      { "id": "for_03", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "CONTABILIDADE PARCEIRA", "horario": "10:30", "obs": "" },
+      { "id": "for_04", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "CANAL ALDEOTA", "horario": "14:30", "obs": "" },
+      { "id": "for_05", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "COMUNICAÇÃO TELEGRAM", "horario": "16:00", "obs": "" }
+    ],
+    "RJ Madureira": [
+      { "id": "rj_01", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "BOM DIA", "horario": "07:00", "obs": "07:00" },
+      { "id": "rj_02", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "ADIANTAMENTO", "horario": "09:30", "obs": "" },
+      { "id": "rj_03", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "RODOU GANHOU", "horario": "10:30", "obs": "" },
+      { "id": "rj_04", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "BASE DE APOIO MADUREIRA", "horario": "15:00", "obs": "" },
+      { "id": "rj_05", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "COMUNICAÇÃO TELEGRAM", "horario": "16:00", "obs": "" }
+    ],
+    "SP Livre": [
+      { "id": "spl_01", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "BOM DIA", "horario": "06:30", "obs": "" },
+      { "id": "spl_02", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "INDIQUE E GANHE", "horario": "09:00", "obs": "" },
+      { "id": "spl_03", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO + STATUS", "mensagem": "RODOU GANHOU", "horario": "11:00", "obs": "" },
+      { "id": "spl_04", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "AVISOS OPERACIONAIS", "horario": "15:00", "obs": "" }
+    ],
+    "FOR Geral": [
+      { "id": "forg_01", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "MENSAGEM DE BOM DIA", "horario": "07:00", "obs": "" },
+      { "id": "forg_02", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "ADIANTAMENTO (ZAPCASH)", "horario": "09:30", "obs": "" },
+      { "id": "forg_03", "ultimo_check": "FIXA (14/09)", "tipo": "GRUPO", "mensagem": "COMUNICAÇÃO TELEGRAM", "horario": "16:00", "obs": "" }
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
-import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare, ShieldCheck } from 'lucide-react';
+import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare, ShieldCheck, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
@@ -182,6 +182,14 @@ export function Sidebar() {
           >
             <CheckSquare className="w-5 h-5 shrink-0 text-blue-600" />
             <span className="text-[14px]">Minhas Tarefas</span>
+          </Link>
+
+          <Link 
+            href="/mensagens"
+            className={`flex items-center gap-2 p-2 rounded-md cursor-pointer mb-2 transition-colors w-full ${pathname === '/mensagens' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-700 hover:bg-slate-100'}`}
+          >
+            <MessageSquare className="w-5 h-5 shrink-0 text-emerald-600" />
+            <span className="text-[14px]">Envio de Mensagens</span>
           </Link>
 
           {(userRole === 'admin' || userRole === 'leader') && (
