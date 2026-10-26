@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { 
   Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
-  Check, Users, MessageSquare, Clock, Plus, Edit2, RotateCcw, X,
+  Check, Users, MessageSquare, Clock, Plus, Edit2, X,
   ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
@@ -1160,15 +1160,6 @@ export default function MensagensPage() {
             >
               <RefreshCw className="w-4 h-4" />
             </button>
-
-            {/* Limpar Checks do Dia */}
-            <button
-              onClick={handleResetDayChecks}
-              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
-              title="Zerar os checks de hoje desta base"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </div>
@@ -1335,16 +1326,15 @@ export default function MensagensPage() {
               />
             </div>
 
-            {dbTemplates && dbTemplates.length > 0 && (
-              <button
-                onClick={handleRestoreDefaultMessages}
-                className="text-xs text-slate-400 hover:text-amber-600 flex items-center gap-1.5 font-bold transition-colors cursor-pointer"
-                title="Voltar para as mensagens padrão desta base"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Restaurar Padrão</span>
-              </button>
-            )}
+            {/* Botão Zerar Checks de Hoje */}
+            <button
+              onClick={handleResetDayChecks}
+              className="text-xs text-slate-500 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-red-200 flex items-center gap-1.5 font-bold transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
+              title="Zerar os checks de hoje desta base"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+              <span>Zerar checks de hoje</span>
+            </button>
           </div>
         </div>
 
