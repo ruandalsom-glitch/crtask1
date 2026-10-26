@@ -6,7 +6,7 @@ import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { 
   Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
   Check, Users, MessageSquare, Clock, Plus, Edit2, RotateCcw, X,
-  ChevronDown, Search, Shield, Briefcase, Award, Sparkles, Building2
+  ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
 
@@ -35,70 +35,38 @@ export const CARGOS_COLABORADORES: Record<string, string[]> = {
   ]
 };
 
-export const CARGO_METADATA: Record<string, { label: string; badgeBg: string; badgeText: string; icon: string; dotColor: string }> = {
-  'Supervisão': {
-    label: 'Supervisão',
-    badgeBg: 'bg-purple-50 border-purple-200 text-purple-700',
-    badgeText: 'text-purple-700',
-    icon: '👑',
-    dotColor: 'bg-purple-500'
-  },
-  'Analistas': {
-    label: 'Analista',
-    badgeBg: 'bg-blue-50 border-blue-200 text-blue-700',
-    badgeText: 'text-blue-700',
-    icon: '💼',
-    dotColor: 'bg-blue-500'
-  },
-  'Assistentes': {
-    label: 'Assistente',
-    badgeBg: 'bg-amber-50 border-amber-200 text-amber-800',
-    badgeText: 'text-amber-800',
-    icon: '📋',
-    dotColor: 'bg-amber-500'
-  },
-  'Auxiliares': {
-    label: 'Auxiliar',
-    badgeBg: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-    badgeText: 'text-emerald-800',
-    icon: '🤝',
-    dotColor: 'bg-emerald-500'
-  }
-};
-
-export function getRoleForCollaborator(name: string): string | null {
-  if (!name) return null;
-  const clean = name.toLowerCase().trim();
-  for (const [cargo, members] of Object.entries(CARGOS_COLABORADORES)) {
-    if (members.some(m => m.toLowerCase().trim() === clean || clean.includes(m.toLowerCase().trim()))) {
-      return cargo;
-    }
-  }
-  return null;
+// Helper para obter as iniciais de um colaborador (substituindo emotes por avatares profissionais)
+function getInitials(name: string): string {
+  if (!name) return '';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 // =========================================================================
-// COMPONENTE: SELETOR DE COLABORADOR COM SUBMENUS POR CARGO
+// COMPONENTE: SELETOR DE COLABORADOR POR CARGO ESPECÍFICO (SEM EMOTES)
 // =========================================================================
-interface CollaboratorSubmenuSelectProps {
+interface CargoCollaboratorSelectProps {
+  label: string;
   value: string;
   onChange: (value: string) => void;
-  label?: string;
-  placeholder?: string;
+  cargo: 'Supervisão' | 'Analistas' | 'Assistentes' | 'Auxiliares';
   presets?: string[];
-  compact?: boolean;
+  placeholder?: string;
+  allowCombination?: boolean;
 }
 
-function CollaboratorSubmenuSelect({
+function CargoCollaboratorSelect({
+  label,
   value,
   onChange,
-  label,
-  placeholder = 'Selecionar...',
+  cargo,
   presets = [],
-  compact = false
-}: CollaboratorSubmenuSelectProps) {
+  placeholder = 'Selecionar...',
+  allowCombination = false
+}: CargoCollaboratorSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
   const [isTypingCustom, setIsTypingCustom] = useState(false);
   const [customValue, setCustomValue] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -116,208 +84,191 @@ function CollaboratorSubmenuSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  const currentRole = getRoleForCollaborator(value);
-  const roleMeta = currentRole ? CARGO_METADATA[currentRole] : null;
+  const members = CARGOS_COLABORADORES[cargo] || [];
+  const CargoIcon = cargo === 'Supervisão' ? Shield :
+                    cargo === 'Analistas' ? Briefcase :
+                    cargo === 'Assistentes' ? ClipboardList : Users;
+
+  const handleSelect = (val: string) => {
+    onChange(val);
+    setIsOpen(false);
+    setIsTypingCustom(false);
+    setCustomValue('');
+  };
 
   return (
     <div className="relative w-full" ref={dropdownRef}>
-      {label && (
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            {label}
-          </label>
-          {roleMeta && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${roleMeta.badgeBg}`}>
-              {roleMeta.icon} {roleMeta.label}
-            </span>
-          )}
-        </div>
-      )}
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+          <CargoIcon className="w-3 h-3 text-slate-400" />
+          <span>{label}</span>
+        </label>
+        <span className="text-[10px] font-semibold text-slate-400">
+          {cargo}
+        </span>
+      </div>
 
       {/* Botão de Disparo */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full text-left bg-white border border-slate-200 hover:border-blue-400 rounded-xl transition-all shadow-xs flex items-center justify-between gap-2 cursor-pointer ${
-          compact ? 'px-2.5 py-1 text-xs' : 'px-3 py-2 text-xs'
-        } ${isOpen ? 'ring-2 ring-blue-500/20 border-blue-500' : ''}`}
+        className={`w-full text-left bg-white border rounded-xl px-3 py-2 text-xs transition-all flex items-center justify-between cursor-pointer shadow-2xs ${
+          isOpen ? 'border-[#0B2238] ring-1 ring-[#0B2238]/20 bg-slate-50/50' : 'border-slate-200 hover:border-slate-300'
+        }`}
       >
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          {compact && roleMeta ? (
-            <span className={`text-[9px] font-bold px-1 py-0.2 rounded border shrink-0 ${roleMeta.badgeBg}`}>
-              {roleMeta.icon}
+        <div className="flex items-center gap-2 truncate">
+          {value ? (
+            <>
+              <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[9px] flex items-center justify-center shrink-0">
+                {getInitials(value)}
+              </span>
+              <span className="truncate font-semibold text-slate-900">
+                {value}
+              </span>
+            </>
+          ) : (
+            <span className="text-slate-400 font-normal truncate">
+              {placeholder}
             </span>
-          ) : !compact && roleMeta ? (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 flex items-center gap-1 ${roleMeta.badgeBg}`}>
-              <span>{roleMeta.icon}</span>
-              <span className="hidden sm:inline">{roleMeta.label}</span>
-            </span>
-          ) : value && presets.includes(value) ? (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
-              🕒 Turno
-            </span>
-          ) : null}
-          <span className={`truncate font-bold ${value ? 'text-slate-800' : 'text-slate-400 font-normal'}`}>
-            {value || placeholder}
-          </span>
+          )}
         </div>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isOpen ? 'rotate-180 text-blue-600' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ml-1 ${isOpen ? 'rotate-180 text-slate-700' : ''}`} />
       </button>
 
-      {/* Menu Suspenso / Submenus com Categorias */}
+      {/* Menu Suspenso Referenciado Estritamente ao Cargo */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 py-2 max-h-80 overflow-y-auto animate-in fade-in zoom-in-95 duration-150 min-w-[260px]">
-          {/* Campo de Busca Rápida */}
-          <div className="px-2.5 pb-2 border-b border-slate-100">
-            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-              <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <input
-                type="text"
-                autoFocus
-                placeholder="Filtrar colaborador ou cargo..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="bg-transparent text-xs text-slate-800 outline-none w-full font-medium"
-              />
-              {search && (
-                <button type="button" onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600">
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 min-w-[230px]">
+          {/* Cabeçalho do Cargo */}
+          <div className="px-3 py-1 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+            <span className="flex items-center gap-1.5">
+              <CargoIcon className="w-3.5 h-3.5 text-slate-500" />
+              <span>{cargo}</span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-normal">
+              {members.length} {members.length === 1 ? 'colaborador' : 'colaboradores'}
+            </span>
           </div>
 
-          {/* Presets (ex: Turnos) se houver */}
-          {presets.length > 0 && !search && (
-            <div className="py-1 border-b border-slate-100">
-              <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Turnos Predefinidos
-              </div>
-              <div className="flex flex-wrap gap-1 px-2.5 py-1">
+          {/* Presets de Turno (se aplicável) */}
+          {presets.length > 0 && (
+            <div className="px-2 pt-1.5 pb-1 border-b border-slate-100">
+              <div className="flex flex-wrap gap-1">
                 {presets.map(p => (
                   <button
                     key={p}
                     type="button"
-                    onClick={() => {
-                      onChange(p);
-                      setIsOpen(false);
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    onClick={() => handleSelect(p)}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
                       value === p
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-[#0B2238] text-white'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    {p}
+                    Turno {p}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Submenus por Cargo */}
-          <div className="divide-y divide-slate-100">
-            {Object.entries(CARGOS_COLABORADORES).map(([cargo, members]) => {
-              const meta = CARGO_METADATA[cargo];
-              const filteredMembers = members.filter(m =>
-                m.toLowerCase().includes(search.toLowerCase()) ||
-                cargo.toLowerCase().includes(search.toLowerCase())
-              );
-
-              if (filteredMembers.length === 0) return null;
-
+          {/* Lista de Colaboradores do Cargo */}
+          <div className="py-1">
+            {members.map(member => {
+              const isSelected = value === member;
               return (
-                <div key={cargo} className="py-1.5">
-                  <div className="px-3 py-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    <span className="flex items-center gap-1.5">
-                      <span>{meta.icon}</span>
-                      <span className={meta.badgeText}>{cargo}</span>
+                <button
+                  key={member}
+                  type="button"
+                  onClick={() => handleSelect(member)}
+                  className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                    isSelected ? 'bg-blue-50/80 font-bold text-blue-900' : 'hover:bg-slate-50 text-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[9px] flex items-center justify-center shrink-0">
+                      {getInitials(member)}
                     </span>
-                    <span className="text-[9px] bg-slate-100 px-1.5 py-0.2 rounded-full text-slate-500 font-bold">
-                      {filteredMembers.length}
-                    </span>
+                    <span>{member}</span>
                   </div>
-
-                  <div className="space-y-0.5 px-1.5 mt-0.5">
-                    {filteredMembers.map(member => {
-                      const isSelected = value === member;
-                      return (
-                        <button
-                          key={member}
-                          type="button"
-                          onClick={() => {
-                            onChange(member);
-                            setIsOpen(false);
-                            setSearch('');
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
-                            isSelected
-                              ? 'bg-blue-50 text-blue-700 font-bold'
-                              : 'text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${meta.dotColor}`}></span>
-                            <span>{member}</span>
-                          </div>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                </button>
               );
             })}
+
+            {/* Opção combinada para Analistas */}
+            {allowCombination && members.length > 1 && (
+              <button
+                type="button"
+                onClick={() => handleSelect(members.join(' / '))}
+                className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer border-t border-slate-50 ${
+                  value === members.join(' / ') ? 'bg-blue-50/80 font-bold text-blue-900' : 'hover:bg-slate-50 text-slate-800'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[9px] flex items-center justify-center shrink-0">
+                    &
+                  </span>
+                  <span>{members.join(' / ')} (Ambos)</span>
+                </div>
+                {value === members.join(' / ') && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+              </button>
+            )}
           </div>
 
-          {/* Opção para digitar nome personalizado */}
-          <div className="pt-2 px-2.5 border-t border-slate-100">
+          {/* Opção Manual / Digitar Outro */}
+          <div className="pt-1 border-t border-slate-100 px-2 pb-0.5">
             {isTypingCustom ? (
-              <div className="flex items-center gap-1.5">
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  if (customValue.trim()) {
+                    handleSelect(customValue.trim());
+                  }
+                }}
+                className="flex items-center gap-1 mt-1"
+              >
                 <input
                   type="text"
                   autoFocus
-                  placeholder="Nome customizado..."
+                  placeholder="Nome do colaborador..."
                   value={customValue}
                   onChange={e => setCustomValue(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && customValue.trim()) {
-                      e.preventDefault();
-                      onChange(customValue.trim());
-                      setIsOpen(false);
-                      setIsTypingCustom(false);
-                      setCustomValue('');
-                    }
-                  }}
-                  className="w-full text-xs border border-blue-400 rounded-lg px-2 py-1.5 text-slate-800 outline-none font-semibold"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white"
                 />
                 <button
-                  type="button"
-                  onClick={() => {
-                    if (customValue.trim()) {
-                      onChange(customValue.trim());
-                      setIsOpen(false);
-                      setIsTypingCustom(false);
-                      setCustomValue('');
-                    }
-                  }}
-                  className="px-2.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shrink-0 hover:bg-blue-700 cursor-pointer"
+                  type="submit"
+                  className="px-2 py-1 bg-[#0B2238] text-white rounded-lg text-xs font-semibold hover:bg-slate-800 cursor-pointer"
                 >
                   OK
                 </button>
-              </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTypingCustom(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </form>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsTypingCustom(true);
-                  setCustomValue(value);
-                }}
-                className="w-full text-left px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>✏️</span>
-                <span>Digitar outro nome / texto livre...</span>
-              </button>
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setIsTypingCustom(true)}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-blue-600 flex items-center gap-1 py-1 cursor-pointer"
+                >
+                  <Edit2 className="w-3 h-3" />
+                  <span>Digitar outro nome...</span>
+                </button>
+                {value && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelect('')}
+                    className="text-[10px] text-slate-400 hover:text-red-500 cursor-pointer"
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -369,7 +320,7 @@ export default function MensagensPage() {
     staleTime: 5 * 60 * 1000
   });
 
-  // Nome do Colaborador Ativo
+  // Nome do Colaborador Ativo (quem está logado)
   const currentUserName = useMemo(() => {
     if (!currentUser) return 'Operador';
     const emailName = currentUser.email?.split('@')[0] || 'Operador';
@@ -491,13 +442,13 @@ export default function MensagensPage() {
     };
   }, [checklistRows]);
 
-  // Alterna o status do Checkbox
+  // Alterna o status do Checkbox (Registra o usuário conectado que está marcando)
   const handleToggleCheck = async (msgId: string) => {
     const current = checksMap[msgId];
     const willCheck = !current?.checked;
     const nowTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-    // Atualização otimista
+    // Atualização otimista com o usuário logado
     queryClient.setQueryData(['mensagens_checklist', selectedDate, selectedBase], (old: any[] = []) => {
       const filtered = old.filter(r => r.msg_id !== msgId);
       return [
@@ -508,7 +459,7 @@ export default function MensagensPage() {
           msg_id: msgId,
           checked: willCheck,
           horario_envio: willCheck ? nowTime : '',
-          enviado_por: willCheck ? (equipeData.resp_manha || currentUserName) : '',
+          enviado_por: willCheck ? currentUserName : '',
           updated_at: new Date().toISOString()
         }
       ];
@@ -520,7 +471,7 @@ export default function MensagensPage() {
       msg_id: msgId,
       checked: willCheck,
       horario_envio: willCheck ? nowTime : '',
-      enviado_por: willCheck ? (equipeData.resp_manha || currentUserName) : '',
+      enviado_por: willCheck ? currentUserName : '',
       updated_at: new Date().toISOString()
     };
 
@@ -532,21 +483,6 @@ export default function MensagensPage() {
       console.error('[Mensagens] Erro ao salvar check:', error);
       refetch();
     }
-  };
-
-  // Atualiza quem enviou uma mensagem específica
-  const handleUpdateSender = async (msgId: string, senderName: string) => {
-    const current = checksMap[msgId];
-    if (!current?.checked) return;
-
-    queryClient.setQueryData(['mensagens_checklist', selectedDate, selectedBase], (old: any[] = []) => {
-      return old.map(r => r.msg_id === msgId ? { ...r, enviado_por: senderName } : r);
-    });
-
-    await supabase
-      .from('mensagens_checklist')
-      .update({ enviado_por: senderName, updated_at: new Date().toISOString() })
-      .match({ data: selectedDate, base: selectedBase, msg_id: msgId });
   };
 
   // Salva alteração de um campo da Equipe
@@ -578,14 +514,17 @@ export default function MensagensPage() {
       return [...filtered, payload];
     });
 
-    await supabase
+    const { error } = await supabase
       .from('mensagens_checklist')
       .upsert(payload, { onConflict: 'data,base,msg_id' });
+
+    if (error) {
+      console.error('[Mensagens] Erro ao atualizar equipe:', error);
+      refetch();
+    }
   };
 
-  // =========================================================================
-  // MODAL: ADICIONAR OU EDITAR MENSAGEM
-  // =========================================================================
+  // Abre modal para adicionar nova mensagem
   const openAddModal = () => {
     setEditingItem(null);
     setFormMensagem('');
@@ -596,6 +535,7 @@ export default function MensagensPage() {
     setIsModalOpen(true);
   };
 
+  // Abre modal para editar mensagem existente
   const openEditModal = (item: MensagemItem) => {
     setEditingItem(item);
     setFormMensagem(item.mensagem);
@@ -606,43 +546,41 @@ export default function MensagensPage() {
     setIsModalOpen(true);
   };
 
+  // Salva no Supabase (criação ou edição de templates da base)
   const handleSaveModalMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formMensagem.trim() || !formHorario.trim()) {
-      alert('Por favor, informe a Mensagem e o Horário programado.');
-      return;
-    }
 
-    if (!dbTemplates || dbTemplates.length === 0) {
-      const currentDefaults = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
-      const seedPayloads = currentDefaults.map(item => ({
+    const isExistingInDb = dbTemplates && dbTemplates.length > 0;
+
+    if (!isExistingInDb) {
+      const defaultList = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
+      const seedPayloads = defaultList.map(m => ({
         data: '1970-01-01',
         base: selectedBase,
-        msg_id: item.id,
+        msg_id: m.id,
         checked: false,
-        horario_envio: item.horario,
-        enviado_por: item.tipo,
-        supervisor: item.ultimo_check,
-        analista: item.mensagem,
-        assistente: item.obs || '',
+        supervisor: m.ultimo_check,
+        enviado_por: m.tipo,
+        analista: m.mensagem,
+        horario_envio: m.horario,
+        assistente: m.obs || '',
         updated_at: new Date().toISOString()
       }));
-      if (seedPayloads.length > 0) {
-        await supabase.from('mensagens_checklist').upsert(seedPayloads, { onConflict: 'data,base,msg_id' });
-      }
+
+      await supabase.from('mensagens_checklist').upsert(seedPayloads, { onConflict: 'data,base,msg_id' });
     }
 
-    const msgId = editingItem ? editingItem.id : `msg_${Date.now()}`;
+    const targetId = editingItem ? editingItem.id : `msg_${Date.now()}`;
     const payload = {
       data: '1970-01-01',
       base: selectedBase,
-      msg_id: msgId,
+      msg_id: targetId,
       checked: false,
-      horario_envio: formHorario.trim(),
+      supervisor: formUltimoCheck,
       enviado_por: formTipo,
-      supervisor: formUltimoCheck.trim(),
-      analista: formMensagem.trim(),
-      assistente: formObs.trim(),
+      analista: formMensagem,
+      horario_envio: formHorario,
+      assistente: formObs,
       updated_at: new Date().toISOString()
     };
 
@@ -651,32 +589,32 @@ export default function MensagensPage() {
       .upsert(payload, { onConflict: 'data,base,msg_id' });
 
     if (error) {
-      alert('Erro ao salvar mensagem: ' + error.message);
+      console.error('[Mensagens] Erro ao salvar mensagem:', error);
+      alert('Erro ao salvar mensagem.');
     } else {
       setIsModalOpen(false);
       refetchTemplates();
-      setShareFeedbackMsg(editingItem ? '✓ Mensagem atualizada!' : '✓ Nova mensagem adicionada à base!');
-      setTimeout(() => setShareFeedbackMsg(''), 4000);
     }
   };
 
-  // Remover Mensagem da Base
+  // Exclui mensagem personalizada da base
   const handleDeleteMessage = async (item: MensagemItem) => {
-    const ok = window.confirm(`Deseja realmente remover a mensagem "${item.mensagem}" (${item.horario}) da base ${selectedBase}?`);
-    if (!ok) return;
+    const confirmDelete = window.confirm(`Deseja remover a mensagem "${item.mensagem}" da base "${selectedBase}"?`);
+    if (!confirmDelete) return;
 
-    if (!dbTemplates || dbTemplates.length === 0) {
-      const currentDefaults = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
-      const remaining = currentDefaults.filter(m => m.id !== item.id);
-      const seedPayloads = remaining.map(m => ({
+    const isExistingInDb = dbTemplates && dbTemplates.length > 0;
+    if (!isExistingInDb) {
+      const defaultList = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
+      const filtered = defaultList.filter(m => m.id !== item.id);
+      const seedPayloads = filtered.map(m => ({
         data: '1970-01-01',
         base: selectedBase,
         msg_id: m.id,
         checked: false,
-        horario_envio: m.horario,
-        enviado_por: m.tipo,
         supervisor: m.ultimo_check,
+        enviado_por: m.tipo,
         analista: m.mensagem,
+        horario_envio: m.horario,
         assistente: m.obs || '',
         updated_at: new Date().toISOString()
       }));
@@ -691,7 +629,7 @@ export default function MensagensPage() {
     }
 
     refetchTemplates();
-    setShareFeedbackMsg(`🗑️ Mensagem removida da base ${selectedBase}!`);
+    setShareFeedbackMsg(`Mensagem removida da base ${selectedBase}!`);
     setTimeout(() => setShareFeedbackMsg(''), 4000);
   };
 
@@ -709,7 +647,7 @@ export default function MensagensPage() {
       .eq('base', selectedBase);
 
     refetchTemplates();
-    setShareFeedbackMsg(`🔄 Lista padrão de ${selectedBase} restaurada!`);
+    setShareFeedbackMsg(`Lista padrão de ${selectedBase} restaurada com sucesso.`);
     setTimeout(() => setShareFeedbackMsg(''), 4000);
   };
 
@@ -728,95 +666,88 @@ export default function MensagensPage() {
       .neq('msg_id', '__equipe__');
 
     queryClient.invalidateQueries({ queryKey: ['mensagens_checklist', selectedDate, selectedBase] });
-    setShareFeedbackMsg(`🧹 Checklist de hoje de ${selectedBase} reiniciado!`);
+    setShareFeedbackMsg(`Checklist de hoje de ${selectedBase} reiniciado.`);
     setTimeout(() => setShareFeedbackMsg(''), 4000);
   };
 
   // =========================================================================
-  // GERAÇÃO DO CANVAS HTML5 DE ALTA RESOLUÇÃO (COM LOGO CR E DESIGN CR TASK)
+  // GERAÇÃO DO CANVAS HTML5 DE ALTA RESOLUÇÃO (COM LOGO CR E VISUAL PROFISSIONAL)
   // =========================================================================
   const generateReportCanvas = async (): Promise<HTMLCanvasElement> => {
     const scale = 2;
     const width = 1100 * scale;
     const headerH = 265 * scale;
-    const rowH = 36 * scale;
     const thH = 38 * scale;
-    const padding = 22 * scale;
+    const rowH = 34 * scale;
+    const padding = 20 * scale;
 
     const totalRows = mensagensList.length;
-    const height = headerH + thH + (totalRows * rowH) + (46 * scale);
+    const height = headerH + thH + (totalRows * rowH) + (20 * scale);
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Não foi possível obter contexto 2D');
 
-    // Fundo Geral Branco
+    // 0. Fundo Geral
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, width, height);
 
-    // 0. Carrega a Logo Oficial da CR (/logo.png)
-    const logoImg = await new Promise<HTMLImageElement | null>((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = '/logo.png';
-    });
-
-    // 1. Cabeçalho Azul Escuro Corporativo (Identidade Visual CR Task)
+    // 1. Bloco de Cabeçalho Corporativo
     ctx.fillStyle = '#0B2238';
     ctx.fillRect(0, 0, width, headerH);
 
-    // Moldura preta da logo CR no topo esquerdo
-    const logoSize = 62 * scale;
-    const logoX = padding;
-    const logoY = 18 * scale;
-    ctx.fillStyle = '#05111D';
-    roundRect(ctx, logoX, logoY, logoSize, logoSize, 12 * scale);
-    ctx.fill();
-    ctx.strokeStyle = '#1E3A56';
-    ctx.lineWidth = 2 * scale;
-    ctx.stroke();
+    // Carregar Logo da CR Task
+    try {
+      const logoImg = new Image();
+      logoImg.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve) => {
+        logoImg.onload = () => resolve();
+        logoImg.onerror = () => resolve();
+        logoImg.src = '/logo.png';
+      });
 
-    if (logoImg) {
-      try {
-        ctx.save();
-        roundRect(ctx, logoX + (4 * scale), logoY + (4 * scale), logoSize - (8 * scale), logoSize - (8 * scale), 8 * scale);
-        ctx.clip();
-        ctx.drawImage(logoImg, logoX + (4 * scale), logoY + (4 * scale), logoSize - (8 * scale), logoSize - (8 * scale));
-        ctx.restore();
-      } catch (err) {
-        console.warn('Erro ao desenhar logo:', err);
+      if (logoImg.complete && logoImg.naturalWidth > 0) {
+        const logoBoxSize = 56 * scale;
+        const logoBoxX = padding;
+        const logoBoxY = 18 * scale;
+
+        ctx.fillStyle = '#051322';
+        roundRect(ctx, logoBoxX, logoBoxY, logoBoxSize, logoBoxSize, 8 * scale);
+        ctx.fill();
+        ctx.strokeStyle = '#1E3A56';
+        ctx.lineWidth = 1 * scale;
+        ctx.stroke();
+
+        ctx.drawImage(logoImg, logoBoxX + (6 * scale), logoBoxY + (6 * scale), logoBoxSize - (12 * scale), logoBoxSize - (12 * scale));
       }
+    } catch (e) {
+      console.warn('Não foi possível carregar a logo para o canvas:', e);
     }
 
-    // Título Principal ao lado da Logo
-    const titleX = logoX + logoSize + (16 * scale);
-    ctx.fillStyle = '#F59E0B';
-    ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
+    // Títulos Principais
+    const textStartX = padding + (72 * scale);
     ctx.textAlign = 'left';
-    ctx.fillText('CR TASK • CENTRAL OPERACIONAL', titleX, logoY + (16 * scale));
-
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = `bold ${22 * scale}px "Segoe UI", Inter, sans-serif`;
-    ctx.fillText('Relatório de Envio de Mensagens', titleX, logoY + (38 * scale));
+    ctx.font = `900 ${22 * scale}px "Segoe UI", Inter, sans-serif`;
+    ctx.fillText('CR TASK • CONTROLE DIÁRIO DE MENSAGENS', textStartX, 40 * scale);
 
     ctx.fillStyle = '#94A3B8';
-    ctx.font = `${11 * scale}px "Segoe UI", Inter, sans-serif`;
-    ctx.fillText('Controle e monitoramento de disparos para grupos e status', titleX, logoY + (55 * scale));
+    ctx.font = `600 ${12 * scale}px "Segoe UI", Inter, sans-serif`;
+    ctx.fillText('Checklist Operacional e Programação de Comunicados', textStartX, 60 * scale);
 
-    // Topo Direito: Badge Vibrante da Base e Data
-    const rightBoxW = 260 * scale;
-    const rightBoxH = 62 * scale;
+    // Caixa com Nome da Base e Data
+    const rightBoxW = 280 * scale;
+    const rightBoxH = 56 * scale;
     const rightBoxX = width - padding - rightBoxW;
     const rightBoxY = 18 * scale;
 
-    ctx.fillStyle = '#064E3B';
-    roundRect(ctx, rightBoxX, rightBoxY, rightBoxW, rightBoxH, 12 * scale);
+    ctx.fillStyle = '#051322';
+    roundRect(ctx, rightBoxX, rightBoxY, rightBoxW, rightBoxH, 8 * scale);
     ctx.fill();
-    ctx.strokeStyle = '#10B981';
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = '#00FFA3';
+    ctx.lineWidth = 1.5 * scale;
     ctx.stroke();
 
     ctx.textAlign = 'center';
@@ -827,7 +758,7 @@ export default function MensagensPage() {
     const dateFormatted = new Date(selectedDate + 'T12:00:00').toLocaleDateString('pt-BR');
     ctx.fillStyle = '#E2E8F0';
     ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
-    ctx.fillText(`📅 Data: ${dateFormatted}`, rightBoxX + (rightBoxW / 2), rightBoxY + (48 * scale));
+    ctx.fillText(`Data: ${dateFormatted}`, rightBoxX + (rightBoxW / 2), rightBoxY + (48 * scale));
 
     // Linha divisória suave no cabeçalho
     ctx.strokeStyle = '#1E3A56';
@@ -837,7 +768,7 @@ export default function MensagensPage() {
     ctx.lineTo(width - padding, 92 * scale);
     ctx.stroke();
 
-    // 2. Caixa do Supervisor em Destaque
+    // 2. Caixa do Supervisor em Destaque (Sem emotes)
     const supY = 104 * scale;
     const supH = 28 * scale;
     ctx.fillStyle = '#1B5288';
@@ -850,18 +781,18 @@ export default function MensagensPage() {
     ctx.fillStyle = '#FFFFFF';
     ctx.font = `bold ${13 * scale}px "Segoe UI", Inter, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(`👑 SUPERVISÃO: ${equipeData.supervisor.toUpperCase()}`, width / 2, supY + (19 * scale));
+    ctx.fillText(`SUPERVISÃO: ${equipeData.supervisor.toUpperCase()}`, width / 2, supY + (19 * scale));
 
-    // 3. Grid de Responsáveis, Analistas, Assistentes e Apoios (4 linhas x 2 colunas)
+    // 3. Grid de Responsáveis, Analistas, Assistentes e Apoios (Sem emotes)
     const colW = (width - (padding * 2) - (12 * scale)) / 2;
     const xCol1 = padding;
     const xCol2 = padding + colW + (12 * scale);
 
     const equipeRows = [
-      [`💼 Analistas: ${equipeData.analista}`, `📋 Assistente: ${equipeData.assistente}`],
-      [`🌅 Resp. Manhã: ${equipeData.resp_manha}`, `🤝 Apoio Manhã: ${equipeData.apoio_manha}`],
-      [`☀️ Intermédio: ${equipeData.resp_inter}`, `🤝 Apoio Intermédio: ${equipeData.apoio_inter}`],
-      [`🌇 Resp. Tarde: ${equipeData.resp_tarde}`, `🤝 Apoio Tarde: ${equipeData.apoio_tarde}`],
+      [`Analistas: ${equipeData.analista}`, `Assistente: ${equipeData.assistente}`],
+      [`Resp. Manhã: ${equipeData.resp_manha}`, `Apoio Manhã: ${equipeData.apoio_manha}`],
+      [`Intermédio: ${equipeData.resp_inter}`, `Apoio Intermédio: ${equipeData.apoio_inter}`],
+      [`Resp. Tarde: ${equipeData.resp_tarde}`, `Apoio Tarde: ${equipeData.apoio_tarde}`],
     ];
 
     let currY = 140 * scale;
@@ -998,32 +929,14 @@ export default function MensagensPage() {
         ctx.stroke();
       });
 
-      ctx.strokeStyle = '#E2E8F0';
-      ctx.lineWidth = 1 * scale;
-      ctx.beginPath();
-      ctx.moveTo(0, rowY + rowH);
-      ctx.lineTo(width, rowY + rowH);
-      ctx.stroke();
-
       rowY += rowH;
     });
-
-    // 6. Rodapé da Imagem
-    ctx.fillStyle = '#64748B';
-    ctx.font = `${11 * scale}px "Segoe UI", Inter, sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.fillText(
-      `✓ Documento Oficial CR Task Operacional • Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`,
-      padding,
-      rowY + (24 * scale)
-    );
 
     return canvas;
   };
 
+  // Helper para desenhar retângulos arredondados no Canvas
   function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-    if (w < 2 * r) r = w / 2;
-    if (h < 2 * r) r = h / 2;
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -1044,7 +957,7 @@ export default function MensagensPage() {
           return;
         }
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        setShareFeedbackMsg('📸 Relatório com logo CR copiado! Pressione Ctrl + V no WhatsApp.');
+        setShareFeedbackMsg('Relatório copiado com sucesso! Pressione Ctrl + V no WhatsApp.');
         setTimeout(() => setShareFeedbackMsg(''), 4500);
         setIsGeneratingImage(false);
       }, 'image/png');
@@ -1068,7 +981,7 @@ export default function MensagensPage() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setShareFeedbackMsg('📥 Imagem PNG baixada com sucesso!');
+      setShareFeedbackMsg('Imagem PNG baixada com sucesso.');
       setTimeout(() => setShareFeedbackMsg(''), 4000);
     } catch (err) {
       console.error('Erro ao baixar imagem:', err);
@@ -1129,7 +1042,7 @@ export default function MensagensPage() {
                     onClick={() => setSelectedBase(b)}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-600 text-white shadow-sm'
+                        ? 'bg-blue-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                     }`}
                   >
@@ -1209,7 +1122,7 @@ export default function MensagensPage() {
       {/* CONTEÚDO PRINCIPAL */}
       <div className="max-w-7xl mx-auto w-full p-6 space-y-6">
         
-        {/* CARD DA EQUIPE RESPONSÁVEL COM SUBMENUS POR CARGO */}
+        {/* CARD DA EQUIPE RESPONSÁVEL COM SELEÇÃO DIRECIONADA POR CARGO */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 mb-5 gap-3">
             <div className="flex items-center gap-2.5">
@@ -1221,7 +1134,7 @@ export default function MensagensPage() {
                   Equipe Responsável da Base • {selectedBase}
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Selecione os colaboradores nos submenus categorizados por cargo
+                  Selecione os colaboradores diretamente pelo cargo correspondente
                 </p>
               </div>
             </div>
@@ -1233,13 +1146,14 @@ export default function MensagensPage() {
             </div>
           </div>
 
-          {/* Grid de Seleção da Equipe com Submenus */}
+          {/* Grid de Seleção da Equipe com Cargo Específico */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             
             {/* 1. Supervisor */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-purple-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Supervisor da Base"
+                cargo="Supervisão"
                 value={equipeData.supervisor}
                 onChange={val => handleEquipeChange('supervisor', val)}
                 placeholder="Selecione o supervisor..."
@@ -1247,9 +1161,11 @@ export default function MensagensPage() {
             </div>
 
             {/* 2. Analistas */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-blue-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Analistas"
+                cargo="Analistas"
+                allowCombination
                 value={equipeData.analista}
                 onChange={val => handleEquipeChange('analista', val)}
                 placeholder="Selecione os analistas..."
@@ -1257,9 +1173,10 @@ export default function MensagensPage() {
             </div>
 
             {/* 3. Assistente */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-amber-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Assistente"
+                cargo="Assistentes"
                 value={equipeData.assistente}
                 onChange={val => handleEquipeChange('assistente', val)}
                 placeholder="Selecione o assistente..."
@@ -1267,9 +1184,10 @@ export default function MensagensPage() {
             </div>
 
             {/* 4. Resp. Manhã */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-blue-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Responsável: Manhã"
+                cargo="Auxiliares"
                 value={equipeData.resp_manha}
                 presets={['Manhã']}
                 onChange={val => handleEquipeChange('resp_manha', val)}
@@ -1278,9 +1196,10 @@ export default function MensagensPage() {
             </div>
 
             {/* 5. Intermédio */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-blue-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Responsável: Intermédio"
+                cargo="Auxiliares"
                 value={equipeData.resp_inter}
                 presets={['Intermédio']}
                 onChange={val => handleEquipeChange('resp_inter', val)}
@@ -1289,9 +1208,10 @@ export default function MensagensPage() {
             </div>
 
             {/* 6. Resp. Tarde */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-blue-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Responsável: Tarde"
+                cargo="Auxiliares"
                 value={equipeData.resp_tarde}
                 presets={['Tarde']}
                 onChange={val => handleEquipeChange('resp_tarde', val)}
@@ -1300,9 +1220,10 @@ export default function MensagensPage() {
             </div>
 
             {/* 7. Apoio Manhã */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-emerald-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Apoio: Manhã"
+                cargo="Auxiliares"
                 value={equipeData.apoio_manha}
                 presets={['Manhã']}
                 onChange={val => handleEquipeChange('apoio_manha', val)}
@@ -1311,9 +1232,10 @@ export default function MensagensPage() {
             </div>
 
             {/* 8. Apoio Intermédio */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-emerald-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Apoio: Intermédio"
+                cargo="Auxiliares"
                 value={equipeData.apoio_inter}
                 presets={['Intermédio']}
                 onChange={val => handleEquipeChange('apoio_inter', val)}
@@ -1322,9 +1244,10 @@ export default function MensagensPage() {
             </div>
 
             {/* 9. Apoio Tarde */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-emerald-300 transition-colors">
-              <CollaboratorSubmenuSelect
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+              <CargoCollaboratorSelect
                 label="Apoio: Tarde"
+                cargo="Auxiliares"
                 value={equipeData.apoio_tarde}
                 presets={['Tarde']}
                 onChange={val => handleEquipeChange('apoio_tarde', val)}
@@ -1382,7 +1305,7 @@ export default function MensagensPage() {
                   <th className="py-3.5 px-6 border-r border-[#1E3A56]">Mensagens</th>
                   <th className="py-3.5 px-4 text-center w-[90px] border-r border-[#1E3A56]">Horário</th>
                   <th className="py-3.5 px-4 text-center w-[70px] border-r border-[#1E3A56]">Check</th>
-                  <th className="py-3.5 px-6 text-center w-[250px] border-r border-[#1E3A56]">Horário Check / Envio</th>
+                  <th className="py-3.5 px-6 text-center w-[220px] border-r border-[#1E3A56]">Horário Check / Envio</th>
                   <th className="py-3.5 px-3 text-center w-[80px]">Ações</th>
                 </tr>
               </thead>
@@ -1418,44 +1341,50 @@ export default function MensagensPage() {
                         }`}
                       >
                         {/* Último Check */}
-                        <td className="py-3 px-4 text-center border-r border-slate-100 font-bold whitespace-nowrap">
+                        <td className="py-3 px-4 text-center font-bold border-r border-slate-100 whitespace-nowrap">
                           <span
-                            className={item.ultimo_check?.includes('(') ? 'text-red-600' : 'text-slate-800'}
+                            className={
+                              item.ultimo_check.includes('(')
+                                ? 'text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-md text-[11px]'
+                                : 'text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md'
+                            }
                           >
                             {item.ultimo_check}
                           </span>
                         </td>
 
                         {/* Tipo */}
-                        <td className="py-3 px-4 text-center border-r border-slate-100 font-bold whitespace-nowrap">
+                        <td className="py-3 px-4 text-center border-r border-slate-100 whitespace-nowrap">
                           <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
-                              item.tipo === 'STATUS'
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : item.tipo === 'GRUPO + STATUS'
-                                ? 'bg-purple-50 text-purple-800 border-purple-200'
-                                : 'bg-blue-50 text-blue-800 border-blue-200'
+                            className={`px-2 py-1 rounded-md font-bold text-[10px] tracking-wider uppercase border ${
+                              item.tipo.includes('STATUS')
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-teal-50 text-teal-700 border-teal-200'
                             }`}
                           >
                             {item.tipo}
                           </span>
                         </td>
 
-                        {/* Mensagem */}
-                        <td className="py-3 px-6 border-r border-slate-100 font-bold text-slate-900">
+                        {/* Mensagens */}
+                        <td className="py-3 px-6 font-bold text-slate-900 border-r border-slate-100">
                           {item.mensagem}
                         </td>
 
-                        {/* Horário Programado */}
-                        <td className="py-3 px-4 text-center border-r border-slate-100 font-semibold text-slate-600 whitespace-nowrap">
-                          {item.horario}
+                        {/* Horário */}
+                        <td className="py-3 px-4 text-center text-slate-600 font-semibold border-r border-slate-100 whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{item.horario}</span>
+                          </div>
                         </td>
 
                         {/* Checkbox Interativo */}
                         <td className="py-3 px-4 text-center border-r border-slate-100">
                           <button
+                            type="button"
                             onClick={() => handleToggleCheck(item.id)}
-                            className={`w-6 h-6 mx-auto rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
+                            className={`w-6 h-6 rounded-md border flex items-center justify-center mx-auto transition-all cursor-pointer ${
                               isChecked
                                 ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
                                 : 'bg-white border-slate-300 hover:border-blue-500'
@@ -1465,22 +1394,12 @@ export default function MensagensPage() {
                           </button>
                         </td>
 
-                        {/* Horário Check / Envio com Submenu de Colaborador */}
-                        <td className="py-2.5 px-4 text-center border-r border-slate-100">
+                        {/* Horário Check / Envio (Exibe horário e quem marcou) */}
+                        <td className="py-3 px-6 text-center border-r border-slate-100 whitespace-nowrap">
                           {isChecked ? (
-                            <div className="flex items-center justify-center gap-1.5">
-                              <span className="text-emerald-700 font-extrabold text-xs shrink-0">
-                                ✓ {state.horario_envio}
-                              </span>
-                              <div className="max-w-[145px]">
-                                <CollaboratorSubmenuSelect
-                                  compact
-                                  value={state.enviado_por || currentUserName}
-                                  onChange={newSender => handleUpdateSender(item.id, newSender)}
-                                  placeholder="Quem enviou..."
-                                />
-                              </div>
-                            </div>
+                            <span className="text-emerald-700 font-bold text-xs">
+                              ✓ {state.horario_envio} {state.enviado_por && `(${state.enviado_por})`}
+                            </span>
                           ) : item.obs ? (
                             <span className="text-red-500 font-semibold">{item.obs}</span>
                           ) : (
