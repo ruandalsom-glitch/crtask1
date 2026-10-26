@@ -4,12 +4,33 @@
     "Recreio",
     "Aldeota"
   ],
+  "cargos_colaboradores": {
+    "Supervisão": [
+      "Kelly Bezerra",
+      "Aris Junior"
+    ],
+    "Analistas": [
+      "Raquel Nunes",
+      "Fabiano de Jesus"
+    ],
+    "Assistentes": [
+      "Athalya Shatner"
+    ],
+    "Auxiliares": [
+      "Fabiola Pereira",
+      "Matheus Santos",
+      "Carolyni Carvalho",
+      "Gabriel Santos",
+      "Arieli Cruz",
+      "Waldinei Macario"
+    ]
+  },
   "equipe_padrao": {
-    "supervisores": ["Kelly Bezerra", "Ruan Dalson", "Fabiano Jesus", "Outro"],
-    "analistas": ["Raquel Nunes", "Wallisson Sousa", "Gabriel Santos", "Davis", "Outro"],
-    "assistentes": ["Davis", "Francisco", "Matias", "Outro"],
-    "responsaveis": ["Manhã", "Wallisson", "Gabriel Santos", "Davis", "Raquel Nunes", "Outro"],
-    "apoios": ["Manhã", "Intermédio", "Tarde", "Davis", "Wallisson", "Outro"]
+    "supervisores": ["Kelly Bezerra", "Aris Junior", "Outro"],
+    "analistas": ["Raquel Nunes", "Fabiano de Jesus", "Outro"],
+    "assistentes": ["Athalya Shatner", "Outro"],
+    "responsaveis": ["Manhã", "Kelly Bezerra", "Aris Junior", "Raquel Nunes", "Fabiano de Jesus", "Athalya Shatner", "Fabiola Pereira", "Matheus Santos", "Carolyni Carvalho", "Gabriel Santos", "Arieli Cruz", "Waldinei Macario", "Outro"],
+    "apoios": ["Manhã", "Intermédio", "Tarde", "Kelly Bezerra", "Aris Junior", "Raquel Nunes", "Fabiano de Jesus", "Athalya Shatner", "Fabiola Pereira", "Matheus Santos", "Carolyni Carvalho", "Gabriel Santos", "Arieli Cruz", "Waldinei Macario", "Outro"]
   },
   "mensagens_por_base": {
     "Sumarezinho": [
