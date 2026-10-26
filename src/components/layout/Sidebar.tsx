@@ -111,6 +111,15 @@ export function Sidebar() {
   const activeWorkspaceName = workspaces?.find(w => w.id === activeWorkspaceId)?.name || workspaces?.[0]?.name || 'Carregando...';
   const hasMultipleWorkspaces = Boolean(workspaces && workspaces.length > 1);
 
+  // Visibilidade restrita: apenas colaboradores atrelados ao setor Operacional (ou admin)
+  const isAtreladoOperacional = Boolean(
+    userRole === 'admin' ||
+    workspaces?.some((w: any) => {
+      const norm = (w.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return norm.includes('operac'); // Setor de Operações, Operacional, etc.
+    })
+  );
+
   return (
     <div className={`relative bg-[#f7f8f9] border-slate-200 flex flex-col z-40 hidden md:flex shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-4 border-r-0 hover:bg-slate-200 cursor-pointer' : 'w-[260px] border-r'}`}
          onClick={() => isCollapsed && setIsCollapsed(false)}>
@@ -184,13 +193,15 @@ export function Sidebar() {
             <span className="text-[14px]">Minhas Tarefas</span>
           </Link>
 
-          <Link 
-            href="/mensagens"
-            className={`flex items-center gap-2 p-2 rounded-md cursor-pointer mb-2 transition-colors w-full ${pathname === '/mensagens' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-700 hover:bg-slate-100'}`}
-          >
-            <MessageSquare className="w-5 h-5 shrink-0 text-emerald-600" />
-            <span className="text-[14px]">Envio de Mensagens</span>
-          </Link>
+          {isAtreladoOperacional && (
+            <Link 
+              href="/mensagens"
+              className={`flex items-center gap-2 p-2 rounded-md cursor-pointer mb-2 transition-colors w-full ${pathname === '/mensagens' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-700 hover:bg-slate-100'}`}
+            >
+              <MessageSquare className="w-5 h-5 shrink-0 text-emerald-600" />
+              <span className="text-[14px]">Envio de Mensagens</span>
+            </Link>
+          )}
 
           {(userRole === 'admin' || userRole === 'leader') && (
             <Link 

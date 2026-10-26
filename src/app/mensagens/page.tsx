@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { 
@@ -314,9 +315,39 @@ export default function MensagensPage() {
   const [formObs, setFormObs] = useState('');
 
   // Usuário Logado
-  const { data: currentUser } = useQuery({
+  const { data: currentUser, isLoading: isLoadingUser } = useQuery({
     queryKey: ['current_user'],
     queryFn: () => getFastUser(),
+    staleTime: 5 * 60 * 1000
+  });
+
+  // Verificação de permissão: apenas colaboradores atrelados ao setor Operacional (ou admin)
+  const { data: isAtreladoOperacional, isLoading: isLoadingAccess } = useQuery({
+    queryKey: ['user_operacional_access', currentUser?.id],
+    queryFn: async () => {
+      if (!currentUser?.id) return false;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+
+      if (profile?.role === 'admin') return true;
+
+      const { data: memberWorkspaces } = await supabase
+        .from('workspace_members')
+        .select('workspaces(name)')
+        .eq('user_id', currentUser.id);
+
+      const hasOperac = memberWorkspaces?.some((item: any) => {
+        const name = item.workspaces?.name || '';
+        const norm = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return norm.includes('operac');
+      });
+
+      return Boolean(hasOperac);
+    },
+    enabled: !!currentUser?.id,
     staleTime: 5 * 60 * 1000
   });
 
@@ -994,6 +1025,29 @@ export default function MensagensPage() {
   const totalMsgs = mensagensList.length;
   const checkedCount = Object.values(checksMap).filter(v => v.checked).length;
   const progressPct = totalMsgs > 0 ? Math.round((checkedCount / totalMsgs) * 100) : 0;
+
+  // Bloqueio de acesso para quem não é do setor Operacional (e não é admin)
+  if (!isLoadingUser && !isLoadingAccess && isAtreladoOperacional === false) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-[#f8fafc] min-h-[70vh]">
+        <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mb-4 border border-red-200 shadow-xs">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">
+          Acesso Restrito ao Setor Operacional
+        </h2>
+        <p className="text-sm text-slate-500 max-w-md mb-6">
+          Este módulo e seus comunicados estão disponíveis apenas para colaboradores vinculados ao setor Operacional.
+        </p>
+        <Link
+          href="/"
+          className="px-5 py-2.5 bg-[#0B2238] hover:bg-slate-800 text-white font-semibold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+        >
+          Voltar ao Início
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-y-auto">
