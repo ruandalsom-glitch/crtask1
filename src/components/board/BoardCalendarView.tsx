@@ -214,6 +214,8 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
   const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+  const [filterPersonEmail, setFilterPersonEmail] = useState<string | null>(null);
+  const [filterPersonDropdownOpen, setFilterPersonDropdownOpen] = useState(false);
 
   // Estados da Integração Google Agenda
   const [googleCalendarUrl, setGoogleCalendarUrl] = useState<string>('');
@@ -688,6 +690,18 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
       if (task.is_routine) return false;
       if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (filterStatus && task.status !== filterStatus) return false;
+      if (filterPersonEmail && task.assignee_email !== filterPersonEmail) return false;
+
+      // Escala / Lembrete de SLA - ATENDIMENTO:
+      // Não exibe no calendário geral! Exibe APENAS para o colaborador específico designado (ou quando filtrado por ele)
+      const isSlaTask = task.priority === 'SLA' || task.task_type === 'SLA' || task.title?.toUpperCase().includes('SLA');
+      if (isSlaTask) {
+        if (filterPersonEmail) {
+          return task.assignee_email === filterPersonEmail;
+        }
+        return Boolean(userProfile?.email && task.assignee_email === userProfile.email);
+      }
+
       return true;
     }) || []),
     ...filteredGoogleEvents
@@ -988,9 +1002,57 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
             className="w-full h-full outline-none px-2 text-sm text-slate-700" 
           />
         </div>
-        <button className="h-8 px-3 hover:bg-slate-100 rounded flex items-center gap-2 text-slate-600 text-sm transition-colors">
-          <User className="w-4 h-4" /> Pessoa
-        </button>
+        <div className="relative">
+          <button 
+            onClick={() => setFilterPersonDropdownOpen(!filterPersonDropdownOpen)} 
+            className={`h-8 px-3 rounded flex items-center gap-2 text-sm transition-colors cursor-pointer ${
+              filterPersonEmail 
+                ? 'bg-indigo-100 text-indigo-700 font-medium' 
+                : 'hover:bg-slate-100 text-slate-600'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span className="max-w-[120px] truncate">
+              {filterPersonEmail 
+                ? filterPersonEmail.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ')
+                : 'Pessoa'}
+            </span>
+          </button>
+          {filterPersonDropdownOpen && (
+            <div className="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-[60] max-h-60 overflow-y-auto">
+              <button 
+                onClick={() => { setFilterPersonEmail(null); setFilterPersonDropdownOpen(false); }} 
+                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm text-slate-700 font-medium cursor-pointer"
+              >
+                Todos (Geral)
+              </button>
+              {userProfile?.email && (
+                <button 
+                  onClick={() => { setFilterPersonEmail(userProfile?.email || null); setFilterPersonDropdownOpen(false); }} 
+                  className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-sm text-indigo-700 font-semibold flex items-center justify-between border-b border-slate-100 cursor-pointer"
+                >
+                  <span>Minhas Tarefas / SLA</span>
+                  <span className="text-[10px] bg-indigo-100 px-1.5 py-0.5 rounded text-indigo-800">Eu</span>
+                </button>
+              )}
+              {((workspaceUsers && workspaceUsers.length > 0 ? workspaceUsers : allProfiles) || []).map((u: any) => {
+                const name = u.email.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+                return (
+                  <button 
+                    key={u.email} 
+                    onClick={() => { setFilterPersonEmail(u.email); setFilterPersonDropdownOpen(false); }} 
+                    className="w-full text-left px-4 py-2 hover:bg-slate-50 text-xs text-slate-700 font-medium truncate cursor-pointer flex items-center gap-2"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0">
+                      {name.charAt(0)}
+                    </div>
+                    <span className="truncate">{name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div className="relative">
           <button onClick={() => setFilterDropdownOpen(!filterDropdownOpen)} className={`h-8 px-3 rounded flex items-center gap-2 text-sm transition-colors ${filterStatus ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-slate-100 text-slate-600'}`}>
             <Filter className="w-4 h-4" /> {filterStatus || 'Filtro'}
