@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
-import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle, Headset } from 'lucide-react';
 
 import { DndContext, DragEndEvent, DragStartEvent, useDraggable, useDroppable, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { StatusCell } from './StatusCell';
@@ -22,7 +22,7 @@ const STATUS_COLORS: any = {
 const PRIORITIES = ['Alta', 'Média', 'Baixa', 'Vazio'];
 const STATUSES = ['Feito', 'Trabalhando', 'Travado', 'Pendente', 'Não iniciado'];
 
-function TaskChip({ task, onClick, isOverlay = false }: any) {
+function TaskChip({ task, onClick, isOverlay = false, currentUserEmail }: any) {
   if (task.isGoogleCalendar) {
     return (
       <div 
@@ -43,6 +43,9 @@ function TaskChip({ task, onClick, isOverlay = false }: any) {
     id: task.id,
     data: { task }
   });
+
+  const isSla = task.priority === 'SLA' || task.task_type === 'SLA' || task.title?.toUpperCase().includes('SLA');
+  const isMySla = isSla && currentUserEmail && task.assignee_email === currentUserEmail;
   const isLembrete = task.task_type === 'Lembrete';
   const bgColor = isLembrete ? 'bg-amber-400 text-amber-950' : (STATUS_COLORS[task.status] || STATUS_COLORS['Pendente']);
   
@@ -53,6 +56,39 @@ function TaskChip({ task, onClick, isOverlay = false }: any) {
         className="opacity-0 text-[11px] px-2 py-1"
       >
         {task.title}
+      </div>
+    );
+  }
+
+  // Visual Especial para Lembretes / Escalas de SLA - ATENDIMENTO (Ícone de Call Center / Headset)
+  if (isSla) {
+    const assigneeShort = task.assignee_email 
+      ? task.assignee_email.split('@')[0].split('.')[0].toUpperCase()
+      : null;
+
+    return (
+      <div 
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+        className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 cursor-grab active:cursor-grabbing truncate rounded-lg font-semibold shadow-2xs transition-all ${
+          isMySla 
+            ? 'bg-indigo-100/90 text-indigo-950 border border-indigo-400 ring-2 ring-indigo-400/40' 
+            : 'bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-900 border border-indigo-200 hover:border-indigo-300'
+        } ${isOverlay ? 'shadow-xl scale-105 rotate-1 opacity-90 cursor-grabbing !transition-none' : ''}`}
+        title={`Plantão SLA - Atendimento: ${task.title}${task.assignee_email ? ` (${task.assignee_email})` : ''}${task.due_time ? ` - ${task.due_time}` : ''}`}
+      >
+        <Headset className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+        {task.due_time && (
+          <span className="font-bold text-indigo-700 shrink-0 bg-indigo-200/60 px-1 rounded text-[10px]">{task.due_time}</span>
+        )}
+        <span className="truncate">{task.title}</span>
+        {assigneeShort && (
+          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-200/80 text-indigo-800 shrink-0 uppercase tracking-tight">
+            {assigneeShort}
+          </span>
+        )}
       </div>
     );
   }
@@ -94,7 +130,7 @@ function TaskChip({ task, onClick, isOverlay = false }: any) {
   );
 }
 
-function DayCell({ dayObj, tasks, isToday, onTaskClick, onAddClick }: any) {
+function DayCell({ dayObj, tasks, isToday, onTaskClick, onAddClick, currentUserEmail }: any) {
   const dateString = dayObj.date.toISOString().split('T')[0];
   const { setNodeRef, isOver } = useDroppable({
     id: dateString,
@@ -112,11 +148,14 @@ function DayCell({ dayObj, tasks, isToday, onTaskClick, onAddClick }: any) {
       </div>
       
       <div className="flex-1 overflow-y-auto no-scrollbar flex flex-wrap gap-1 content-start relative z-10 pb-6 px-1">
-        {tasks.map((task: any) => (
-          <div key={task.id} className={task.task_type === 'Lembrete' ? 'w-auto' : 'w-full'}>
-            <TaskChip task={task} onClick={() => onTaskClick(task)} />
-          </div>
-        ))}
+        {tasks.map((task: any) => {
+          const isSla = task.priority === 'SLA' || task.task_type === 'SLA' || task.title?.toUpperCase().includes('SLA');
+          return (
+            <div key={task.id} className={task.task_type === 'Lembrete' && !isSla ? 'w-auto' : 'w-full'}>
+              <TaskChip task={task} onClick={() => onTaskClick(task)} currentUserEmail={currentUserEmail} />
+            </div>
+          );
+        })}
       </div>
 
       <div className="absolute bottom-1 left-1 right-1 opacity-0 group-hover:opacity-100 z-20">
@@ -309,8 +348,139 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     staleTime: 5 * 60 * 1000
   });
 
+  const { data: workspaceInfo } = useQuery({
+    queryKey: ['workspace_info_for_board', boardInfo?.workspace_id],
+    queryFn: async () => {
+      if (!boardInfo?.workspace_id) return null;
+      const { data } = await supabase.from('workspaces').select('id, name').eq('id', boardInfo.workspace_id).single();
+      return data;
+    },
+    enabled: !!boardInfo?.workspace_id,
+    staleTime: 10 * 60 * 1000
+  });
+
   const currentUserProfile = (allProfiles || workspaceUsers)?.find((u: any) => u.email === userProfile?.email);
   const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
+
+  // Identifica se o quadro atual pertence ao Setor de Análise
+  const isAnaliseSector = useMemo(() => {
+    const bName = (boardInfo?.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const wName = (workspaceInfo?.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const hasSlaTasks = rawTasks?.some((t: any) => t.priority === 'SLA' || t.title?.toUpperCase().includes('SLA'));
+    return bName.includes('analis') || wName.includes('analis') || Boolean(hasSlaTasks);
+  }, [boardInfo?.name, workspaceInfo?.name, rawTasks]);
+
+  // Estados da Escala / Lembrete de SLA - ATENDIMENTO (Setor de Análise)
+  const [isSlaModalOpen, setIsSlaModalOpen] = useState(false);
+  const [slaCollaboratorEmail, setSlaCollaboratorEmail] = useState('');
+  const [slaTitle, setSlaTitle] = useState('SLA - ATENDIMENTO');
+  const [slaSelectedDates, setSlaSelectedDates] = useState<string[]>([]);
+  const [slaRangeStart, setSlaRangeStart] = useState('');
+  const [slaRangeEnd, setSlaRangeEnd] = useState('');
+  const [slaSelectionMode, setSlaSelectionMode] = useState<'individual' | 'range'>('individual');
+  const [slaTime, setSlaTime] = useState('08:00 - 17:00');
+  const [slaNotes, setSlaNotes] = useState('');
+  const [slaNotifyCollaborator, setSlaNotifyCollaborator] = useState(true);
+  const [isSubmittingSla, setIsSubmittingSla] = useState(false);
+  const [slaFeedbackMsg, setSlaFeedbackMsg] = useState<string | null>(null);
+
+  // Função para salvar a escala de SLA no banco (tasks + notifications)
+  const handleSaveSlaAssignment = async () => {
+    if (!isLeaderOrAdmin) {
+      alert("Apenas o Líder de Setor e Administradores podem escalar colaboradores para o SLA.");
+      return;
+    }
+    if (!slaCollaboratorEmail) {
+      alert("Selecione o colaborador para a escala de SLA.");
+      return;
+    }
+
+    const effectiveDates: string[] = [];
+    if (slaSelectionMode === 'range') {
+      if (!slaRangeStart || !slaRangeEnd) {
+        alert("Preencha as datas inicial e final do período.");
+        return;
+      }
+      const cur = new Date(`${slaRangeStart}T00:00:00`);
+      const end = new Date(`${slaRangeEnd}T00:00:00`);
+      if (cur > end) {
+        alert("A data inicial deve ser anterior ou igual à data final.");
+        return;
+      }
+      while (cur <= end) {
+        effectiveDates.push(cur.toISOString().split('T')[0]);
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else {
+      effectiveDates.push(...slaSelectedDates);
+    }
+
+    if (effectiveDates.length === 0) {
+      alert("Selecione ao menos um dia para a escala de SLA.");
+      return;
+    }
+
+    setIsSubmittingSla(true);
+    try {
+      const authorEmail = userProfile?.email || 'lider@crtransportes.com.br';
+      const collaboratorName = slaCollaboratorEmail.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+
+      const inserts = effectiveDates.map((d: string, index: number) => ({
+        board_id: boardId,
+        title: slaTitle.trim() || 'SLA - ATENDIMENTO',
+        group_name: 'SLA Atendimento',
+        status: 'Pendente',
+        due_date: d,
+        due_time: slaTime.trim() || null,
+        start_date: d,
+        task_type: 'Lembrete',
+        priority: 'SLA',
+        assignee_email: slaCollaboratorEmail,
+        position: (rawTasks?.length || 0) + 1 + index
+      }));
+
+      const { data: createdTasks, error: taskError } = await supabase
+        .from('tasks')
+        .insert(inserts)
+        .select();
+
+      if (taskError) throw taskError;
+
+      if (createdTasks && slaNotes.trim()) {
+        const updateInserts = createdTasks.map((t: any) => ({
+          task_id: t.id,
+          content: `📋 Instruções do SLA: ${slaNotes.trim()}`,
+          author_email: authorEmail
+        }));
+        await supabase.from('task_updates').insert(updateInserts);
+      }
+
+      if (slaNotifyCollaborator) {
+        const datesSummary = effectiveDates.length === 1 
+          ? new Date(effectiveDates[0] + 'T12:00:00').toLocaleDateString('pt-BR')
+          : `${effectiveDates.length} dias (${new Date(effectiveDates[0] + 'T12:00:00').toLocaleDateString('pt-BR')} a ${new Date(effectiveDates[effectiveDates.length - 1] + 'T12:00:00').toLocaleDateString('pt-BR')})`;
+
+        await supabase.from('notifications').insert([{
+          user_email: slaCollaboratorEmail,
+          message: `${authorEmail}||🎧 Você foi escalado para o SLA - ATENDIMENTO (${slaTitle}) em ${datesSummary}! Horário: ${slaTime || 'Integral'}.`,
+          read: false
+        }]);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+      setIsSlaModalOpen(false);
+      setSlaSelectedDates([]);
+      setSlaRangeStart('');
+      setSlaRangeEnd('');
+      setSlaNotes('');
+      setSlaFeedbackMsg(`Escala de SLA criada com sucesso para ${collaboratorName} (${effectiveDates.length} dias)!`);
+      setTimeout(() => setSlaFeedbackMsg(null), 4500);
+    } catch (err: any) {
+      alert("Erro ao salvar escala de SLA: " + err.message);
+    } finally {
+      setIsSubmittingSla(false);
+    }
+  };
 
   const canEditBoard = !isReadOnly;
 
@@ -375,6 +545,48 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
              author_email: 'Sistema / Nota Inicial'
            }));
            await supabase.from('task_updates').insert(updateInserts);
+        }
+        return taskData;
+      }
+
+      if (dataToSave.task_type === 'SLA') {
+        const targetDates = (dataToSave.selected_dates && dataToSave.selected_dates.length > 0)
+          ? dataToSave.selected_dates
+          : (dateStr ? [dateStr] : []);
+
+        const inserts = targetDates.map((d: string, index: number) => ({
+          board_id: boardId,
+          title: dataToSave.title || 'SLA - ATENDIMENTO',
+          group_name: 'SLA Atendimento',
+          status: 'Pendente',
+          due_date: d,
+          due_time: dataToSave.due_time || '08:00 - 17:00',
+          start_date: d,
+          task_type: 'Lembrete',
+          priority: 'SLA',
+          assignee_email: dataToSave.assignee_email || null,
+          position: (rawTasks?.length || 0) + 1 + index
+        }));
+
+        const { data: taskData, error: taskError } = await supabase.from('tasks').insert(inserts).select();
+        if (taskError) throw taskError;
+
+        if (taskData && dataToSave.notes?.trim()) {
+          const updateInserts = taskData.map((t: any) => ({
+            task_id: t.id,
+            content: `📋 Instruções do SLA: ${dataToSave.notes.trim()}`,
+            author_email: userProfile?.email || 'Sistema'
+          }));
+          await supabase.from('task_updates').insert(updateInserts);
+        }
+
+        if (dataToSave.assignee_email) {
+          const authorEmail = userProfile?.email || 'lider@crtransportes.com.br';
+          await supabase.from('notifications').insert([{
+            user_email: dataToSave.assignee_email,
+            message: `${authorEmail}||🎧 Você foi escalado para o SLA - ATENDIMENTO (${dataToSave.title || 'SLA'}) em ${targetDates.join(', ')}! Horário: ${dataToSave.due_time || '08:00 - 17:00'}.`,
+            read: false
+          }]);
         }
         return taskData;
       }
@@ -792,6 +1004,17 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           )}
         </button>
 
+        {isAnaliseSector && isLeaderOrAdmin && (
+          <button 
+            onClick={() => setIsSlaModalOpen(true)} 
+            className="h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 shadow-xs"
+            title="Escalar colaborador para SLA - Atendimento"
+          >
+            <Headset className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Escalar SLA Atendimento</span>
+          </button>
+        )}
+
         <div className="flex-1"></div>
 
         <button onClick={goToToday} className="h-8 px-3 border border-slate-200 hover:bg-slate-50 rounded text-slate-700 text-sm font-medium transition-colors">
@@ -862,6 +1085,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                   tasks={tasksOnThisDay}
                   isToday={isToday(dayObj.date)}
                   onTaskClick={setTaskDetailsOpen}
+                  currentUserEmail={userProfile?.email}
                   onAddClick={() => {
                     if (canEditBoard) setCreatingTaskDate(dayObj.date);
                     else alert('Você não tem permissão para criar tarefas/lembretes neste quadro.');
@@ -873,7 +1097,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
         </div>
 
         <DragOverlay dropAnimation={null}>
-          {activeDragTask ? <TaskChip task={activeDragTask} isOverlay={true} /> : null}
+          {activeDragTask ? <TaskChip task={activeDragTask} isOverlay={true} currentUserEmail={userProfile?.email} /> : null}
         </DragOverlay>
       </DndContext>
 
@@ -1316,22 +1540,45 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                   <div className="w-6 h-6 rounded bg-indigo-500 flex items-center justify-center"><Bell className="w-4 h-4 text-white" /></div>
                   <span className="font-medium text-[15px]">Tipo de Registro</span>
                 </div>
-                <div className="flex-1 flex gap-4">
-                  <label className={`flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-colors ${newTaskData.task_type === 'Tarefa' ? 'bg-blue-50 border-blue-200 text-blue-700 font-bold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                <div className="flex-1 flex gap-3 flex-wrap">
+                  <label className={`flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-colors text-sm ${newTaskData.task_type === 'Tarefa' ? 'bg-blue-50 border-blue-200 text-blue-700 font-bold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
                     <input type="radio" name="task_type" value="Tarefa" checked={newTaskData.task_type === 'Tarefa'} onChange={(e) => setNewTaskData({...newTaskData, task_type: e.target.value})} className="hidden" />
                     Tarefa
                   </label>
-                  <label className={`flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-colors ${newTaskData.task_type === 'Lembrete' ? 'bg-amber-50 border-amber-200 text-amber-700 font-bold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                  <label className={`flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-colors text-sm ${newTaskData.task_type === 'Lembrete' ? 'bg-amber-50 border-amber-200 text-amber-700 font-bold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
                     <input type="radio" name="task_type" value="Lembrete" checked={newTaskData.task_type === 'Lembrete'} onChange={(e) => setNewTaskData({...newTaskData, task_type: e.target.value})} className="hidden" />
                     <Bell className="w-4 h-4" /> Lembrete
                   </label>
+                  {isAnaliseSector && isLeaderOrAdmin && (
+                    <label className={`flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-colors text-sm ${newTaskData.task_type === 'SLA' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                      <input 
+                        type="radio" 
+                        name="task_type" 
+                        value="SLA" 
+                        checked={newTaskData.task_type === 'SLA'} 
+                        onChange={(e) => {
+                          const initialDate = creatingTaskDate ? [creatingTaskDate.toISOString().split('T')[0]] : [];
+                          setNewTaskData({
+                            ...newTaskData, 
+                            task_type: 'SLA',
+                            title: 'SLA - ATENDIMENTO',
+                            priority: 'SLA',
+                            due_time: '08:00 - 17:00',
+                            selected_dates: newTaskData.selected_dates?.length ? newTaskData.selected_dates : initialDate
+                          });
+                        }} 
+                        className="hidden" 
+                      />
+                      <Headset className="w-4 h-4 text-indigo-600" /> SLA - Atendimento
+                    </label>
+                  )}
                 </div>
               </div>
 
               <div className="flex items-center">
                 <div className="w-40 flex items-center gap-3 text-slate-600">
                   <div className="w-6 h-6 rounded bg-slate-400 flex items-center justify-center"><Type className="w-3 h-3 text-white" /></div>
-                  <span className="font-medium text-[15px]">{newTaskData.task_type === 'Lembrete' ? 'Nome do Lembrete' : 'Nome da Tarefa'}</span>
+                  <span className="font-medium text-[15px]">{newTaskData.task_type === 'Lembrete' ? 'Nome do Lembrete' : (newTaskData.task_type === 'SLA' ? 'Título do SLA' : 'Nome da Tarefa')}</span>
                 </div>
                 <div className="flex-1">
                   <input 
@@ -1340,12 +1587,36 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                     value={newTaskData.title}
                     onChange={(e) => setNewTaskData({...newTaskData, title: e.target.value})}
                     className="bg-white border border-slate-200 hover:border-slate-300 rounded-md px-4 py-2.5 w-full outline-none text-[15px] text-slate-800 font-medium focus:ring-1 focus:ring-blue-500 shadow-sm"
-                    placeholder={newTaskData.task_type === 'Lembrete' ? 'Nome do Lembrete...' : 'Nome da Tarefa...'}
+                    placeholder={newTaskData.task_type === 'Lembrete' ? 'Nome do Lembrete...' : (newTaskData.task_type === 'SLA' ? 'Ex: SLA - ATENDIMENTO' : 'Nome da Tarefa...')}
                   />
                 </div>
               </div>
+
+              {newTaskData.task_type === 'SLA' && (
+                <div className="flex items-center">
+                  <div className="w-40 flex items-center gap-3 text-slate-600">
+                    <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center"><Headset className="w-4 h-4 text-white" /></div>
+                    <span className="font-medium text-[15px]">Colaborador *</span>
+                  </div>
+                  <div className="flex-1">
+                    <select 
+                      value={newTaskData.assignee_email || ''}
+                      onChange={(e) => setNewTaskData({...newTaskData, assignee_email: e.target.value})}
+                      className="bg-white border border-slate-200 hover:border-slate-300 rounded-md px-4 py-2.5 w-full outline-none text-[15px] font-medium text-slate-800 shadow-sm"
+                    >
+                      <option value="">- Selecione o Colaborador do SLA -</option>
+                      {((workspaceUsers && workspaceUsers.length > 0 ? workspaceUsers : allProfiles) || []).map((u: any) => {
+                        const cleanName = u.email.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+                        return (
+                          <option key={u.email} value={u.email}>{cleanName} ({u.email})</option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+              )}
               
-              {newTaskData.task_type !== 'Lembrete' && (
+              {newTaskData.task_type !== 'Lembrete' && newTaskData.task_type !== 'SLA' && (
                 <>
                   <div className="flex items-center">
                     <div className="w-40 flex items-center gap-3 text-slate-600">
@@ -1405,7 +1676,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                 </>
               )}
 
-              {newTaskData.task_type === 'Lembrete' && (
+              {(newTaskData.task_type === 'Lembrete' || newTaskData.task_type === 'SLA') && (
                 <>
                   <div className="flex items-start">
                     <div className="w-40 flex items-center gap-3 text-slate-600 mt-2">
@@ -1429,12 +1700,12 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                       
                       <div className="flex flex-wrap gap-2">
                         {(newTaskData.selected_dates || []).map((dateStr: string) => (
-                          <div key={dateStr} className="flex items-center gap-1.5 bg-amber-100 text-amber-800 px-3 py-1.5 rounded-md text-sm font-medium border border-amber-200">
+                          <div key={dateStr} className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 px-3 py-1.5 rounded-md text-sm font-medium border border-indigo-200">
                             <span>{new Date(dateStr + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
                             <button 
                               type="button"
                               onClick={() => setNewTaskData({...newTaskData, selected_dates: newTaskData.selected_dates.filter((d: string) => d !== dateStr)})}
-                              className="hover:bg-amber-200 text-amber-600 rounded-full p-0.5 transition-colors"
+                              className="hover:bg-indigo-100 text-indigo-600 rounded-full p-0.5 transition-colors"
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -1451,37 +1722,40 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                     </div>
                     <div className="flex-1 flex items-center gap-2">
                       <input 
-                        type="time"
+                        type={newTaskData.task_type === 'SLA' ? 'text' : 'time'}
                         value={newTaskData.due_time || ''}
                         onChange={(e) => setNewTaskData({...newTaskData, due_time: e.target.value})}
+                        placeholder={newTaskData.task_type === 'SLA' ? 'Ex: 08:00 - 17:00' : ''}
                         className="bg-white border border-slate-200 hover:border-slate-300 text-slate-800 rounded-md px-4 py-2 outline-none text-[15px] font-medium focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
                       />
-                      <span className="text-slate-400 text-sm italic">Opcional: notificação no horário</span>
+                      <span className="text-slate-400 text-sm italic">{newTaskData.task_type === 'SLA' ? 'Horário do plantão SLA' : 'Opcional: notificação no horário'}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center mt-2">
-                    <div className="w-40 flex items-center gap-3 text-slate-600">
-                      <div className="w-6 h-6 rounded bg-[#ffcc00] flex items-center justify-center"><Bell className="w-4 h-4 text-amber-900" /></div>
-                      <span className="font-medium text-[15px]">Ícone</span>
+                  {newTaskData.task_type === 'Lembrete' && (
+                    <div className="flex items-center mt-2">
+                      <div className="w-40 flex items-center gap-3 text-slate-600">
+                        <div className="w-6 h-6 rounded bg-[#ffcc00] flex items-center justify-center"><Bell className="w-4 h-4 text-amber-900" /></div>
+                        <span className="font-medium text-[15px]">Ícone</span>
+                      </div>
+                      <div className="flex-1 flex gap-2">
+                        {['🔴', '🔵', '🟢', '🟡', '🟣', '⭐', '🔥', '🎉', '🔔', '✅'].map(emoji => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => setNewTaskData({...newTaskData, priority: emoji})}
+                            className={`w-9 h-9 flex items-center justify-center rounded-full text-xl transition-all hover:scale-110 hover:-translate-y-1 ${newTaskData.priority === emoji || (!newTaskData.priority && emoji === '🔴') ? 'bg-amber-100 ring-2 ring-amber-400 scale-110' : 'bg-slate-50 hover:bg-slate-100'}`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex-1 flex gap-2">
-                      {['🔴', '🔵', '🟢', '🟡', '🟣', '⭐', '🔥', '🎉', '🔔', '✅'].map(emoji => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => setNewTaskData({...newTaskData, priority: emoji})}
-                          className={`w-9 h-9 flex items-center justify-center rounded-full text-xl transition-all hover:scale-110 hover:-translate-y-1 ${newTaskData.priority === emoji || (!newTaskData.priority && emoji === '🔴') ? 'bg-amber-100 ring-2 ring-amber-400 scale-110' : 'bg-slate-50 hover:bg-slate-100'}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  )}
                 </>
               )}
 
-              {newTaskData.task_type !== 'Lembrete' && (
+              {newTaskData.task_type !== 'Lembrete' && newTaskData.task_type !== 'SLA' && (
                 <div className="flex items-center">
                   <div className="w-40 flex items-center gap-3 text-slate-600">
                     <div className="w-6 h-6 rounded bg-[#a25ddc] flex items-center justify-center"><CalendarIcon className="w-4 h-4 text-white" /></div>
@@ -1498,7 +1772,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                 </div>
               )}
 
-              {newTaskData.task_type !== 'Lembrete' && (
+              {newTaskData.task_type !== 'Lembrete' && newTaskData.task_type !== 'SLA' && (
                 <div className="flex items-center">
                   <div className="w-40 flex items-center gap-3 text-slate-600">
                     <div className="w-6 h-6 rounded bg-[#00c875] flex items-center justify-center"><AlignLeft className="w-4 h-4 text-white rotate-90" /></div>
@@ -1550,7 +1824,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                 }} 
                 className="px-6 py-2.5 rounded font-medium bg-[#0073ea] hover:bg-blue-600 text-white disabled:opacity-50 transition-colors text-[15px] shadow-sm"
               >
-                {createTask.isPending ? 'Criando...' : 'Criar Tarefa'}
+                {createTask.isPending ? 'Criando...' : (newTaskData.task_type === 'SLA' ? 'Criar Plantão SLA' : (newTaskData.task_type === 'Lembrete' ? 'Criar Lembrete' : 'Criar Tarefa'))}
               </button>
             </div>
           </div>
@@ -1760,6 +2034,242 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           </div>
         );
       })()}
+
+      {/* Modal Dedicado de Escala SLA - ATENDIMENTO (Setor de Análise) */}
+      {isSlaModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-[70] p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-indigo-50/70 via-blue-50/40 to-white shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-200 shrink-0">
+                  <Headset className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider bg-indigo-100 px-2 py-0.5 rounded-full">
+                      Setor de Análise
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-500">Líder / Admin</span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 leading-snug">Escalar SLA - ATENDIMENTO</h3>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsSlaModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto text-xs text-slate-700">
+              {/* Colaborador */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Colaborador Responsável pelo SLA *
+                </label>
+                <select 
+                  value={slaCollaboratorEmail}
+                  onChange={(e) => setSlaCollaboratorEmail(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-medium text-slate-800 cursor-pointer"
+                >
+                  <option value="">Selecione o colaborador...</option>
+                  {((workspaceUsers && workspaceUsers.length > 0 ? workspaceUsers : allProfiles) || []).map((u: any) => {
+                    const cleanName = u.email.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+                    return (
+                      <option key={u.email} value={u.email}>
+                        {cleanName} ({u.email})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Título do Lembrete */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Título do Lembrete
+                </label>
+                <input 
+                  type="text"
+                  value={slaTitle}
+                  onChange={(e) => setSlaTitle(e.target.value)}
+                  placeholder="Ex: SLA - ATENDIMENTO"
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-semibold text-slate-800"
+                />
+              </div>
+
+              {/* Horário */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Horário do Plantão
+                </label>
+                <input 
+                  type="text"
+                  value={slaTime}
+                  onChange={(e) => setSlaTime(e.target.value)}
+                  placeholder="Ex: 08:00 - 17:00"
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white text-slate-800"
+                />
+              </div>
+
+              {/* Modo de Seleção de Datas */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Dias no SLA *
+                </label>
+                <div className="flex items-center gap-2 mb-3">
+                  <button 
+                    type="button"
+                    onClick={() => setSlaSelectionMode('individual')}
+                    className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors cursor-pointer ${
+                      slaSelectionMode === 'individual' 
+                        ? 'bg-indigo-600 text-white shadow-xs' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Dias Individuais
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setSlaSelectionMode('range')}
+                    className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors cursor-pointer ${
+                      slaSelectionMode === 'range' 
+                        ? 'bg-indigo-600 text-white shadow-xs' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Período Contínuo (Intervalo)
+                  </button>
+                </div>
+
+                {slaSelectionMode === 'individual' ? (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="date"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val && !slaSelectedDates.includes(val)) {
+                            setSlaSelectedDates(prev => [...prev, val].sort());
+                          }
+                          e.target.value = '';
+                        }}
+                        className="text-xs px-3 py-2 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 bg-white cursor-pointer font-medium"
+                      />
+                      <span className="text-[11px] text-slate-500">Selecione datas para adicionar à escala</span>
+                    </div>
+
+                    {slaSelectedDates.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-xl max-h-36 overflow-y-auto">
+                        {slaSelectedDates.map(dateStr => {
+                          const [y, m, d] = dateStr.split('-');
+                          const formattedDate = `${d}/${m}/${y}`;
+                          return (
+                            <span 
+                              key={dateStr}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-indigo-200 text-indigo-900 rounded-lg text-xs font-semibold shadow-2xs"
+                            >
+                              <Headset className="w-3 h-3 text-indigo-600" />
+                              <span>{formattedDate}</span>
+                              <button 
+                                type="button"
+                                onClick={() => setSlaSelectedDates(prev => prev.filter(d => d !== dateStr))}
+                                className="text-slate-400 hover:text-red-500 transition-colors ml-0.5 cursor-pointer text-sm font-bold"
+                                title="Remover data"
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic">Nenhum dia selecionado ainda.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div>
+                      <span className="block text-[11px] font-bold text-slate-600 mb-1">Data Início:</span>
+                      <input 
+                        type="date"
+                        value={slaRangeStart}
+                        onChange={(e) => setSlaRangeStart(e.target.value)}
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 bg-white cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <span className="block text-[11px] font-bold text-slate-600 mb-1">Data Fim:</span>
+                      <input 
+                        type="date"
+                        value={slaRangeEnd}
+                        onChange={(e) => setSlaRangeEnd(e.target.value)}
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 bg-white cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Instruções / Notas */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Instruções / Diretrizes (Opcional)
+                </label>
+                <textarea 
+                  rows={2}
+                  value={slaNotes}
+                  onChange={(e) => setSlaNotes(e.target.value)}
+                  placeholder="Ex: Acompanhar fila de chamados prioritários, verificar tickets sem resposta..."
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white resize-none text-slate-800"
+                />
+              </div>
+
+              {/* Checkbox Notificar */}
+              <div className="flex items-center gap-2 pt-1">
+                <input 
+                  type="checkbox" 
+                  id="sla_notify"
+                  checked={slaNotifyCollaborator}
+                  onChange={(e) => setSlaNotifyCollaborator(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="sla_notify" className="text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                  Enviar notificação no sistema CR Task para o colaborador
+                </label>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+              <button 
+                type="button"
+                onClick={() => setIsSlaModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                disabled={isSubmittingSla}
+                onClick={handleSaveSlaAssignment}
+                className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md shadow-indigo-200 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-2"
+              >
+                <Headset className="w-4 h-4" />
+                <span>{isSubmittingSla ? 'Salvando Escala...' : 'Salvar Escala no Calendário'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SLA Feedback Toast */}
+      {slaFeedbackMsg && (
+        <div className="fixed bottom-6 right-6 z-[80] bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-5 h-5 shrink-0" />
+          <span className="text-sm font-semibold">{slaFeedbackMsg}</span>
+        </div>
+      )}
     </div>
   );
 }
