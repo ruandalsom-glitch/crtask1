@@ -35,15 +35,17 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
     assignee_email: '',
     time: '',
     timeEnd: '',
-    activeDays: ['mon', 'tue', 'wed', 'thu', 'fri']
+    activeDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
   });
 
   const daysOfWeek = [
-    { key: 'mon', label: 'Segunda' },
-    { key: 'tue', label: 'Terça' },
-    { key: 'wed', label: 'Quarta' },
-    { key: 'thu', label: 'Quinta' },
-    { key: 'fri', label: 'Sexta' }
+    { key: 'mon', label: 'Segunda', short: 'Seg' },
+    { key: 'tue', label: 'Terça', short: 'Ter' },
+    { key: 'wed', label: 'Quarta', short: 'Qua' },
+    { key: 'thu', label: 'Quinta', short: 'Qui' },
+    { key: 'fri', label: 'Sexta', short: 'Sex' },
+    { key: 'sat', label: 'Sábado', short: 'Sáb' },
+    { key: 'sun', label: 'Domingo', short: 'Dom' }
   ];
 
   const { data: userProfile } = useQuery({
@@ -96,14 +98,14 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
   const [commentDayFilter, setCommentDayFilter] = useState<string>('all');
   const [selectedCommentDay, setSelectedCommentDay] = useState<string>(() => {
     const day = new Date().getDay();
-    const map: Record<number, string> = { 1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta' };
+    const map: Record<number, string> = { 0: 'Domingo', 1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta', 6: 'Sábado' };
     return map[day] || 'Geral';
   });
 
-  const availableDays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Geral'];
+  const availableDays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo', 'Geral'];
 
   const parseComment = (content: string) => {
-    const match = content?.match(/^\[(Segunda|Terça|Quarta|Quinta|Sexta|Geral)\]\s*([\s\S]*)$/);
+    const match = content?.match(/^\[(Segunda|Terça|Quarta|Quinta|Sexta|Sábado|Domingo|Geral)\]\s*([\s\S]*)$/);
     if (match) {
       return { day: match[1], text: match[2] };
     }
@@ -165,7 +167,7 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
     }
     const currentRoutine = task.routine_status || {};
     
-    const activeDays = currentRoutine.config_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
+    const activeDays = currentRoutine.config_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
     if (!activeDays.includes(dayKey)) return;
 
     let nextStatus = 'Feito';
@@ -319,7 +321,7 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
       alert('Erro ao criar rotina: ' + error.message);
     } else {
       setIsModalOpen(false);
-      setNewRoutine({ title: '', assignee_email: '', time: '', timeEnd: '', activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'] });
+      setNewRoutine({ title: '', assignee_email: '', time: '', timeEnd: '', activeDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] });
       queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
     }
   };
@@ -678,16 +680,21 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
 
       {/* Tabela de Rotinas */}
       <div className="flex-1 overflow-y-auto pb-24 pt-6 px-8">
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-          <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
+          <table className="w-full min-w-[980px] text-left border-collapse" style={{ tableLayout: 'fixed' }}>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-[#676879] text-[14px]">
-                <th className="font-medium px-6 py-3 border-r border-slate-200 w-1/3">Tarefa da Rotina</th>
+                <th className="font-medium px-6 py-3 border-r border-slate-200 w-80">Tarefa da Rotina</th>
                 <th className="font-medium px-4 py-3 border-r border-slate-200 w-36 text-center">Horário</th>
                 <th className="font-medium px-4 py-3 border-r border-slate-200 w-32 text-center">Responsável</th>
                 <th className="font-medium px-4 py-3 border-r border-slate-200 w-28 text-center">Comentários</th>
                 {daysOfWeek.map(day => (
-                  <th key={day.key} className="font-medium px-2 py-3 border-r border-slate-200 text-center w-24">
+                  <th 
+                    key={day.key} 
+                    className={`font-medium px-2 py-3 border-r border-slate-200 text-center w-20 ${
+                      day.key === 'sat' || day.key === 'sun' ? 'bg-slate-100/70 font-semibold text-slate-700' : ''
+                    }`}
+                  >
                     {day.label}
                   </th>
                 ))}
@@ -697,7 +704,7 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
               {filteredTasks && filteredTasks.length > 0 ? (
                 filteredTasks.map((task) => {
                   const rConf = task.routine_status || {};
-                  const activeDays = rConf.config_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
+                  const activeDays = rConf.config_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
                   return (
                     <tr key={task.id} className="group/row border-b border-slate-200 hover:bg-[#f5f6f8] transition-colors h-[50px]">
@@ -757,9 +764,10 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
                       {daysOfWeek.map(day => {
                         const status = rConf[day.key];
                         const isActiveDay = activeDays.includes(day.key);
+                        const isWeekend = day.key === 'sat' || day.key === 'sun';
                         
                         return (
-                          <td key={day.key} className="p-1 border-r border-slate-200 text-center h-[50px]">
+                          <td key={day.key} className={`p-1 border-r border-slate-200 text-center h-[50px] ${isWeekend && !status ? 'bg-slate-50/50' : ''}`}>
                             <button
                               disabled={!isActiveDay}
                               onClick={() => toggleDayStatus(task, day.key)}
@@ -783,7 +791,7 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="text-center py-8 text-slate-400 text-sm">
+                  <td colSpan={11} className="text-center py-8 text-slate-400 text-sm">
                     Nenhuma rotina cadastrada neste quadro. Comece adicionando uma nova rotina!
                   </td>
                 </tr>

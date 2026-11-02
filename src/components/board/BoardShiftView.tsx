@@ -8,18 +8,34 @@ import {
   Trash2, Edit, User, MapPin, Clock, CheckCircle2, AlertCircle, 
   HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check,
   Settings, MessageSquare, Send, Layers, Sparkles, CalendarDays, RefreshCw,
-  CalendarRange, CheckSquare, Square, AlertTriangle, Tag, FileSpreadsheet
+  CalendarRange, CheckSquare, Square, AlertTriangle, Tag, FileSpreadsheet,
+  Copy, Sun, Sunset, Moon, Mail
 } from 'lucide-react';
 
 const SHIFTS_DEFAULT = [
-  { id: 'm', name: 'MANHÃ', time: '08:00 - 12:00', icon: '☀️', color: 'sky' },
-  { id: 't', name: 'TARDE', time: '12:00 - 18:00', icon: '🌤️', color: 'amber' },
-  { id: 'n', name: 'NOITE', time: '18:00 - 23:00', icon: '🌙', color: 'indigo' },
+  { id: 'm', name: 'MANHÃ', time: '08:00 - 12:00', color: 'sky' },
+  { id: 't', name: 'TARDE', time: '12:00 - 18:00', color: 'amber' },
+  { id: 'n', name: 'NOITE', time: '18:00 - 23:00', color: 'indigo' },
 ];
 
-const REGIONS_DEFAULT = ['Matriz', 'Aldeota', 'Barra', 'Campo'];
+const REGIONS_DEFAULT = ['Sumarezinho', 'Recreio', 'Aldeota', 'Matriz'];
 const TYPES_DEFAULT = ['Dedicado', 'Apoio', 'Nuvem'];
 const STATUSES_DEFAULT = ['Confirmado', 'Pendente', 'Vaga'];
+
+function renderShiftIcon(name: string) {
+  const norm = (name || '').toLowerCase();
+  if (norm.includes('manh')) return <Sun className="w-4 h-4 text-amber-500 shrink-0" />;
+  if (norm.includes('tard') || norm.includes('inter')) return <Sunset className="w-4 h-4 text-orange-500 shrink-0" />;
+  if (norm.includes('noit')) return <Moon className="w-4 h-4 text-indigo-500 shrink-0" />;
+  return <Clock className="w-4 h-4 text-blue-500 shrink-0" />;
+}
+
+function getStatusBadgeClass(status: string) {
+  if (status === 'Confirmado') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (status === 'Pendente') return 'bg-amber-50 text-amber-700 border-amber-200';
+  if (status === 'Vaga') return 'bg-rose-50 text-rose-700 border-rose-200';
+  return 'bg-slate-100 text-slate-700 border-slate-200';
+}
 
 export function BoardShiftView({ 
   boardId, 
@@ -69,6 +85,11 @@ export function BoardShiftView({
 
   // Comentários do Modal de Detalhes
   const [newCommentText, setNewCommentText] = useState('');
+
+  // Envio e Compartilhamento de Escala com Colaborador
+  const [isSendingShift, setIsSendingShift] = useState(false);
+  const [sendFeedbackMsg, setSendFeedbackMsg] = useState<string | null>(null);
+  const [notifyOnSave, setNotifyOnSave] = useState(true);
 
   // 1. Busca Perfis (compartilhado no cache global 'all_profiles')
   const { data: allProfiles } = useQuery({
@@ -496,16 +517,221 @@ export function BoardShiftView({
 
       const { error } = await supabase.from('operational_shifts').insert(rowsToInsert);
       if (error) throw error;
+
+      // Dispara notificações aos operadores caso notifyOnSave esteja ativo
+      if (notifyOnSave && peopleToInsert.length > 0 && formStatus !== 'Vaga') {
+        const notifs: any[] = [];
+        const authorEmail = currentUser?.email || 'lider@masterdeliveryexpress.com.br';
+
+        for (const p of peopleToInsert) {
+          let email: string | null = null;
+          if (p.userId) {
+            const prof = memberProfileMap.get(p.userId);
+            if (prof?.email) email = prof.email;
+          }
+          if (!email && p.name) {
+            const prof = allProfiles?.find((u: any) =>
+              u.email?.toLowerCase().includes(p.name.toLowerCase()) ||
+              p.name.toLowerCase().includes(u.email?.split('@')[0].toLowerCase())
+            );
+            if (prof?.email) email = prof.email;
+          }
+
+          if (email) {
+            const datesText = formDates.length === 1 ? formDates[0] : `${formDates.length} dias`;
+            notifs.push({
+              user_email: email,
+              message: `${authorEmail}||Nova escala operacional (${formShiftName} • ${formShiftTime}) lançada para você em ${datesText}! Base: ${combinedRegionName}.`,
+              read: false
+            });
+          }
+        }
+
+        if (notifs.length > 0) {
+          await supabase.from('notifications').insert(notifs);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operational_shifts'] });
       setIsModalOpen(false);
       resetForm();
+      setSendFeedbackMsg(notifyOnSave ? 'Escalas lançadas e notificações enviadas aos operadores com sucesso!' : 'Escalas salvas com sucesso!');
+      setTimeout(() => setSendFeedbackMsg(null), 4500);
     },
     onError: (err: any) => {
       alert("Erro ao lançar escala: " + err.message);
     }
   });
+
+  // Mandar escala individual para o colaborador
+  const handleSendShiftToCollaborator = async (shift: any) => {
+    if (!shift) return;
+    setIsSendingShift(true);
+
+    try {
+      let targetEmail: string | null = null;
+      const targetName = shift.operator_name || 'Colaborador';
+
+      if (shift.operator_user_id) {
+        const p = memberProfileMap.get(shift.operator_user_id);
+        if (p?.email) targetEmail = p.email;
+      }
+
+      if (!targetEmail) {
+        const p = allProfiles?.find((u: any) => 
+          u.email?.toLowerCase().includes(targetName.toLowerCase()) ||
+          targetName.toLowerCase().includes(u.email?.split('@')[0].toLowerCase())
+        );
+        if (p?.email) targetEmail = p.email;
+      }
+
+      const authorEmail = currentUser?.email || 'lider@masterdeliveryexpress.com.br';
+      const dateFormatted = new Date(`${shift.shift_date}T00:00:00`).toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+
+      if (targetEmail) {
+        // 1. Notificação no sino
+        await supabase.from('notifications').insert([{
+          user_email: targetEmail,
+          message: `${authorEmail}||Sua escala operacional (${shift.shift_name} • ${shift.shift_time}) para ${dateFormatted} foi confirmada! Base: ${shift.region_name || 'Geral'}.`,
+          read: false
+        }]);
+
+        // 2. Dispara e-mail com visual corporativo CR Task
+        fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: targetEmail,
+            subject: `Sua Escala Operacional - ${shift.shift_name} (${shift.shift_date}) - CR Task`,
+            html: `
+              <div style="font-family: 'Segoe UI', Inter, sans-serif; background: #0b2238; color: #f8fafc; padding: 32px; border-radius: 16px; max-width: 600px; margin: 0 auto; border: 1px solid #1e3a56;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <span style="background: #00ffa3; color: #0b2238; font-size: 11px; font-weight: 800; padding: 4px 14px; border-radius: 999px; letter-spacing: 1.5px; text-transform: uppercase;">CR Task • Gestão Operacional</span>
+                </div>
+                <h2 style="color: #ffffff; text-align: center; margin-bottom: 6px; font-size: 24px; font-weight: 800;">${targetName.toUpperCase()}</h2>
+                <p style="text-align: center; color: #94a3b8; font-size: 13px; margin-top: 0;">Sua escala operacional foi confirmada pela liderança.</p>
+                
+                <div style="background: #051322; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #1e3a56;">
+                  <div style="margin-bottom: 12px; border-bottom: 1px solid #1e3a56; padding-bottom: 8px;">
+                    <span style="color: #94a3b8; font-size: 12px; font-weight: 600;">Data: </span>
+                    <span style="color: #ffffff; font-size: 13px; font-weight: 700;">${dateFormatted}</span>
+                  </div>
+                  <div style="margin-bottom: 12px; border-bottom: 1px solid #1e3a56; padding-bottom: 8px;">
+                    <span style="color: #94a3b8; font-size: 12px; font-weight: 600;">Turno / Horário: </span>
+                    <span style="color: #00ffa3; font-size: 13px; font-weight: 700;">${shift.shift_name} (${shift.shift_time})</span>
+                  </div>
+                  <div style="margin-bottom: 12px; border-bottom: 1px solid #1e3a56; padding-bottom: 8px;">
+                    <span style="color: #94a3b8; font-size: 12px; font-weight: 600;">Regiões / Bases: </span>
+                    <span style="color: #38bdf8; font-size: 13px; font-weight: 700;">${shift.region_name || 'Matriz'}</span>
+                  </div>
+                  <div style="margin-bottom: 12px; border-bottom: 1px solid #1e3a56; padding-bottom: 8px;">
+                    <span style="color: #94a3b8; font-size: 12px; font-weight: 600;">Função / Tipo: </span>
+                    <span style="color: #ffffff; font-size: 13px; font-weight: 700;">${shift.operator_type || 'Operador'}</span>
+                  </div>
+                  <div>
+                    <span style="color: #94a3b8; font-size: 12px; font-weight: 600;">Status: </span>
+                    <span style="color: #34d399; font-size: 13px; font-weight: 700;">${shift.status || 'Confirmado'}</span>
+                  </div>
+                  ${shift.notes ? `
+                    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #1e3a56;">
+                      <span style="color: #94a3b8; font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px;">Instruções:</span>
+                      <span style="color: #e2e8f0; font-size: 12px;">${shift.notes}</span>
+                    </div>
+                  ` : ''}
+                </div>
+                <p style="text-align: center; color: #64748b; font-size: 11px;">Enviado via CR Task • Notificação Operacional</p>
+              </div>
+            `
+          })
+        }).catch(() => {});
+
+        setSendFeedbackMsg(`Escala enviada com sucesso para ${targetName} (${targetEmail})!`);
+      } else {
+        setSendFeedbackMsg(`Escala registrada para ${targetName}! (Sem e-mail cadastrado)`);
+      }
+
+      setTimeout(() => setSendFeedbackMsg(null), 4500);
+    } catch (err: any) {
+      alert("Erro ao enviar escala: " + err.message);
+    } finally {
+      setIsSendingShift(false);
+    }
+  };
+
+  // Mandar escala de todas as pessoas do dia selecionado
+  const handleSendAllDayShifts = async () => {
+    if (shiftsForSelectedDate.length === 0) {
+      alert("Nenhuma escala encontrada nesta data para envio.");
+      return;
+    }
+
+    const ok = confirm(`Deseja enviar a escala operacional de ${formattedSelectedDateText} para os ${shiftsForSelectedDate.length} operadores escalados?`);
+    if (!ok) return;
+
+    setIsSendingShift(true);
+    try {
+      const authorEmail = currentUser?.email || 'lider@masterdeliveryexpress.com.br';
+      const notifs: any[] = [];
+
+      shiftsForSelectedDate.forEach((shift: any) => {
+        let email: string | null = null;
+        if (shift.operator_user_id) {
+          const p = memberProfileMap.get(shift.operator_user_id);
+          if (p?.email) email = p.email;
+        }
+        if (!email && shift.operator_name) {
+          const p = allProfiles?.find((u: any) => 
+            u.email?.toLowerCase().includes(shift.operator_name.toLowerCase()) ||
+            shift.operator_name.toLowerCase().includes(u.email?.split('@')[0].toLowerCase())
+          );
+          if (p?.email) email = p.email;
+        }
+
+        if (email) {
+          notifs.push({
+            user_email: email,
+            message: `${authorEmail}||Sua escala operacional (${shift.shift_name} • ${shift.shift_time}) de ${formattedSelectedDateText} foi confirmada!`,
+            read: false
+          });
+        }
+      });
+
+      if (notifs.length > 0) {
+        await supabase.from('notifications').insert(notifs);
+      }
+
+      setSendFeedbackMsg(`Escalas do dia enviadas para ${notifs.length} colaboradores!`);
+      setTimeout(() => setSendFeedbackMsg(null), 4500);
+    } catch (err: any) {
+      alert("Erro ao enviar escalas: " + err.message);
+    } finally {
+      setIsSendingShift(false);
+    }
+  };
+
+  // Copiar resumo formatado para colar no WhatsApp
+  const handleCopyWhatsAppShift = (shift: any) => {
+    if (!shift) return;
+    const text = `CR TASK • ESCALA OPERACIONAL\n\n` +
+      `Colaborador: ${shift.operator_name}\n` +
+      `Data: ${shift.shift_date}\n` +
+      `Turno: ${shift.shift_name} (${shift.shift_time})\n` +
+      `Base/Região: ${shift.region_name || 'Matriz'}\n` +
+      `Função: ${shift.operator_type || 'Operador'}\n` +
+      `Status: ${shift.status}\n` +
+      (shift.notes ? `Instruções: ${shift.notes}\n` : '') +
+      `\nEnviado via CR Task Operacional`;
+
+    navigator.clipboard.writeText(text);
+    setSendFeedbackMsg(`Texto formatado copiado! Cole para o colaborador.`);
+    setTimeout(() => setSendFeedbackMsg(null), 4000);
+  };
 
   // Excluir Escala Única
   const deleteShiftMutation = useMutation({
@@ -678,16 +904,21 @@ export function BoardShiftView({
         
         {/* Título & Seleção de Data */}
         <div className="flex items-center gap-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-800 tracking-tight">Escala Operacional</h2>
-              <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full border border-blue-200">
-                {shiftsForSelectedDate.length} Escalas
-              </span>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-700 to-blue-600 text-white flex items-center justify-center font-black text-sm shadow-sm tracking-wider border border-blue-500/30 shrink-0">
+              CR
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Planejamento e alocação de equipes por turno e região em tempo real.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight">Escala Operacional</h2>
+                <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
+                  {shiftsForSelectedDate.length} {shiftsForSelectedDate.length === 1 ? 'Escala' : 'Escalas'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                Planejamento, alocação e envio de escalas para a equipe em tempo real.
+              </p>
+            </div>
           </div>
 
           {/* Navegador de Data */}
@@ -721,6 +952,19 @@ export function BoardShiftView({
         {/* Botões de Ação e Alternância de Visão */}
         <div className="flex items-center gap-3">
           
+          {/* Botão Mandar Escala do Dia para os Colaboradores */}
+          {canManageShifts && (
+            <button
+              onClick={handleSendAllDayShifts}
+              disabled={isSendingShift || shiftsForSelectedDate.length === 0}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Disparar aviso e e-mail com a escala do dia para todos os colaboradores alocados"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isSendingShift ? 'Enviando...' : `Mandar Escala (${shiftsForSelectedDate.length})`}</span>
+            </button>
+          )}
+
           {/* Botão Configurações da Escala (Para Líderes / Admins) */}
           {canManageShifts && (
             <>
@@ -916,7 +1160,9 @@ export function BoardShiftView({
                   {/* Cabeçalho do Turno */}
                   <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="text-xl">{shiftDef.icon || '⏱️'}</div>
+                      <div className="p-2 rounded-lg bg-white border border-slate-200 shadow-2xs shrink-0">
+                        {renderShiftIcon(shiftDef.name)}
+                      </div>
                       <div>
                         <h3 className="font-bold text-slate-800 text-sm tracking-wide">{shiftDef.name}</h3>
                         <p className="text-[11px] text-slate-500 font-medium">{shiftDef.time}</p>
@@ -997,13 +1243,33 @@ export function BoardShiftView({
                                 </div>
                               </div>
 
-                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border shrink-0 ${
-                                item.status === 'Confirmado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                item.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                'bg-slate-100 text-slate-700 border-slate-300'
-                              }`}>
-                                {item.status}
-                              </span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendShiftToCollaborator(item);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  title="Mandar Escala para o Colaborador (E-mail e Notificação)"
+                                >
+                                  <Mail className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyWhatsAppShift(item);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                                  title="Copiar para WhatsApp"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${getStatusBadgeClass(item.status)}`}>
+                                  {item.status}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );
@@ -1160,21 +1426,39 @@ export function BoardShiftView({
                           <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
                             {item.notes || '-'}
                           </td>
-                          <td className="py-3 px-4 text-right">
-                            {canManageShifts && (
+                          <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1">
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (confirm("Deseja remover esta escala?")) {
-                                    deleteShiftMutation.mutate(item.id);
-                                  }
-                                }}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded transition-colors"
-                                title="Excluir Escala"
+                                type="button"
+                                onClick={() => handleSendShiftToCollaborator(item)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="Mandar Escala para o Colaborador (E-mail e Notificação)"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Mail className="w-3.5 h-3.5" />
                               </button>
-                            )}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyWhatsAppShift(item)}
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                                title="Copiar para WhatsApp"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              {canManageShifts && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm("Deseja remover esta escala?")) {
+                                      deleteShiftMutation.mutate(item.id);
+                                    }
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                  title="Excluir Escala"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1603,6 +1887,24 @@ export function BoardShiftView({
                 />
               </div>
 
+              {/* Notificar Operadores Automaticamente */}
+              <label className="flex items-center gap-2.5 p-3 bg-blue-50/70 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={notifyOnSave}
+                  onChange={(e) => setNotifyOnSave(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                />
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-blue-900">
+                    Notificar colaboradores automaticamente no sistema
+                  </span>
+                  <span className="text-[11px] text-blue-700/80">
+                    Dispara alerta para os operadores selecionados com os dados do turno e região.
+                  </span>
+                </div>
+              </label>
+
             </div>
 
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
@@ -1758,27 +2060,52 @@ export function BoardShiftView({
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-3 border-t border-slate-100">
-              {canManageShifts ? (
-                <button
-                  onClick={() => {
-                    if (confirm("Remover esta escala do dia?")) {
-                      deleteShiftMutation.mutate(selectedShiftDetails.id);
-                    }
-                  }}
-                  className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Excluir Escala
-                </button>
-              ) : <div />}
+            <div className="flex justify-between items-center pt-3 border-t border-slate-100 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                {canManageShifts && (
+                  <button
+                    onClick={() => {
+                      if (confirm("Remover esta escala do dia?")) {
+                        deleteShiftMutation.mutate(selectedShiftDetails.id);
+                      }
+                    }}
+                    className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Excluir
+                  </button>
+                )}
+              </div>
 
-              <button
-                onClick={() => setSelectedShiftDetails(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer"
-              >
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopyWhatsAppShift(selectedShiftDetails)}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Copiar texto da escala formatado para o WhatsApp"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendShiftToCollaborator(selectedShiftDetails)}
+                  disabled={isSendingShift}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  title="Enviar escala por e-mail e notificação no CR Task para este colaborador"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isSendingShift ? 'Enviando...' : 'Mandar p/ Colaborador'}</span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedShiftDetails(null)}
+                  className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer ml-1 transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
 
           </div>
@@ -2099,8 +2426,9 @@ export function BoardShiftView({
                 </div>
               </div>
 
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] leading-relaxed">
-                ⚠️ <strong>Atenção:</strong> Esta ação removerá permanentemente as escalas que se enquadrem no período e filtros selecionados.
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] leading-relaxed flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span><strong>Atenção:</strong> Esta ação removerá permanentemente as escalas que se enquadrem no período e filtros selecionados.</span>
               </div>
 
             </div>
@@ -2127,6 +2455,17 @@ export function BoardShiftView({
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* Toast Feedback de Notificação / Envio de Escala */}
+      {sendFeedbackMsg && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="text-xs font-semibold">{sendFeedbackMsg}</span>
+          <button onClick={() => setSendFeedbackMsg(null)} className="ml-2 text-slate-400 hover:text-white cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 

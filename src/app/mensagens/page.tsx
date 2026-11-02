@@ -38,7 +38,7 @@ export const CARGOS_COLABORADORES: Record<string, string[]> = {
 
 // Helper para obter as iniciais de um colaborador (substituindo emotes por avatares profissionais)
 function getInitials(name: string): string {
-  if (!name) return '';
+  if (!name || name === 'Nenhum') return '-';
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
@@ -148,6 +148,25 @@ function CargoCollaboratorSelect({
             <span className="text-[10px] text-slate-400 font-normal">
               {members.length} {members.length === 1 ? 'colaborador' : 'colaboradores'}
             </span>
+          </div>
+
+          {/* Opção Nenhum (Disponível em todos os submenus) */}
+          <div className="pt-1 pb-0.5 border-b border-slate-100">
+            <button
+              type="button"
+              onClick={() => handleSelect('Nenhum')}
+              className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                value === 'Nenhum' ? 'bg-slate-100 font-bold text-slate-800' : 'hover:bg-slate-50 text-slate-500'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-400 font-bold text-[9px] flex items-center justify-center shrink-0">
+                  -
+                </span>
+                <span className="italic font-medium">Nenhum</span>
+              </div>
+              {value === 'Nenhum' && <Check className="w-3.5 h-3.5 text-slate-600 shrink-0" />}
+            </button>
           </div>
 
           {/* Presets de Turno (se aplicável) */}
@@ -433,6 +452,7 @@ export default function MensagensPage() {
         () => {
           queryClient.invalidateQueries({ queryKey: ['mensagens_checklist', selectedDate, selectedBase] });
           queryClient.invalidateQueries({ queryKey: ['mensagens_templates', selectedBase] });
+          queryClient.invalidateQueries({ queryKey: ['mensagens_equipe_global', selectedDate] });
         }
       )
       .subscribe();
@@ -457,9 +477,25 @@ export default function MensagensPage() {
     return map;
   }, [checklistRows]);
 
-  // Dados da Equipe da Base
+  // Busca equipe compartilhada entre todas as bases no mesmo dia (para que todas as regiões tenham a mesma equipe)
+  const { data: allBasesEquipeRows } = useQuery({
+    queryKey: ['mensagens_equipe_global', selectedDate],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('mensagens_checklist')
+        .select('*')
+        .eq('data', selectedDate)
+        .eq('msg_id', '__equipe__');
+      if (error) return [];
+      return data || [];
+    },
+    staleTime: 10 * 1000
+  });
+
+  // Dados da Equipe da Base (sincronizados entre todas as bases/regiões)
   const equipeData = useMemo(() => {
-    const equipeRow = checklistRows?.find(r => r.msg_id === '__equipe__');
+    const equipeRow = checklistRows?.find(r => r.msg_id === '__equipe__') 
+      || allBasesEquipeRows?.find(r => r.msg_id === '__equipe__');
     return {
       supervisor: equipeRow?.supervisor || 'Kelly Bezerra',
       analista: equipeRow?.analista || 'Raquel Nunes',
@@ -471,7 +507,7 @@ export default function MensagensPage() {
       apoio_inter: equipeRow?.apoio_inter || 'Carolyni Carvalho',
       apoio_tarde: equipeRow?.apoio_tarde || 'Fabiola Pereira',
     };
-  }, [checklistRows]);
+  }, [checklistRows, allBasesEquipeRows]);
 
   // Alterna o status do Checkbox (Registra o usuário conectado que está marcando)
   const handleToggleCheck = async (msgId: string) => {
@@ -516,16 +552,17 @@ export default function MensagensPage() {
     }
   };
 
-  // Salva alteração de um campo da Equipe
+  // Salva alteração de um campo da Equipe (replica para TODAS as regiões/bases)
   const handleEquipeChange = async (field: string, value: string) => {
     const newEquipe = {
       ...equipeData,
       [field]: value
     };
 
-    const payload = {
+    // Cria os payloads para TODAS as bases para que a equipe seja idêntica em todas as regiões
+    const payloads = bases.map(b => ({
       data: selectedDate,
-      base: selectedBase,
+      base: b,
       msg_id: '__equipe__',
       checked: false,
       supervisor: newEquipe.supervisor,
@@ -538,16 +575,23 @@ export default function MensagensPage() {
       apoio_inter: newEquipe.apoio_inter,
       apoio_tarde: newEquipe.apoio_tarde,
       updated_at: new Date().toISOString()
-    };
+    }));
 
-    queryClient.setQueryData(['mensagens_checklist', selectedDate, selectedBase], (old: any[] = []) => {
-      const filtered = old.filter(r => r.msg_id !== '__equipe__');
-      return [...filtered, payload];
+    // Atualização otimista para todas as bases no React Query
+    bases.forEach(b => {
+      queryClient.setQueryData(['mensagens_checklist', selectedDate, b], (old: any[] = []) => {
+        const filtered = old.filter(r => r.msg_id !== '__equipe__');
+        const bPayload = payloads.find(p => p.base === b) || payloads[0];
+        return [...filtered, bPayload];
+      });
     });
+
+    // Atualiza também o cache global da equipe
+    queryClient.setQueryData(['mensagens_equipe_global', selectedDate], payloads);
 
     const { error } = await supabase
       .from('mensagens_checklist')
-      .upsert(payload, { onConflict: 'data,base,msg_id' });
+      .upsert(payloads, { onConflict: 'data,base,msg_id' });
 
     if (error) {
       console.error('[Mensagens] Erro ao atualizar equipe:', error);
@@ -1179,7 +1223,7 @@ export default function MensagensPage() {
                   Equipe Responsável da Base • {selectedBase}
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Selecione os colaboradores diretamente pelo cargo correspondente
+                  Equipe operacional compartilhada e sincronizada para todas as regiões ({bases.join(', ')})
                 </p>
               </div>
             </div>
