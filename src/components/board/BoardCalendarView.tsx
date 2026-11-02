@@ -22,6 +22,17 @@ const STATUS_COLORS: any = {
 const PRIORITIES = ['Alta', 'Média', 'Baixa', 'Vazio'];
 const STATUSES = ['Feito', 'Trabalhando', 'Travado', 'Pendente', 'Não iniciado'];
 
+function extractSafeDueTime(str?: string | null): string | null {
+  if (!str) return null;
+  const trimmed = str.trim();
+  const match = trimmed.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
+  if (match) {
+    const [h, m] = match[0].split(':');
+    return `${h.padStart(2, '0')}:${m}`;
+  }
+  return trimmed.slice(0, 5) || null;
+}
+
 function TaskChip({ task, onClick, isOverlay = false, currentUserEmail }: any) {
   if (task.isGoogleCalendar) {
     return (
@@ -424,6 +435,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     try {
       const authorEmail = userProfile?.email || 'lider@crtransportes.com.br';
       const collaboratorName = slaCollaboratorEmail.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+      const safeTime = extractSafeDueTime(slaTime);
 
       const inserts = effectiveDates.map((d: string, index: number) => ({
         board_id: boardId,
@@ -431,7 +443,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
         group_name: 'SLA Atendimento',
         status: 'Pendente',
         due_date: d,
-        due_time: slaTime.trim() || null,
+        due_time: safeTime,
         start_date: d,
         task_type: 'Lembrete',
         priority: 'SLA',
@@ -446,10 +458,13 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
 
       if (taskError) throw taskError;
 
-      if (createdTasks && slaNotes.trim()) {
+      if (createdTasks && (slaNotes.trim() || slaTime.trim())) {
+        const noteParts: string[] = [];
+        if (slaTime.trim()) noteParts.push(`⏰ Horário do Plantão: ${slaTime.trim()}`);
+        if (slaNotes.trim()) noteParts.push(`📋 Instruções do SLA: ${slaNotes.trim()}`);
         const updateInserts = createdTasks.map((t: any) => ({
           task_id: t.id,
-          content: `📋 Instruções do SLA: ${slaNotes.trim()}`,
+          content: noteParts.join('\n\n'),
           author_email: authorEmail
         }));
         await supabase.from('task_updates').insert(updateInserts);
@@ -527,7 +542,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           group_name: dataToSave.group_name || 'Tarefas pendentes',
           status: 'Pendente',
           due_date: d,
-          due_time: dataToSave.due_time || null,
+          due_time: extractSafeDueTime(dataToSave.due_time),
           start_date: d,
           task_type: 'Lembrete',
           assignee_email: null,
@@ -554,13 +569,15 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           ? dataToSave.selected_dates
           : (dateStr ? [dateStr] : []);
 
+        const safeTime = extractSafeDueTime(dataToSave.due_time || '08:00');
+
         const inserts = targetDates.map((d: string, index: number) => ({
           board_id: boardId,
           title: dataToSave.title || 'SLA - ATENDIMENTO',
           group_name: 'SLA Atendimento',
           status: 'Pendente',
           due_date: d,
-          due_time: dataToSave.due_time || '08:00 - 17:00',
+          due_time: safeTime,
           start_date: d,
           task_type: 'Lembrete',
           priority: 'SLA',
@@ -571,10 +588,13 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
         const { data: taskData, error: taskError } = await supabase.from('tasks').insert(inserts).select();
         if (taskError) throw taskError;
 
-        if (taskData && dataToSave.notes?.trim()) {
+        if (taskData && (dataToSave.notes?.trim() || dataToSave.due_time?.trim())) {
+          const noteParts: string[] = [];
+          if (dataToSave.due_time?.trim()) noteParts.push(`⏰ Horário do Plantão: ${dataToSave.due_time.trim()}`);
+          if (dataToSave.notes?.trim()) noteParts.push(`📋 Instruções do SLA: ${dataToSave.notes.trim()}`);
           const updateInserts = taskData.map((t: any) => ({
             task_id: t.id,
-            content: `📋 Instruções do SLA: ${dataToSave.notes.trim()}`,
+            content: noteParts.join('\n\n'),
             author_email: userProfile?.email || 'Sistema'
           }));
           await supabase.from('task_updates').insert(updateInserts);
@@ -2108,9 +2128,10 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                   type="text"
                   value={slaTime}
                   onChange={(e) => setSlaTime(e.target.value)}
-                  placeholder="Ex: 08:00 - 17:00"
+                  placeholder="Ex: 08:00 - 17:00 ou 09:00"
                   className="w-full text-xs px-3.5 py-2.5 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white text-slate-800"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">Ex: 09:00 - 17:00 (o horário inicial agenda o lembrete e o turno completo fica gravado nas instruções e notificações)</p>
               </div>
 
               {/* Modo de Seleção de Datas */}
