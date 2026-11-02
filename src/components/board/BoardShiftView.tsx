@@ -9,7 +9,7 @@ import {
   HelpCircle, UserCheck, LayoutGrid, List, BarChart2, X, PlusCircle, Check,
   Settings, MessageSquare, Send, Layers, Sparkles, CalendarDays, RefreshCw,
   CalendarRange, CheckSquare, Square, AlertTriangle, Tag, FileSpreadsheet,
-  Copy, Sun, Sunset, Moon, Mail
+  Copy, Sun, Sunset, Moon, Mail, Download
 } from 'lucide-react';
 
 const SHIFTS_DEFAULT = [
@@ -35,6 +35,17 @@ function getStatusBadgeClass(status: string) {
   if (status === 'Pendente') return 'bg-amber-50 text-amber-700 border-amber-200';
   if (status === 'Vaga') return 'bg-rose-50 text-rose-700 border-rose-200';
   return 'bg-slate-100 text-slate-700 border-slate-200';
+}
+
+function isSameCollaborator(nameA?: string | null, nameB?: string | null) {
+  if (!nameA || !nameB) return false;
+  const a = nameA.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const b = nameB.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const partA = a.split(/[@._\s]+/)[0];
+  const partB = b.split(/[@._\s]+/)[0];
+  return partA === partB;
 }
 
 export function BoardShiftView({ 
@@ -895,6 +906,453 @@ export function BoardShiftView({
     const d = new Date(calendarMonth);
     return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   }, [calendarMonth]);
+
+  // Gera o Canvas oficial da Escala Operacional (1200 x 680) para download e cópia de imagem
+  const generateShiftScheduleCanvas = async (shift: any, memberName: string, dateFormatted: string): Promise<HTMLCanvasElement> => {
+    const canvas = document.createElement('canvas');
+    const width = 1200;
+    const height = 680;
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+
+    // 1. Fundo Gradiente Dark Oficial (#0f172a -> #111827 -> #0b1120)
+    const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+    bgGrad.addColorStop(0, '#0f172a');
+    bgGrad.addColorStop(0.5, '#111827');
+    bgGrad.addColorStop(1, '#0b1120');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, width - 4, height - 4);
+
+    // 2. Logo oficial (/logo.png)
+    const logoImg = await new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = '/logo.png';
+    });
+
+    const logoBoxX = 56;
+    const logoBoxY = 48;
+    const logoBoxSize = 88;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(logoBoxX, logoBoxY, logoBoxSize, logoBoxSize, 20);
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#334155';
+    ctx.stroke();
+    ctx.clip();
+
+    if (logoImg) {
+      ctx.drawImage(logoImg, logoBoxX + 6, logoBoxY + 6, logoBoxSize - 12, logoBoxSize - 12);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 32px Inter, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('CR', logoBoxX + logoBoxSize / 2, logoBoxY + logoBoxSize / 2);
+    }
+    ctx.restore();
+
+    // 3. Cabeçalho Textos
+    ctx.fillStyle = '#00ffa3';
+    ctx.font = '800 13px Inter, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('CR TASK • ESCALA OPERACIONAL', 164, 76);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 34px Inter, Arial, sans-serif';
+    ctx.fillText((memberName || 'COLABORADOR').toUpperCase(), 164, 116);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '700 16px Inter, Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(dateFormatted, width - 56, 92);
+
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(56, 160);
+    ctx.lineTo(width - 56, 160);
+    ctx.stroke();
+
+    // 4. Cartão Central com os Dados do Turno
+    const cardX = 56;
+    const cardY = 190;
+    const cardW = width - 112;
+    const cardH = 380;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, 20);
+    ctx.fillStyle = '#081220';
+    ctx.fill();
+    ctx.strokeStyle = '#1e3a5f';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+
+    // Linha 1: Turno e Horário
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '700 13px Inter, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('TURNO / HORÁRIO', cardX + 36, cardY + 54);
+
+    ctx.fillStyle = '#00ffa3';
+    ctx.font = '900 28px Inter, Arial, sans-serif';
+    const shiftTitle = `${shift.shift_name}${shift.shift_time ? ` (${shift.shift_time})` : ''}`;
+    ctx.fillText(shiftTitle, cardX + 36, cardY + 92);
+
+    // Linha 2: Base e Função
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '700 13px Inter, Arial, sans-serif';
+    ctx.fillText('BASE / REGIÃO', cardX + 36, cardY + 154);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '800 24px Inter, Arial, sans-serif';
+    ctx.fillText(shift.region_name || 'Matriz / Geral', cardX + 36, cardY + 188);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '700 13px Inter, Arial, sans-serif';
+    ctx.fillText('FUNÇÃO / TIPO', cardX + 460, cardY + 154);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 24px Inter, Arial, sans-serif';
+    ctx.fillText(shift.operator_type || 'Operador', cardX + 460, cardY + 188);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '700 13px Inter, Arial, sans-serif';
+    ctx.fillText('STATUS', cardX + 800, cardY + 154);
+
+    ctx.fillStyle = '#34d399';
+    ctx.font = '800 24px Inter, Arial, sans-serif';
+    ctx.fillText(shift.status || 'Confirmado', cardX + 800, cardY + 188);
+
+    // Linha 3: Instruções se houver
+    if (shift.notes) {
+      ctx.strokeStyle = '#1e3a5f';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cardX + 36, cardY + 230);
+      ctx.lineTo(cardX + cardW - 36, cardY + 230);
+      ctx.stroke();
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '700 12px Inter, Arial, sans-serif';
+      ctx.fillText('INSTRUÇÕES DA GESTÃO:', cardX + 36, cardY + 264);
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '600 16px Inter, Arial, sans-serif';
+      ctx.fillText(shift.notes.slice(0, 95), cardX + 36, cardY + 296);
+    }
+
+    // 5. Rodapé
+    ctx.fillStyle = '#64748b';
+    ctx.font = '600 12px Inter, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('✓ Escala operacional confirmada e enviada via CR Task', width / 2, height - 36);
+
+    return canvas;
+  };
+
+  const handleCopyShiftPng = async (shift: any, memberName: string) => {
+    try {
+      const canvas = await generateShiftScheduleCanvas(shift, memberName, formattedSelectedDateText);
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        setSendFeedbackMsg('📋 Imagem da escala operacional copiada! Pode colar no WhatsApp ou Teams.');
+        setTimeout(() => setSendFeedbackMsg(null), 4500);
+      }, 'image/png');
+    } catch (err: any) {
+      alert("Não foi possível copiar a imagem automaticamente: " + err.message);
+    }
+  };
+
+  const handleDownloadShiftPng = async (shift: any, memberName: string) => {
+    try {
+      const canvas = await generateShiftScheduleCanvas(shift, memberName, formattedSelectedDateText);
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `escala_operacional_${memberName.toLowerCase().replace(/\s+/g, '_')}_${selectedDate}.png`;
+      link.href = dataUrl;
+      link.click();
+      setSendFeedbackMsg('📥 Imagem da escala operacional baixada com sucesso!');
+      setTimeout(() => setSendFeedbackMsg(null), 4500);
+    } catch (err: any) {
+      alert("Erro ao baixar imagem: " + err.message);
+    }
+  };
+
+  // SE FOR COLABORADOR COMUM (!canManageShifts):
+  // Exibe exclusivamente a visão de card/imagem gerada da escala do colaborador para o dia selecionado.
+  // Segue exatamente o fluxo do Quadro de Turnos: caso não tenha nada, mostra que "Ainda não foi postado".
+  if (!canManageShifts) {
+    const activeMemberForUser = (() => {
+      const userEmail = (currentUser?.email || '').toLowerCase().trim();
+      const userPrefix = userEmail.split('@')[0] || '';
+      const boardTitle = (boardData?.name || '').trim();
+
+      if (userEmail) {
+        const found = (rawShifts || []).find((s: any) => 
+          (s.operator_user_id && currentUser?.id && s.operator_user_id === currentUser.id) ||
+          isSameCollaborator(s.operator_name, userPrefix) ||
+          isSameCollaborator(s.operator_name, boardTitle)
+        );
+        if (found?.operator_name) return found.operator_name;
+      }
+
+      if (boardTitle && !boardTitle.toLowerCase().includes('panorama')) {
+        return boardTitle;
+      }
+
+      return userPrefix ? userPrefix.charAt(0).toUpperCase() + userPrefix.slice(1) : 'Colaborador';
+    })();
+
+    const collaboratorShift = (shiftsForSelectedDate || []).find((s: any) => {
+      if (s.operator_user_id && currentUser?.id && s.operator_user_id === currentUser.id) return true;
+      const opName = s.operator_name || '';
+      return isSameCollaborator(opName, activeMemberForUser) ||
+             (currentUser?.email && isSameCollaborator(opName, currentUser.email.split('@')[0]));
+    }) || null;
+
+    const isPosted = Boolean(collaboratorShift);
+
+    return (
+      <div className="flex flex-col h-full w-full bg-slate-50 overflow-y-auto">
+        {/* Barra Superior Limpa para o Colaborador */}
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                Minha Escala Operacional
+                <span className="text-xs px-2.5 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-full">
+                  {activeMemberForUser}
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">
+                Consulte o seu turno, horário de entrada, base e status confirmado pela liderança
+              </p>
+            </div>
+          </div>
+
+          {/* Navegação de Data */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={() => changeDate(-1)}
+                className="p-1.5 hover:bg-white text-slate-700 rounded-lg transition-all cursor-pointer"
+                title="Dia Anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="px-3 text-xs sm:text-sm font-bold text-slate-800 capitalize flex items-center gap-1.5 min-w-[150px] justify-center">
+                <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                <span>{formattedSelectedDateText}</span>
+              </div>
+
+              <button
+                onClick={() => changeDate(1)}
+                className="p-1.5 hover:bg-white text-slate-700 rounded-lg transition-all cursor-pointer"
+                title="Próximo Dia"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  setSelectedDate(todayStr);
+                  setCalendarMonth(new Date(`${todayStr}T00:00:00`));
+                }}
+                className="ml-1 px-2.5 py-1 text-xs font-semibold bg-white text-blue-700 hover:bg-blue-50 rounded-lg border border-slate-200/80 cursor-pointer"
+              >
+                Hoje
+              </button>
+            </div>
+
+            {/* Ações de Imagem (Apenas quando houver escala postada) */}
+            {isPosted && collaboratorShift && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopyShiftPng(collaboratorShift, activeMemberForUser)}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all border border-slate-200"
+                  title="Copiar imagem oficial da escala para colar no WhatsApp"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar Imagem</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadShiftPng(collaboratorShift, activeMemberForUser)}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                  title="Baixar escala oficial em imagem PNG"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Baixar Escala (PNG)</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {sendFeedbackMsg && (
+          <div className="mx-6 mt-4 bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between">
+            <span>{sendFeedbackMsg}</span>
+            <button onClick={() => setSendFeedbackMsg(null)} className="text-emerald-700 hover:text-emerald-950 font-bold ml-2">✕</button>
+          </div>
+        )}
+
+        {/* Card Visual Oficial da Escala Operacional (Formato Dark com Logo CR Task) */}
+        <div className="flex-1 p-6 flex flex-col items-center justify-start">
+          <div className="w-full max-w-[820px] bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1120] rounded-2xl border border-slate-700/80 shadow-2xl p-6 sm:p-8 text-white select-none relative overflow-hidden">
+            
+            {/* Topo: Logo + Título + Colaborador + Data */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-800/90 w-full">
+              <div className="flex items-center gap-3.5">
+                <div className="w-16 h-16 bg-black rounded-2xl border border-slate-700/80 shadow-xl p-1.5 flex items-center justify-center shrink-0">
+                  <img src="/logo.png" alt="CR Task" className="w-full h-full object-contain rounded-xl" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-extrabold text-[#00ffa3] tracking-widest uppercase block">
+                    CR TASK • GESTÃO OPERACIONAL
+                  </span>
+                  <h2 className="text-2xl font-black text-white tracking-tight mt-0.5">
+                    {activeMemberForUser.toUpperCase()}
+                  </h2>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="px-3 py-1 bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg">
+                  {formattedSelectedDateText}
+                </span>
+              </div>
+            </div>
+
+            {/* Conteúdo Central: Se Postado mostra os detalhes, se Não Postado mostra o alerta */}
+            {isPosted && collaboratorShift ? (
+              <div className="py-6 space-y-6">
+                {/* Linha de Destaque: Turno e Horário */}
+                <div className="bg-[#051322] border border-[#1e3a56] rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Turno Alocado
+                    </span>
+                    <span className="text-2xl font-black text-[#00ffa3] tracking-tight">
+                      {collaboratorShift.shift_name}
+                    </span>
+                  </div>
+
+                  {collaboratorShift.shift_time && (
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                        Horário de Trabalho
+                      </span>
+                      <span className="px-3 py-1.5 bg-blue-500/20 border border-blue-400/40 text-blue-200 text-sm font-black rounded-lg">
+                        {collaboratorShift.shift_time}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Grid com Base, Função e Status */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-[#051322] border border-[#1e3a56] rounded-xl p-4">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-sky-400" /> Base / Região
+                    </span>
+                    <span className="text-base font-bold text-sky-400">
+                      {collaboratorShift.region_name || 'Matriz / Geral'}
+                    </span>
+                  </div>
+
+                  <div className="bg-[#051322] border border-[#1e3a56] rounded-xl p-4">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-slate-300" /> Função / Tipo
+                    </span>
+                    <span className="text-base font-bold text-white">
+                      {collaboratorShift.operator_type || 'Operador'}
+                    </span>
+                  </div>
+
+                  <div className="bg-[#051322] border border-[#1e3a56] rounded-xl p-4">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Status
+                    </span>
+                    <span className="text-base font-bold text-emerald-400">
+                      {collaboratorShift.status || 'Confirmado'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Instruções se houver */}
+                {collaboratorShift.notes && (
+                  <div className="bg-[#051322] border border-[#1e3a56] rounded-xl p-4">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      📋 Instruções da Gestão:
+                    </span>
+                    <p className="text-sm text-slate-200 font-medium">
+                      {collaboratorShift.notes}
+                    </p>
+                  </div>
+                )}
+
+                {/* Rodapé interno com confirmação */}
+                <div className="pt-4 border-t border-slate-800/90 flex items-center justify-between text-xs text-slate-400">
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                    <Check className="w-4 h-4" /> Escala confirmada e enviada pela gestão
+                  </span>
+                  <span>Enviado via CR Task</span>
+                </div>
+              </div>
+            ) : (
+              /* AVISO DE "AINDA NÃO FOI POSTADO" (SEGUINDO O FLUXO DO QUADRO DE TURNOS) */
+              <div className="py-16 flex flex-col items-center justify-center text-center gap-3">
+                <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-400/30 flex items-center justify-center text-amber-400 mb-2">
+                  <Clock className="w-8 h-8 animate-pulse" />
+                </div>
+                <span className="px-4 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-black uppercase tracking-widest">
+                  ⏳ Escala Operacional
+                </span>
+                <h3 className="text-2xl font-black text-white uppercase tracking-wider mt-1">
+                  Ainda não foi postado
+                </h3>
+                <p className="text-sm text-slate-400 font-medium max-w-md">
+                  A escala operacional para esta data ainda não foi publicada pelo líder do setor.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    setSelectedDate(todayStr);
+                    setCalendarMonth(new Date(`${todayStr}T00:00:00`));
+                  }}
+                  className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Verificar data de Hoje
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800">

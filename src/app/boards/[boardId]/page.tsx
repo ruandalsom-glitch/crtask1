@@ -287,7 +287,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                   onClick={() => setActiveTab('escala')}
                   className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
                     activeTab === 'escala' 
-                      ? 'border-blue-600 text-blue-600' 
+                      ? 'border-blue-600 text-blue-600 font-bold' 
                       : 'border-transparent text-[#676879] hover:text-[#323338]'
                   }`}
                 >
@@ -308,17 +308,31 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                 </button>
               </>
             ) : (
-              <button 
-                onClick={() => setActiveTab('turnos')}
-                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'turnos' || activeTab === 'escala'
-                    ? 'border-blue-600 text-blue-600 font-bold' 
-                    : 'border-transparent text-[#676879] hover:text-[#323338]'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-                Minha Escala
-              </button>
+              <>
+                <button 
+                  onClick={() => setActiveTab('escala')}
+                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'escala'
+                      ? 'border-blue-600 text-blue-600 font-bold' 
+                      : 'border-transparent text-[#676879] hover:text-[#323338]'
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                  Minha Escala
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('turnos')}
+                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'turnos'
+                      ? 'border-blue-600 text-blue-600 font-bold' 
+                      : 'border-transparent text-[#676879] hover:text-[#323338]'
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                  Quadro de turnos
+                </button>
+              </>
             )}
           </div>
 
@@ -343,13 +357,13 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
           <BoardKanbanView boardId={boardId} isReadOnly={isReadOnly} />
         ) : activeTab === 'rotina' ? (
           <BoardRoutineView boardId={boardId} isReadOnly={isReadOnly} />
-        ) : activeTab === 'escala' && (accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader') ? (
+        ) : activeTab === 'escala' ? (
           <BoardShiftView 
             boardId={boardId} 
             isReadOnly={isReadOnly} 
             onSwitchToTurnos={() => setActiveTab('turnos')} 
           />
-        ) : activeTab === 'turnos' || activeTab === 'escala' ? (
+        ) : activeTab === 'turnos' ? (
           <BoardMonthlyRosterView boardId={boardId} isReadOnly={isReadOnly} />
         ) : (
           <BoardCalendarView boardId={boardId} isReadOnly={isReadOnly} />
