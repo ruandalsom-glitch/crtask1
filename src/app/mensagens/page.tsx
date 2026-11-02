@@ -7,7 +7,9 @@ import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { 
   Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
-  ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare
+  ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
+  GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown,
+  Eye, FileText, MoveVertical
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
 
@@ -307,6 +309,9 @@ interface MensagemItem {
   mensagem: string;
   horario: string;
   obs?: string;
+  imagem_url?: string;
+  texto_completo?: string;
+  ordem?: number;
 }
 
 export default function MensagensPage() {
@@ -324,6 +329,19 @@ export default function MensagensPage() {
   const [shareFeedbackMsg, setShareFeedbackMsg] = useState<string>('');
   const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
 
+  // Arraste e Reordenação de Mensagens (Drag & Drop)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Modal de Detalhe e Envio do Comunicado (Imagem centralizada + Texto + Copiar)
+  const [selectedItemForDetail, setSelectedItemForDetail] = useState<MensagemItem | null>(null);
+  const [detailText, setDetailText] = useState<string>('');
+  const [detailImage, setDetailImage] = useState<string>('');
+  const [isUploadingDetailImage, setIsUploadingDetailImage] = useState<boolean>(false);
+  const [isSavingDetail, setIsSavingDetail] = useState<boolean>(false);
+  const [isCopiedText, setIsCopiedText] = useState<boolean>(false);
+  const [isCopiedImage, setIsCopiedImage] = useState<boolean>(false);
+
   // Modal de Adicionar / Editar Mensagem
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MensagemItem | null>(null);
@@ -332,6 +350,8 @@ export default function MensagensPage() {
   const [formTipo, setFormTipo] = useState('GRUPO');
   const [formUltimoCheck, setFormUltimoCheck] = useState('FIXA (14/09)');
   const [formObs, setFormObs] = useState('');
+  const [formImagemUrl, setFormImagemUrl] = useState('');
+  const [formTextoCompleto, setFormTextoCompleto] = useState('');
 
   // Usuário Logado
   const { data: currentUser, isLoading: isLoadingUser } = useQuery({
@@ -390,8 +410,7 @@ export default function MensagensPage() {
         .from('mensagens_checklist')
         .select('*')
         .eq('data', '1970-01-01')
-        .eq('base', selectedBase)
-        .order('horario_envio', { ascending: true });
+        .eq('base', selectedBase);
 
       if (error) {
         console.error('[Mensagens] Erro ao buscar templates customizados:', error);
@@ -402,20 +421,35 @@ export default function MensagensPage() {
     staleTime: 30 * 1000
   });
 
-  // Lista efetiva de mensagens (Personalizadas do Supabase ou Padrão do JSON)
+  // Lista efetiva de mensagens (Personalizadas do Supabase ou Padrão do JSON, ordenadas pela ordem personalizada)
   const mensagensList: MensagemItem[] = useMemo(() => {
     if (dbTemplates && dbTemplates.length > 0) {
-      return dbTemplates.map(row => ({
-        id: row.msg_id,
-        ultimo_check: row.supervisor || 'FIXA',
-        tipo: row.enviado_por || 'GRUPO',
-        mensagem: row.analista || '',
-        horario: row.horario_envio || '',
-        obs: row.assistente || ''
-      }));
+      const list: MensagemItem[] = dbTemplates.map((row, idx) => {
+        const orderNum = row.resp_tarde !== null && row.resp_tarde !== undefined && row.resp_tarde !== '' && !isNaN(Number(row.resp_tarde))
+          ? Number(row.resp_tarde)
+          : idx;
+        return {
+          id: row.msg_id,
+          ultimo_check: row.supervisor || 'FIXA',
+          tipo: row.enviado_por || 'GRUPO',
+          mensagem: row.analista || '',
+          horario: row.horario_envio || '',
+          obs: row.assistente || '',
+          imagem_url: row.resp_manha || '',
+          texto_completo: row.resp_inter || row.analista || '',
+          ordem: orderNum
+        };
+      });
+      return list.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
     }
     const map = mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>;
-    return map[selectedBase] || [];
+    const defaultList = map[selectedBase] || [];
+    return defaultList.map((m, idx) => ({
+      ...m,
+      imagem_url: '',
+      texto_completo: m.mensagem,
+      ordem: idx
+    }));
   }, [selectedBase, dbTemplates]);
 
   // Busca o estado do checklist no Supabase para a data e base atuais
@@ -607,6 +641,8 @@ export default function MensagensPage() {
     setFormTipo('GRUPO');
     setFormUltimoCheck('FIXA (14/09)');
     setFormObs('');
+    setFormImagemUrl('');
+    setFormTextoCompleto('');
     setIsModalOpen(true);
   };
 
@@ -618,7 +654,276 @@ export default function MensagensPage() {
     setFormTipo(item.tipo);
     setFormUltimoCheck(item.ultimo_check);
     setFormObs(item.obs || '');
+    setFormImagemUrl(item.imagem_url || '');
+    setFormTextoCompleto(item.texto_completo || item.mensagem);
     setIsModalOpen(true);
+  };
+
+  // Abre modal de detalhe do comunicado (com imagem centralizada no topo e campo de texto)
+  const openDetailModal = (item: MensagemItem) => {
+    setSelectedItemForDetail(item);
+    setDetailText(item.texto_completo || item.mensagem || '');
+    setDetailImage(item.imagem_url || '');
+    setIsCopiedText(false);
+    setIsCopiedImage(false);
+  };
+
+  // Escuta evento de Colar (Ctrl+V) de imagem quando o modal de detalhe estiver aberto
+  useEffect(() => {
+    if (!selectedItemForDetail) return;
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleUploadImage(file);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [selectedItemForDetail]);
+
+  // Upload de Imagem (Supabase Storage 'attachments' com fallback para Data URL)
+  const handleUploadImage = async (file: File) => {
+    try {
+      setIsUploadingDetailImage(true);
+      const fileExt = file.name.split('.').pop() || 'png';
+      const cleanFileName = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+      const filePath = `mensagens/${cleanFileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('attachments')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) {
+        console.warn('[Mensagens] Falha no storage, aplicando fallback local:', uploadError);
+        // Fallback: Converte para Data URL Base64 para não travar o usuário
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target?.result as string;
+          setDetailImage(dataUrl);
+          setShareFeedbackMsg('Imagem carregada!');
+          setTimeout(() => setShareFeedbackMsg(''), 3000);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('attachments')
+        .getPublicUrl(filePath);
+
+      setDetailImage(publicUrl);
+      setShareFeedbackMsg('Imagem enviada e anexada com sucesso!');
+      setTimeout(() => setShareFeedbackMsg(''), 3000);
+    } catch (err: any) {
+      alert('Erro no envio da imagem: ' + err.message);
+    } finally {
+      setIsUploadingDetailImage(false);
+    }
+  };
+
+  // Copiar Texto para Área de Transferência
+  const handleCopyTextToClipboard = async (text: string) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setIsCopiedText(true);
+      setShareFeedbackMsg('Texto copiado com sucesso!');
+      setTimeout(() => setIsCopiedText(false), 2500);
+      setTimeout(() => setShareFeedbackMsg(''), 3000);
+    } catch (err) {
+      console.error('Erro ao copiar texto:', err);
+    }
+  };
+
+  // Copiar Imagem para Área de Transferência (Para colar direto no WhatsApp)
+  const handleCopyImageToClipboard = async (imageUrl: string) => {
+    if (!imageUrl) return;
+    try {
+      setIsCopiedImage(true);
+      if (imageUrl.startsWith('data:image/')) {
+        const res = await fetch(imageUrl);
+        const blob = await res.blob();
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob })
+        ]);
+        setShareFeedbackMsg('Imagem copiada para a área de transferência!');
+        setTimeout(() => setIsCopiedImage(false), 2000);
+        setTimeout(() => setShareFeedbackMsg(''), 3000);
+        return;
+      }
+
+      const res = await fetch(imageUrl, { mode: 'cors' });
+      const blob = await res.blob();
+      if (blob.type === 'image/png') {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        setShareFeedbackMsg('Imagem copiada para a área de transferência!');
+      } else {
+        // Converte para PNG em canvas para suportar ClipboardItem em todos os browsers
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = imageUrl;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0);
+        canvas.toBlob(async (pngBlob) => {
+          if (pngBlob) {
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': pngBlob })
+            ]);
+            setShareFeedbackMsg('Imagem copiada para a área de transferência!');
+          }
+        }, 'image/png');
+      }
+      setTimeout(() => setIsCopiedImage(false), 2000);
+      setTimeout(() => setShareFeedbackMsg(''), 3000);
+    } catch (err) {
+      console.warn('Fallback copiar URL da imagem:', err);
+      await navigator.clipboard.writeText(imageUrl);
+      setShareFeedbackMsg('Link da imagem copiado!');
+      setTimeout(() => setIsCopiedImage(false), 2000);
+      setTimeout(() => setShareFeedbackMsg(''), 3000);
+    }
+  };
+
+  // Salvar alterações no Modal de Detalhe (Imagem + Texto)
+  const handleSaveDetailModal = async () => {
+    if (!selectedItemForDetail) return;
+    setIsSavingDetail(true);
+
+    try {
+      const isExistingInDb = dbTemplates && dbTemplates.length > 0;
+      if (!isExistingInDb) {
+        const defaultList = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
+        const seedPayloads = defaultList.map((m, idx) => ({
+          data: '1970-01-01',
+          base: selectedBase,
+          msg_id: m.id,
+          checked: false,
+          supervisor: m.ultimo_check,
+          enviado_por: m.tipo,
+          analista: m.mensagem,
+          horario_envio: m.horario,
+          assistente: m.obs || '',
+          resp_manha: '',
+          resp_inter: m.mensagem,
+          resp_tarde: String(idx),
+          updated_at: new Date().toISOString()
+        }));
+        await supabase.from('mensagens_checklist').upsert(seedPayloads, { onConflict: 'data,base,msg_id' });
+      }
+
+      const payload = {
+        data: '1970-01-01',
+        base: selectedBase,
+        msg_id: selectedItemForDetail.id,
+        checked: false,
+        supervisor: selectedItemForDetail.ultimo_check,
+        enviado_por: selectedItemForDetail.tipo,
+        analista: selectedItemForDetail.mensagem,
+        horario_envio: selectedItemForDetail.horario,
+        assistente: selectedItemForDetail.obs || '',
+        resp_manha: detailImage || '',
+        resp_inter: detailText || selectedItemForDetail.mensagem || '',
+        resp_tarde: String(selectedItemForDetail.ordem ?? 0),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('mensagens_checklist')
+        .upsert(payload, { onConflict: 'data,base,msg_id' });
+
+      if (error) throw error;
+
+      setSelectedItemForDetail({
+        ...selectedItemForDetail,
+        imagem_url: detailImage,
+        texto_completo: detailText
+      });
+
+      refetchTemplates();
+      setShareFeedbackMsg('Comunicado e anexo salvos com sucesso!');
+      setTimeout(() => setShareFeedbackMsg(''), 3500);
+    } catch (err: any) {
+      alert('Erro ao salvar: ' + err.message);
+    } finally {
+      setIsSavingDetail(false);
+    }
+  };
+
+  // Reordenação de Mensagens (Drag & Drop e Botões de Subir/Descer)
+  const saveReorderedList = async (newList: MensagemItem[]) => {
+    const payloads = newList.map((item, idx) => ({
+      data: '1970-01-01',
+      base: selectedBase,
+      msg_id: item.id,
+      checked: false,
+      supervisor: item.ultimo_check,
+      enviado_por: item.tipo,
+      analista: item.mensagem,
+      horario_envio: item.horario,
+      assistente: item.obs || '',
+      resp_manha: item.imagem_url || '',
+      resp_inter: item.texto_completo || item.mensagem || '',
+      resp_tarde: String(idx),
+      updated_at: new Date().toISOString()
+    }));
+
+    queryClient.setQueryData(['mensagens_templates', selectedBase], payloads);
+
+    const { error } = await supabase
+      .from('mensagens_checklist')
+      .upsert(payloads, { onConflict: 'data,base,msg_id' });
+
+    if (error) {
+      console.error('[Mensagens] Erro ao reordenar mensagens:', error);
+      refetchTemplates();
+    } else {
+      setShareFeedbackMsg('Ordem das mensagens atualizada!');
+      setTimeout(() => setShareFeedbackMsg(''), 3000);
+    }
+  };
+
+  const handleMoveItem = async (fromIndex: number, direction: 'up' | 'down') => {
+    const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= mensagensList.length) return;
+
+    const updated = [...mensagensList];
+    const [moved] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, moved);
+
+    await saveReorderedList(updated);
+  };
+
+  const handleDropRow = async (targetIndex: number) => {
+    if (draggedIndex === null || draggedIndex === targetIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const updated = [...mensagensList];
+    const [moved] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, moved);
+
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+    await saveReorderedList(updated);
   };
 
   // Salva no Supabase (criação ou edição de templates da base)
@@ -629,7 +934,7 @@ export default function MensagensPage() {
 
     if (!isExistingInDb) {
       const defaultList = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
-      const seedPayloads = defaultList.map(m => ({
+      const seedPayloads = defaultList.map((m, idx) => ({
         data: '1970-01-01',
         base: selectedBase,
         msg_id: m.id,
@@ -639,6 +944,9 @@ export default function MensagensPage() {
         analista: m.mensagem,
         horario_envio: m.horario,
         assistente: m.obs || '',
+        resp_manha: '',
+        resp_inter: m.mensagem,
+        resp_tarde: String(idx),
         updated_at: new Date().toISOString()
       }));
 
@@ -646,6 +954,7 @@ export default function MensagensPage() {
     }
 
     const targetId = editingItem ? editingItem.id : `msg_${Date.now()}`;
+    const targetOrder = editingItem && editingItem.ordem !== undefined ? editingItem.ordem : mensagensList.length;
     const payload = {
       data: '1970-01-01',
       base: selectedBase,
@@ -656,6 +965,9 @@ export default function MensagensPage() {
       analista: formMensagem,
       horario_envio: formHorario,
       assistente: formObs,
+      resp_manha: formImagemUrl || '',
+      resp_inter: formTextoCompleto || formMensagem,
+      resp_tarde: String(targetOrder),
       updated_at: new Date().toISOString()
     };
 
@@ -1388,25 +1700,28 @@ export default function MensagensPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#0B2238] text-white text-[12px] font-bold tracking-wider uppercase">
+                  <th className="py-3.5 px-2 text-center w-[54px] border-r border-[#1E3A56]" title="Arraste para reordenar as mensagens">
+                    <MoveVertical className="w-3.5 h-3.5 mx-auto text-slate-300" />
+                  </th>
                   <th className="py-3.5 px-4 text-center w-[130px] border-r border-[#1E3A56]">Último Check</th>
                   <th className="py-3.5 px-4 text-center w-[130px] border-r border-[#1E3A56]">Tipo</th>
-                  <th className="py-3.5 px-6 border-r border-[#1E3A56]">Mensagens</th>
+                  <th className="py-3.5 px-6 border-r border-[#1E3A56]">Mensagens (Clique para Anexo e Texto)</th>
                   <th className="py-3.5 px-4 text-center w-[90px] border-r border-[#1E3A56]">Horário</th>
                   <th className="py-3.5 px-4 text-center w-[70px] border-r border-[#1E3A56]">Check</th>
                   <th className="py-3.5 px-6 text-center w-[220px] border-r border-[#1E3A56]">Horário Check / Envio</th>
-                  <th className="py-3.5 px-3 text-center w-[80px]">Ações</th>
+                  <th className="py-3.5 px-3 text-center w-[90px]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-slate-400 font-medium">
+                    <td colSpan={8} className="text-center py-12 text-slate-400 font-medium">
                       Carregando mensagens da base {selectedBase}...
                     </td>
                   </tr>
                 ) : mensagensList.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-slate-400 space-y-2">
+                    <td colSpan={8} className="text-center py-12 text-slate-400 space-y-2">
                       <div>Nenhuma mensagem cadastrada para a base {selectedBase}.</div>
                       <button
                         onClick={openAddModal}
@@ -1420,14 +1735,76 @@ export default function MensagensPage() {
                   mensagensList.map((item, index) => {
                     const state = checksMap[item.id] || { checked: false, horario_envio: '', enviado_por: '' };
                     const isChecked = state.checked;
+                    const isBeingDragged = draggedIndex === index;
+                    const isDragTarget = dragOverIndex === index;
 
                     return (
                       <tr
                         key={item.id}
-                        className={`transition-colors group hover:bg-blue-50/40 ${
-                          index % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'
-                        }`}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', String(index));
+                          setDraggedIndex(index);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverIndex !== index) setDragOverIndex(index);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverIndex === index) setDragOverIndex(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          handleDropRow(index);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedIndex(null);
+                          setDragOverIndex(null);
+                        }}
+                        className={`transition-colors group ${
+                          isBeingDragged 
+                            ? 'opacity-40 bg-blue-100/60' 
+                            : isDragTarget 
+                            ? 'border-t-2 border-t-blue-600 bg-blue-50/80' 
+                            : index % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'
+                        } hover:bg-blue-50/40`}
                       >
+                        {/* Coluna de Reordenação (Arraste + Botões Subir/Descer) */}
+                        <td 
+                          className="py-2 px-1 text-center border-r border-slate-100 select-none"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-center gap-0.5">
+                            <div 
+                              className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                              title="Arraste para cima ou para baixo para reordenar"
+                            >
+                              <GripVertical className="w-4 h-4" />
+                            </div>
+                            <div className="flex flex-col -space-y-1">
+                              <button
+                                type="button"
+                                disabled={index === 0}
+                                onClick={() => handleMoveItem(index, 'up')}
+                                className="p-0.5 text-slate-300 hover:text-slate-700 disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                                title="Mover para cima"
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={index === mensagensList.length - 1}
+                                onClick={() => handleMoveItem(index, 'down')}
+                                className="p-0.5 text-slate-300 hover:text-slate-700 disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                                title="Mover para baixo"
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+
                         {/* Último Check */}
                         <td className="py-3 px-4 text-center font-bold border-r border-slate-100 whitespace-nowrap">
                           <span
@@ -1454,9 +1831,36 @@ export default function MensagensPage() {
                           </span>
                         </td>
 
-                        {/* Mensagens */}
-                        <td className="py-3 px-6 font-bold text-slate-900 border-r border-slate-100">
-                          {item.mensagem}
+                        {/* Mensagens (Clicável para abrir visualizador de anexo + texto + copiar) */}
+                        <td 
+                          className="py-3 px-6 border-r border-slate-100 cursor-pointer group/cell hover:bg-blue-50/70 transition-colors"
+                          onClick={() => openDetailModal(item)}
+                          title="Clique para abrir o comunicado, ver imagem e copiar texto"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5">
+                              <span className="font-bold text-slate-900 group-hover/cell:text-blue-600 transition-colors">
+                                {item.mensagem}
+                              </span>
+                              {item.imagem_url && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                                  <ImageIcon className="w-3 h-3" />
+                                  <span>Imagem</span>
+                                </span>
+                              )}
+                              {item.texto_completo && item.texto_completo !== item.mensagem && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                                  <FileText className="w-3 h-3" />
+                                  <span>Texto</span>
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="opacity-0 group-hover/cell:opacity-100 transition-opacity flex items-center gap-1 text-[11px] font-semibold text-blue-600 bg-white px-2 py-1 rounded-lg border border-blue-200 shadow-2xs shrink-0">
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Abrir</span>
+                            </div>
+                          </div>
                         </td>
 
                         {/* Horário */}
@@ -1495,13 +1899,20 @@ export default function MensagensPage() {
                           )}
                         </td>
 
-                        {/* Ações: Editar e Excluir */}
+                        {/* Ações: Visualizar/Copiar, Editar e Excluir */}
                         <td className="py-2 px-3 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center justify-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => openDetailModal(item)}
+                              className="p-1 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors cursor-pointer"
+                              title="Visualizar comunicado e copiar"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => openEditModal(item)}
                               className="p-1 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors cursor-pointer"
-                              title="Editar Mensagem"
+                              title="Editar Configurações da Mensagem"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -1617,6 +2028,80 @@ export default function MensagensPage() {
                 </div>
               </div>
 
+              {/* Anexo de Imagem (URL ou Upload) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Imagem do Comunicado (Opcional)</span>
+                  </span>
+                  {formImagemUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setFormImagemUrl('')}
+                      className="text-[10px] text-red-500 hover:underline cursor-pointer"
+                    >
+                      Remover Imagem
+                    </button>
+                  )}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={formImagemUrl}
+                    onChange={e => setFormImagemUrl(e.target.value)}
+                    placeholder="Cole a URL da imagem ou use o botão de upload..."
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  />
+                  <label className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer transition-colors shrink-0">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Arquivo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const fileExt = file.name.split('.').pop() || 'png';
+                          const cleanFileName = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+                          const filePath = `mensagens/${cleanFileName}`;
+                          const { error: upErr } = await supabase.storage.from('attachments').upload(filePath, file, { upsert: true });
+                          if (!upErr) {
+                            const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
+                            setFormImagemUrl(publicUrl);
+                          } else {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setFormImagemUrl(ev.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                {formImagemUrl && (
+                  <div className="mt-2 p-2 bg-slate-100/70 rounded-xl border border-slate-200 flex justify-center">
+                    <img src={formImagemUrl} alt="Pré-visualização" className="max-h-24 object-contain rounded-lg" />
+                  </div>
+                )}
+              </div>
+
+              {/* Texto Completo / Mensagem para Disparo */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Texto Completo do Comunicado (Opcional - WhatsApp / Status)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={formTextoCompleto}
+                  onChange={e => setFormTextoCompleto(e.target.value)}
+                  placeholder="Texto a ser copiado pelos operadores no momento do envio..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all resize-y"
+                />
+              </div>
+
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -1636,6 +2121,246 @@ export default function MensagensPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL DEDICADO: VISUALIZADOR DE COMUNICADO (IMAGEM CENTRALIZADA + TEXTO + COPIAR) */}
+      {selectedItemForDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 my-6 flex flex-col max-h-[92vh]">
+            
+            {/* Cabeçalho do Modal */}
+            <div className="bg-[#0B2238] px-6 py-4 flex items-center justify-between text-white shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-base text-white tracking-tight">
+                      {selectedItemForDetail.mensagem}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                      {selectedItemForDetail.tipo}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Programado para às <strong className="text-white">{selectedItemForDetail.horario}</strong> • Base {selectedBase}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedItemForDetail(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Conteúdo com Scroll */}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              
+              {/* SEÇÃO 1: IMAGEM CENTRALIZADA NO TOPO */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-blue-600" />
+                    <span>Imagem do Comunicado</span>
+                  </label>
+                  {detailImage && (
+                    <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Imagem Anexada
+                    </span>
+                  )}
+                </div>
+
+                {detailImage ? (
+                  <div className="flex flex-col items-center justify-center bg-slate-900/5 border border-slate-200 rounded-2xl p-4 gap-3">
+                    {/* Imagem Centralizada */}
+                    <div className="relative group max-h-72 w-full flex items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+                      <img
+                        src={detailImage}
+                        alt={selectedItemForDetail.mensagem}
+                        className="max-h-72 w-auto max-w-full object-contain mx-auto rounded-lg shadow-sm"
+                      />
+                    </div>
+
+                    {/* Botões de Ação da Imagem */}
+                    <div className="flex items-center gap-2 flex-wrap justify-center pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyImageToClipboard(detailImage)}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
+                          isCopiedImage 
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+                        }`}
+                        title="Copiar imagem para colar no WhatsApp"
+                      >
+                        {isCopiedImage ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
+                        <span>{isCopiedImage ? 'Imagem Copiada!' : 'Copiar Imagem'}</span>
+                      </button>
+
+                      <label className="px-3.5 py-1.5 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs">
+                        <Upload className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{isUploadingDetailImage ? 'Enviando...' : 'Trocar Imagem'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={isUploadingDetailImage}
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadImage(file);
+                          }}
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => setDetailImage('')}
+                        className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Remover anexo de imagem"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remover</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-2xl p-6 text-center bg-slate-50/50 hover:bg-blue-50/20 transition-all flex flex-col items-center justify-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                      <ImageIcon className="w-6 h-6 stroke-[1.5]" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">
+                        Nenhuma imagem anexada a esta mensagem
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Selecione do computador, arraste para cá ou cole com Ctrl+V
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap justify-center">
+                      <label className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs">
+                        <Upload className="w-4 h-4" />
+                        <span>{isUploadingDetailImage ? 'Enviando...' : 'Selecionar Imagem'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={isUploadingDetailImage}
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadImage(file);
+                          }}
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = prompt('Cole o link direto da imagem (https://...):');
+                          if (url && url.trim()) setDetailImage(url.trim());
+                        }}
+                        className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        Inserir URL
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SEÇÃO 2: ESPAÇO PARA O TEXTO DA MENSAGEM */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-emerald-600" />
+                    <span>Texto do Comunicado (WhatsApp / Status)</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {detailText.length} caracteres
+                  </span>
+                </div>
+
+                <textarea
+                  rows={6}
+                  value={detailText}
+                  onChange={(e) => setDetailText(e.target.value)}
+                  placeholder="Digite aqui o texto detalhado da mensagem para envio..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs font-medium text-slate-800 leading-relaxed outline-none focus:border-blue-500 focus:bg-white transition-all resize-y shadow-2xs font-mono"
+                />
+              </div>
+
+            </div>
+
+            {/* Barra de Ações Inferior com Botão de Copiar */}
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-3.5 flex items-center justify-between flex-wrap gap-3 shrink-0">
+              <div className="flex items-center gap-2">
+                {/* Botão de Marcar Check */}
+                <button
+                  type="button"
+                  onClick={() => handleToggleCheck(selectedItemForDetail.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                    checksMap[selectedItemForDetail.id]?.checked
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200'
+                  }`}
+                  title="Marcar ou desmarcar o check de hoje desta mensagem"
+                >
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${checksMap[selectedItemForDetail.id]?.checked ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  <span>
+                    {checksMap[selectedItemForDetail.id]?.checked 
+                      ? `Enviado às ${checksMap[selectedItemForDetail.id]?.horario_envio}` 
+                      : 'Marcar como Enviado'}
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {/* Botão Salvar Alterações */}
+                <button
+                  type="button"
+                  onClick={handleSaveDetailModal}
+                  disabled={isSavingDetail}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  title="Salvar o texto e a imagem permanentemente para esta mensagem"
+                >
+                  {isSavingDetail ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+
+                {/* Botão Copiar Texto em Destaque */}
+                <button
+                  type="button"
+                  onClick={() => handleCopyTextToClipboard(detailText)}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
+                    isCopiedText
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                  title="Copiar texto para colar no WhatsApp"
+                >
+                  {isCopiedText ? (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>Texto Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copiar Texto</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
