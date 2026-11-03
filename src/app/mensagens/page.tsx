@@ -9,7 +9,7 @@ import {
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
   ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
   GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown,
-  Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX
+  Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX, Sparkles
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
 
@@ -404,6 +404,8 @@ export default function MensagensPage() {
   const [isCopiedText, setIsCopiedText] = useState<boolean>(false);
   const [isCopiedImage, setIsCopiedImage] = useState<boolean>(false);
   const [isCopiedAll, setIsCopiedAll] = useState<boolean>(false);
+  const [isCopiedComposite, setIsCopiedComposite] = useState<boolean>(false);
+  const [activeCopyStep, setActiveCopyStep] = useState<'image' | 'text' | 'composite' | null>(null);
 
   // Sistema de Alarme no Horário de Envio
   const [activeAlarmItem, setActiveAlarmItem] = useState<{
@@ -801,20 +803,6 @@ export default function MensagensPage() {
     }
   };
 
-  // Copiar Texto para Área de Transferência
-  const handleCopyTextToClipboard = async (text: string) => {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setIsCopiedText(true);
-      setShareFeedbackMsg('Texto copiado com sucesso!');
-      setTimeout(() => setIsCopiedText(false), 2500);
-      setTimeout(() => setShareFeedbackMsg(''), 3000);
-    } catch (err) {
-      console.error('Erro ao copiar texto:', err);
-    }
-  };
-
   // Copiar Imagem para Área de Transferência (Para colar direto no WhatsApp)
   const handleCopyImageToClipboard = async (imageUrl: string) => {
     if (!imageUrl) return;
@@ -832,44 +820,176 @@ export default function MensagensPage() {
         return;
       }
 
-      const res = await fetch(imageUrl, { mode: 'cors' });
-      const blob = await res.blob();
-      if (blob.type === 'image/png') {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ]);
-        setShareFeedbackMsg('Imagem copiada para a área de transferência!');
+      let pngBlob: Blob | null = null;
+      if (imageUrl.startsWith('data:image/png')) {
+        const res = await fetch(imageUrl);
+        pngBlob = await res.blob();
       } else {
-        // Converte para PNG em canvas para suportar ClipboardItem em todos os browsers
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.src = imageUrl;
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
+        pngBlob = await new Promise<Blob | null>((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0);
+            canvas.toBlob(blob => resolve(blob), 'image/png');
+          };
+          img.onerror = () => resolve(null);
+          img.src = imageUrl;
         });
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0);
-        canvas.toBlob(async (pngBlob) => {
-          if (pngBlob) {
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': pngBlob })
-            ]);
-            setShareFeedbackMsg('Imagem copiada para a área de transferência!');
-          }
-        }, 'image/png');
       }
-      setTimeout(() => setIsCopiedImage(false), 2000);
-      setTimeout(() => setShareFeedbackMsg(''), 3000);
+
+      if (pngBlob) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': pngBlob })
+        ]);
+        setActiveCopyStep('image');
+        setShareFeedbackMsg('Passo 1: Imagem copiada! Dê Ctrl+V no WhatsApp e depois copie a Legenda.');
+      } else {
+        await navigator.clipboard.writeText(imageUrl);
+        setShareFeedbackMsg('Link da imagem copiado!');
+      }
+      setTimeout(() => setIsCopiedImage(false), 2500);
+      setTimeout(() => setShareFeedbackMsg(''), 4500);
     } catch (err) {
       console.warn('Fallback copiar URL da imagem:', err);
       await navigator.clipboard.writeText(imageUrl);
       setShareFeedbackMsg('Link da imagem copiado!');
-      setTimeout(() => setIsCopiedImage(false), 2000);
-      setTimeout(() => setShareFeedbackMsg(''), 3000);
+      setTimeout(() => setIsCopiedImage(false), 2500);
+      setTimeout(() => setShareFeedbackMsg(''), 4000);
+    }
+  };
+
+  // Copiar Imagem com Legenda/Texto Embutido no Canvas (Para colar direto no WhatsApp em 1 único Ctrl+V)
+  const handleCopyCompositeToClipboard = async (imageUrl: string, text: string) => {
+    const cleanImg = (imageUrl || '').trim();
+    const cleanTxt = (text || '').trim();
+
+    if (!cleanImg) {
+      alert('Esta mensagem não possui imagem para embutir texto.');
+      return;
+    }
+
+    try {
+      setIsCopiedComposite(true);
+      setActiveCopyStep('composite');
+      setShareFeedbackMsg('Gerando imagem com texto embutido...');
+
+      const compositeBlob = await new Promise<Blob | null>((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const w = img.naturalWidth || img.width || 800;
+            const h = img.naturalHeight || img.height || 600;
+
+            const fontSize = Math.max(16, Math.min(26, Math.round(w / 34)));
+            const lineHeight = fontSize * 1.45;
+            const padding = Math.round(fontSize * 1.2);
+            const maxTextWidth = w - padding * 2;
+
+            const dummyCtx = canvas.getContext('2d');
+            if (!dummyCtx) return resolve(null);
+            dummyCtx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
+
+            // Processamento do texto com quebras
+            const lines: string[] = [];
+            const paragraphs = cleanTxt.split('\n');
+            paragraphs.forEach(p => {
+              const words = p.split(/\s+/).filter(Boolean);
+              if (words.length === 0) {
+                lines.push('');
+                return;
+              }
+              let cur = '';
+              words.forEach(w => {
+                const test = cur ? `${cur} ${w}` : w;
+                if (dummyCtx.measureText(test).width > maxTextWidth) {
+                  if (cur) lines.push(cur);
+                  cur = w;
+                } else {
+                  cur = test;
+                }
+              });
+              if (cur) lines.push(cur);
+            });
+
+            const bannerHeight = cleanTxt ? padding * 2 + lines.length * lineHeight : 0;
+            canvas.width = w;
+            canvas.height = h + bannerHeight;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return resolve(null);
+
+            // Desenha a imagem principal
+            ctx.drawImage(img, 0, 0, w, h);
+
+            if (bannerHeight > 0) {
+              // Rodapé escuro elegante
+              ctx.fillStyle = '#0f172a';
+              ctx.fillRect(0, h, w, bannerHeight);
+
+              // Faixa decorativa no topo do rodapé
+              ctx.fillStyle = '#2563eb';
+              ctx.fillRect(0, h, w, 4);
+
+              // Texto
+              ctx.fillStyle = '#f8fafc';
+              ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
+              ctx.textBaseline = 'top';
+
+              lines.forEach((l, idx) => {
+                ctx.fillText(l, padding, h + padding + idx * lineHeight);
+              });
+            }
+
+            canvas.toBlob(blob => resolve(blob), 'image/png');
+          } catch (err) {
+            console.warn('Erro ao desenhar canvas composite:', err);
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = cleanImg;
+      });
+
+      if (compositeBlob) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': compositeBlob })
+        ]);
+        setShareFeedbackMsg('Imagem com legenda embutida copiada! Dê um único Ctrl+V no WhatsApp.');
+      } else {
+        // Fallback: copia imagem normal
+        await handleCopyImageToClipboard(cleanImg);
+      }
+    } catch (err) {
+      console.error('Erro ao gerar composite:', err);
+      // Fallback
+      await handleCopyImageToClipboard(cleanImg);
+    } finally {
+      setTimeout(() => setIsCopiedComposite(false), 2500);
+      setTimeout(() => setShareFeedbackMsg(''), 4500);
+    }
+  };
+
+  // Copiar apenas o Texto / Legenda
+  const handleCopyTextToClipboard = async (text: string) => {
+    if (!text || !text.trim()) {
+      alert('Nenhum texto para copiar.');
+      return;
+    }
+    try {
+      setIsCopiedText(true);
+      setActiveCopyStep('text');
+      await navigator.clipboard.writeText(text.trim());
+      setShareFeedbackMsg('Passo 2: Legenda copiada! Dê Ctrl+V no campo "Digite uma mensagem" do WhatsApp.');
+      setTimeout(() => setIsCopiedText(false), 2500);
+      setTimeout(() => setShareFeedbackMsg(''), 4500);
+    } catch (err) {
+      console.error('Erro ao copiar texto:', err);
     }
   };
 
@@ -883,81 +1003,20 @@ export default function MensagensPage() {
       return;
     }
 
-    try {
-      setIsCopiedAll(true);
+    // Se possui imagem e texto, copia imagem com legenda embutida
+    if (cleanImg && cleanTxt) {
+      await handleCopyCompositeToClipboard(cleanImg, cleanTxt);
+      return;
+    }
 
-      // Cenário 1: Possui Imagem e Texto
-      if (cleanImg && cleanTxt) {
-        let pngBlob: Blob | null = null;
-        if (cleanImg.startsWith('data:image/png')) {
-          const res = await fetch(cleanImg);
-          pngBlob = await res.blob();
-        } else {
-          pngBlob = await new Promise<Blob | null>((resolve) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.naturalWidth || img.width;
-              canvas.height = img.naturalHeight || img.height;
-              const ctx = canvas.getContext('2d');
-              ctx?.drawImage(img, 0, 0);
-              canvas.toBlob(blob => resolve(blob), 'image/png');
-            };
-            img.onerror = () => resolve(null);
-            img.src = cleanImg;
-          });
-        }
+    if (cleanImg) {
+      await handleCopyImageToClipboard(cleanImg);
+      return;
+    }
 
-        if (pngBlob) {
-          try {
-            // Escreve imagem (PNG) e texto puro juntos na área de transferência
-            const clipboardItem = new ClipboardItem({
-              'image/png': pngBlob,
-              'text/plain': new Blob([cleanTxt], { type: 'text/plain' })
-            });
-            await navigator.clipboard.write([clipboardItem]);
-            setShareFeedbackMsg('Imagem e texto copiados! Dê Ctrl+V no WhatsApp.');
-            setTimeout(() => setIsCopiedAll(false), 2500);
-            setTimeout(() => setShareFeedbackMsg(''), 4000);
-            return;
-          } catch (multiErr) {
-            console.warn('ClipboardItem combinado falhou no browser, copiando imagem:', multiErr);
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': pngBlob })
-            ]);
-            setShareFeedbackMsg('Imagem copiada para a área de transferência!');
-            setTimeout(() => setIsCopiedAll(false), 2500);
-            setTimeout(() => setShareFeedbackMsg(''), 4000);
-            return;
-          }
-        }
-      }
-
-      // Cenário 2: Apenas Imagem
-      if (cleanImg && !cleanTxt) {
-        await handleCopyImageToClipboard(cleanImg);
-        setIsCopiedAll(true);
-        setTimeout(() => setIsCopiedAll(false), 2500);
-        return;
-      }
-
-      // Cenário 3: Apenas Texto
-      if (cleanTxt && !cleanImg) {
-        await handleCopyTextToClipboard(cleanTxt);
-        setIsCopiedAll(true);
-        setTimeout(() => setIsCopiedAll(false), 2500);
-        return;
-      }
-    } catch (err) {
-      console.error('Erro ao copiar imagem + texto:', err);
-      if (cleanTxt) {
-        await navigator.clipboard.writeText(cleanTxt);
-        setShareFeedbackMsg('Texto copiado com sucesso!');
-      }
-    } finally {
-      setTimeout(() => setIsCopiedAll(false), 2500);
-      setTimeout(() => setShareFeedbackMsg(''), 4000);
+    if (cleanTxt) {
+      await handleCopyTextToClipboard(cleanTxt);
+      return;
     }
   };
 
@@ -2198,13 +2257,45 @@ export default function MensagensPage() {
                         {/* Ações: Visualizar/Copiar, Editar e Excluir */}
                         <td className="py-2 px-3 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
-                            {(item.imagem_url || item.texto_completo) && (
+                            {item.imagem_url && (item.texto_completo || item.mensagem) ? (
+                              <>
+                                <button
+                                  onClick={() => handleCopyImageToClipboard(item.imagem_url!)}
+                                  className="p-1 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer"
+                                  title="1º Copiar Imagem (cole com Ctrl+V no WhatsApp)"
+                                >
+                                  <ImageIcon className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleCopyTextToClipboard(item.texto_completo || item.mensagem)}
+                                  className="p-1 hover:bg-emerald-100 text-emerald-600 rounded-lg transition-colors cursor-pointer"
+                                  title="2º Copiar Legenda (cole em 'Digite uma mensagem')"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleCopyCompositeToClipboard(item.imagem_url!, item.texto_completo || item.mensagem)}
+                                  className="p-1 hover:bg-amber-100 text-amber-600 rounded-lg transition-colors cursor-pointer"
+                                  title="Copiar Imagem com Legenda Embutida (1 só Ctrl+V)"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            ) : item.imagem_url ? (
                               <button
-                                onClick={() => handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem)}
-                                className="p-1 hover:bg-emerald-100 text-emerald-600 rounded-lg transition-colors cursor-pointer"
-                                title="Copiar Imagem + Texto juntos para colar no WhatsApp"
+                                onClick={() => handleCopyImageToClipboard(item.imagem_url!)}
+                                className="p-1 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer"
+                                title="Copiar Imagem para WhatsApp"
                               >
-                                <Copy className="w-3.5 h-3.5" />
+                                <ImageIcon className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleCopyTextToClipboard(item.texto_completo || item.mensagem)}
+                                className="p-1 hover:bg-emerald-100 text-emerald-600 rounded-lg transition-colors cursor-pointer"
+                                title="Copiar Texto para WhatsApp"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
                               </button>
                             )}
                             <button
@@ -2636,55 +2727,60 @@ export default function MensagensPage() {
                   {isSavingDetail ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
 
-                {/* Botão Copiar Imagem + Texto Combinado */}
-                {(detailImage || detailText) && (
+                {/* Opções de Cópia: Se possui imagem E texto */}
+                {detailImage && detailText ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyImageToClipboard(detailImage)}
+                      className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="1º Copiar Imagem para colar (Ctrl+V) no WhatsApp"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>1º Imagem</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyTextToClipboard(detailText)}
+                      className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="2º Copiar Legenda para colar no campo 'Digite uma mensagem' do WhatsApp"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>2º Legenda</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCompositeToClipboard(detailImage, detailText)}
+                      className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Copiar com Legenda Embutida (1 só Ctrl+V com texto gravado direto na imagem)"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>1 Só Ctrl+V</span>
+                    </button>
+                  </div>
+                ) : detailImage ? (
                   <button
                     type="button"
-                    onClick={() => handleCopyAllToClipboard(detailImage, detailText)}
-                    className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
-                      isCopiedAll
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    }`}
-                    title="Copia a Imagem e o Texto juntos para enviar no WhatsApp com um único Ctrl+V"
+                    onClick={() => handleCopyImageToClipboard(detailImage)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs"
+                    title="Copiar imagem para colar no WhatsApp"
                   >
-                    {isCopiedAll ? (
-                      <>
-                        <Check className="w-4 h-4 stroke-[3]" />
-                        <span>Copiado (Imagem + Texto)!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        <span>Copiar Imagem + Texto</span>
-                      </>
-                    )}
+                    <ImageIcon className="w-4 h-4" />
+                    <span>Copiar Imagem</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyTextToClipboard(detailText)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs"
+                    title="Copiar texto para colar no WhatsApp"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Copiar Texto</span>
                   </button>
                 )}
-
-                {/* Botão Copiar Texto em Destaque */}
-                <button
-                  type="button"
-                  onClick={() => handleCopyTextToClipboard(detailText)}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
-                    isCopiedText
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                  title="Copiar texto para colar no WhatsApp"
-                >
-                  {isCopiedText ? (
-                    <>
-                      <Check className="w-4 h-4 stroke-[3]" />
-                      <span>Texto Copiado!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>Copiar Texto</span>
-                    </>
-                  )}
-                </button>
               </div>
             </div>
 
@@ -2787,9 +2883,82 @@ export default function MensagensPage() {
                 </div>
               )}
 
-              <p className="text-[11px] text-slate-500 text-center">
-                Ao clicar em copiar, a <strong>imagem e o texto</strong> vão para sua área de transferência para colar diretamente (<kbd className="bg-slate-100 px-1 py-0.5 rounded border border-slate-200">Ctrl+V</kbd>) no WhatsApp Web.
-              </p>
+              {/* Opções de Cópia Direcionadas para WhatsApp Web */}
+              {activeAlarmItem.item.imagem_url && (activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem) ? (
+                <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm">💡</span>
+                    <p className="text-[11px] text-blue-900 leading-relaxed">
+                      <strong>Como colar no WhatsApp Web:</strong> Cole a Imagem no chat com <kbd className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono">Ctrl+V</kbd>. Depois cole a Legenda no campo <em>"Digite uma mensagem"</em>.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyImageToClipboard(activeAlarmItem.item.imagem_url!)}
+                      className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border shadow-xs active:scale-95 ${
+                        activeCopyStep === 'image'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
+                          : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-200'
+                      }`}
+                    >
+                      <ImageIcon className="w-4 h-4 text-blue-600" />
+                      <span>1º Copiar Imagem</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyTextToClipboard(activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem)}
+                      className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border shadow-xs active:scale-95 ${
+                        activeCopyStep === 'text'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/20'
+                          : activeCopyStep === 'image'
+                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 ring-2 ring-emerald-400 animate-pulse'
+                          : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-200'
+                      }`}
+                    >
+                      <FileText className="w-4 h-4 text-emerald-600" />
+                      <span>2º Copiar Legenda</span>
+                    </button>
+                  </div>
+
+                  <div className="pt-2 border-t border-blue-200/60 flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-[11px] text-slate-500">Prefere colar tudo em 1 único Ctrl+V?</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCompositeToClipboard(activeAlarmItem.item.imagem_url!, activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem)}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Gera uma imagem com a legenda gravada diretamente no rodapé"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Copiar com Legenda Embutida</span>
+                    </button>
+                  </div>
+                </div>
+              ) : activeAlarmItem.item.imagem_url ? (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyImageToClipboard(activeAlarmItem.item.imagem_url!)}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-95 transition-all"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    <span>Copiar Imagem para o WhatsApp</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyTextToClipboard(activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem)}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-95 transition-all"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Copiar Texto para o WhatsApp</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Ações do Modal de Alarme */}
@@ -2817,22 +2986,16 @@ export default function MensagensPage() {
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
-                  onClick={() => handleCopyAlarmOnly(activeAlarmItem.item, activeAlarmItem.alarmKey)}
-                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  title="Apenas copiar imagem e texto sem marcar check"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Apenas Copiar</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleCopyAndMarkAlarm(activeAlarmItem.item, activeAlarmItem.alarmKey)}
+                  onClick={async () => {
+                    await handleToggleCheck(activeAlarmItem.item.id);
+                    dismissAlarm(activeAlarmItem.alarmKey);
+                    setShareFeedbackMsg('Comunicado marcado como enviado!');
+                  }}
                   className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
-                  title="Copiar imagem e texto e marcar como enviado"
+                  title="Marcar como enviado na tabela e fechar o alarme"
                 >
                   <Check className="w-4 h-4 stroke-[3]" />
-                  <span>Copiar e Marcar Envio</span>
+                  <span>Concluir e Marcar Envio</span>
                 </button>
               </div>
             </div>
