@@ -9,7 +9,7 @@ import {
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
   ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
   GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown,
-  Eye, FileText, MoveVertical
+  Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
 
@@ -45,6 +45,68 @@ function getInitials(name: string): string {
   if (parts.length === 0) return '';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// =========================================================================
+// SISTEMA DE ÁUDIO DO ALARME VIA WEB AUDIO API (NATIVO, SEM ARQUIVOS EXTERNOS)
+// =========================================================================
+let audioContextInstance: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!audioContextInstance) {
+    audioContextInstance = new AudioContextClass();
+  }
+  if (audioContextInstance.state === 'suspended') {
+    audioContextInstance.resume();
+  }
+  return audioContextInstance;
+}
+
+function playChimeNote(freq: number, startTime: number, duration: number, ctx: AudioContext) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, startTime);
+
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(0.3, startTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+}
+
+// Toca uma sequência melódica nítida e agradável de sino / notificação
+function playAlarmTune() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    playChimeNote(523.25, now, 0.45, ctx);        // Dó 5 (C5)
+    playChimeNote(659.25, now + 0.16, 0.45, ctx); // Mi 5 (E5)
+    playChimeNote(783.99, now + 0.32, 0.45, ctx); // Sol 5 (G5)
+    playChimeNote(1046.50, now + 0.48, 0.9, ctx); // Dó 6 (C6 agudo)
+  } catch (err) {
+    console.warn('[Mensagens] Falha ao sintetizar áudio do alarme:', err);
+  }
+}
+
+// Normaliza strings de horário para formato HH:MM
+function normalizeTime(t?: string | null): string {
+  if (!t) return '';
+  const clean = t.trim();
+  const match = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (match) {
+    return `${match[1].padStart(2, '0')}:${match[2]}`;
+  }
+  return clean;
 }
 
 // =========================================================================
@@ -341,6 +403,16 @@ export default function MensagensPage() {
   const [isSavingDetail, setIsSavingDetail] = useState<boolean>(false);
   const [isCopiedText, setIsCopiedText] = useState<boolean>(false);
   const [isCopiedImage, setIsCopiedImage] = useState<boolean>(false);
+  const [isCopiedAll, setIsCopiedAll] = useState<boolean>(false);
+
+  // Sistema de Alarme no Horário de Envio
+  const [activeAlarmItem, setActiveAlarmItem] = useState<{
+    item: MensagemItem;
+    alarmKey: string;
+  } | null>(null);
+  const [isAlarmSoundEnabled, setIsAlarmSoundEnabled] = useState<boolean>(true);
+  const [dismissedAlarms, setDismissedAlarms] = useState<Record<string, boolean>>({});
+  const alarmAudioLoopRef = useRef<any>(null);
 
   // Modal de Adicionar / Editar Mensagem
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -800,6 +872,193 @@ export default function MensagensPage() {
       setTimeout(() => setShareFeedbackMsg(''), 3000);
     }
   };
+
+  // Copiar Imagem + Texto JUNTOS (Para colar direto no WhatsApp com Imagem e Legenda/Texto)
+  const handleCopyAllToClipboard = async (imageUrl?: string, text?: string) => {
+    const cleanImg = imageUrl || '';
+    const cleanTxt = (text || '').trim();
+
+    if (!cleanImg && !cleanTxt) {
+      alert('Esta mensagem não possui imagem nem texto para copiar.');
+      return;
+    }
+
+    try {
+      setIsCopiedAll(true);
+
+      // Cenário 1: Possui Imagem e Texto
+      if (cleanImg && cleanTxt) {
+        let pngBlob: Blob | null = null;
+        if (cleanImg.startsWith('data:image/png')) {
+          const res = await fetch(cleanImg);
+          pngBlob = await res.blob();
+        } else {
+          pngBlob = await new Promise<Blob | null>((resolve) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth || img.width;
+              canvas.height = img.naturalHeight || img.height;
+              const ctx = canvas.getContext('2d');
+              ctx?.drawImage(img, 0, 0);
+              canvas.toBlob(blob => resolve(blob), 'image/png');
+            };
+            img.onerror = () => resolve(null);
+            img.src = cleanImg;
+          });
+        }
+
+        if (pngBlob) {
+          try {
+            // Escreve imagem (PNG) e texto puro juntos na área de transferência
+            const clipboardItem = new ClipboardItem({
+              'image/png': pngBlob,
+              'text/plain': new Blob([cleanTxt], { type: 'text/plain' })
+            });
+            await navigator.clipboard.write([clipboardItem]);
+            setShareFeedbackMsg('Imagem e texto copiados! Dê Ctrl+V no WhatsApp.');
+            setTimeout(() => setIsCopiedAll(false), 2500);
+            setTimeout(() => setShareFeedbackMsg(''), 4000);
+            return;
+          } catch (multiErr) {
+            console.warn('ClipboardItem combinado falhou no browser, copiando imagem:', multiErr);
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': pngBlob })
+            ]);
+            setShareFeedbackMsg('Imagem copiada para a área de transferência!');
+            setTimeout(() => setIsCopiedAll(false), 2500);
+            setTimeout(() => setShareFeedbackMsg(''), 4000);
+            return;
+          }
+        }
+      }
+
+      // Cenário 2: Apenas Imagem
+      if (cleanImg && !cleanTxt) {
+        await handleCopyImageToClipboard(cleanImg);
+        setIsCopiedAll(true);
+        setTimeout(() => setIsCopiedAll(false), 2500);
+        return;
+      }
+
+      // Cenário 3: Apenas Texto
+      if (cleanTxt && !cleanImg) {
+        await handleCopyTextToClipboard(cleanTxt);
+        setIsCopiedAll(true);
+        setTimeout(() => setIsCopiedAll(false), 2500);
+        return;
+      }
+    } catch (err) {
+      console.error('Erro ao copiar imagem + texto:', err);
+      if (cleanTxt) {
+        await navigator.clipboard.writeText(cleanTxt);
+        setShareFeedbackMsg('Texto copiado com sucesso!');
+      }
+    } finally {
+      setTimeout(() => setIsCopiedAll(false), 2500);
+      setTimeout(() => setShareFeedbackMsg(''), 4000);
+    }
+  };
+
+  // Gerenciamento Sonoro do Alarme
+  const startAlarmSound = () => {
+    if (!isAlarmSoundEnabled) return;
+    playAlarmTune();
+    if (alarmAudioLoopRef.current) clearInterval(alarmAudioLoopRef.current);
+    alarmAudioLoopRef.current = setInterval(() => {
+      playAlarmTune();
+    }, 3500);
+  };
+
+  const stopAlarmSound = () => {
+    if (alarmAudioLoopRef.current) {
+      clearInterval(alarmAudioLoopRef.current);
+      alarmAudioLoopRef.current = null;
+    }
+  };
+
+  const dismissAlarm = (alarmKey?: string) => {
+    stopAlarmSound();
+    if (alarmKey) {
+      setDismissedAlarms(prev => ({ ...prev, [alarmKey]: true }));
+    }
+    setActiveAlarmItem(null);
+  };
+
+  const snoozeAlarm = (alarmKey: string) => {
+    stopAlarmSound();
+    setDismissedAlarms(prev => ({ ...prev, [alarmKey]: true }));
+    setActiveAlarmItem(null);
+    setShareFeedbackMsg('Alarme adiado em 5 minutos.');
+    setTimeout(() => {
+      setDismissedAlarms(prev => {
+        const updated = { ...prev };
+        delete updated[alarmKey];
+        return updated;
+      });
+    }, 5 * 60 * 1000);
+  };
+
+  const handleCopyAndMarkAlarm = async (item: MensagemItem, alarmKey: string) => {
+    await handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem);
+    await handleToggleCheck(item.id);
+    dismissAlarm(alarmKey);
+    setShareFeedbackMsg('Comunicado copiado e marcado como enviado!');
+  };
+
+  const handleCopyAlarmOnly = async (item: MensagemItem, alarmKey: string) => {
+    await handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem);
+    dismissAlarm(alarmKey);
+  };
+
+  // Monitoramento contínuo dos horários das mensagens para disparar o alarme
+  useEffect(() => {
+    const checkSchedule = () => {
+      const now = new Date();
+      const currentHours = String(now.getHours()).padStart(2, '0');
+      const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+      const currentTimeStr = `${currentHours}:${currentMinutes}`;
+      const todayStr = now.toISOString().split('T')[0];
+
+      // Apenas dispara na data de hoje
+      if (selectedDate !== todayStr) return;
+
+      for (const item of mensagensList) {
+        if (!item.horario) continue;
+        const normItemTime = normalizeTime(item.horario);
+        if (!normItemTime) continue;
+
+        // Se o horário bate com a hora atual (ou minuto corrente)
+        if (normItemTime === currentTimeStr) {
+          const isChecked = checksMap[item.id]?.checked;
+          const alarmKey = `${todayStr}_${selectedBase}_${item.id}_${normItemTime}`;
+
+          if (!isChecked && !dismissedAlarms[alarmKey]) {
+            if (activeAlarmItem?.alarmKey === alarmKey) return;
+
+            setActiveAlarmItem({ item, alarmKey });
+            startAlarmSound();
+            break;
+          }
+        }
+      }
+    };
+
+    const interval = setInterval(checkSchedule, 4000);
+    checkSchedule();
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [mensagensList, checksMap, selectedDate, selectedBase, dismissedAlarms, isAlarmSoundEnabled, activeAlarmItem]);
+
+  // Interrompe qualquer som se o componente for desmontado
+  useEffect(() => {
+    return () => {
+      stopAlarmSound();
+    };
+  }, []);
 
   // Salvar alterações no Modal de Detalhe (Imagem + Texto)
   const handleSaveDetailModal = async () => {
@@ -1505,6 +1764,43 @@ export default function MensagensPage() {
               <span className="hidden sm:inline">Baixar PNG</span>
             </button>
 
+            {/* Controle de Alarme Sonoro de Horário */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isAlarmSoundEnabled;
+                  setIsAlarmSoundEnabled(next);
+                  if (!next) stopAlarmSound();
+                  else getAudioContext();
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  isAlarmSoundEnabled
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60'
+                }`}
+                title={isAlarmSoundEnabled ? 'Alarme sonoro ativado (clique para mutar)' : 'Alarme sonoro mudo (clique para ativar)'}
+              >
+                {isAlarmSoundEnabled ? <BellRing className="w-3.5 h-3.5 animate-bounce" /> : <BellOff className="w-3.5 h-3.5" />}
+                <span>{isAlarmSoundEnabled ? 'Alarme Ativo' : 'Alarme Mudo'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  getAudioContext();
+                  playAlarmTune();
+                  setShareFeedbackMsg('Toque de teste do alarme emitido!');
+                  setTimeout(() => setShareFeedbackMsg(''), 2500);
+                }}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-all cursor-pointer"
+                title="Testar sinal sonoro de alarme"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-blue-600" />
+                <span className="hidden sm:inline">Testar Som</span>
+              </button>
+            </div>
+
             {/* Atualizar */}
             <button
               onClick={() => {
@@ -1902,6 +2198,15 @@ export default function MensagensPage() {
                         {/* Ações: Visualizar/Copiar, Editar e Excluir */}
                         <td className="py-2 px-3 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                            {(item.imagem_url || item.texto_completo) && (
+                              <button
+                                onClick={() => handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem)}
+                                className="p-1 hover:bg-emerald-100 text-emerald-600 rounded-lg transition-colors cursor-pointer"
+                                title="Copiar Imagem + Texto juntos para colar no WhatsApp"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={() => openDetailModal(item)}
                               className="p-1 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors cursor-pointer"
@@ -2331,14 +2636,40 @@ export default function MensagensPage() {
                   {isSavingDetail ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
 
+                {/* Botão Copiar Imagem + Texto Combinado */}
+                {(detailImage || detailText) && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyAllToClipboard(detailImage, detailText)}
+                    className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
+                      isCopiedAll
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                    title="Copia a Imagem e o Texto juntos para enviar no WhatsApp com um único Ctrl+V"
+                  >
+                    {isCopiedAll ? (
+                      <>
+                        <Check className="w-4 h-4 stroke-[3]" />
+                        <span>Copiado (Imagem + Texto)!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        <span>Copiar Imagem + Texto</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
                 {/* Botão Copiar Texto em Destaque */}
                 <button
                   type="button"
                   onClick={() => handleCopyTextToClipboard(detailText)}
                   className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
                     isCopiedText
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                   }`}
                   title="Copiar texto para colar no WhatsApp"
                 >
@@ -2357,6 +2688,154 @@ export default function MensagensPage() {
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          POPUP DE ALARME DE HORÁRIO DE ENVIO DE MENSAGEM (COM SINAL SONORO E COPIAR)
+          ========================================================================= */}
+      {activeAlarmItem && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border-2 border-amber-500 animate-in zoom-in-95 duration-200">
+            {/* Top Banner de Alarme */}
+            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center border border-white/30 animate-bounce">
+                  <BellRing className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest bg-black/25 px-2 py-0.5 rounded-full">
+                      Alarme de Envio
+                    </span>
+                    <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">
+                      {selectedBase}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-black tracking-tight text-white mt-0.5">
+                    Está na Hora de Enviar!
+                  </h3>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={stopAlarmSound}
+                  className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors cursor-pointer"
+                  title="Silenciar áudio do alarme"
+                >
+                  <VolumeX className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissAlarm(activeAlarmItem.alarmKey)}
+                  className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors cursor-pointer"
+                  title="Fechar / Dispensar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Corpo do Alarme */}
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                <div>
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Comunicado Programado
+                  </span>
+                  <span className="text-base font-black text-slate-900">
+                    {activeAlarmItem.item.mensagem}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Horário
+                  </span>
+                  <span className="text-lg font-black text-blue-600 flex items-center gap-1 justify-end">
+                    <Clock className="w-4 h-4" />
+                    {activeAlarmItem.item.horario}
+                  </span>
+                </div>
+              </div>
+
+              {/* Preview da Imagem caso exista */}
+              {activeAlarmItem.item.imagem_url && (
+                <div className="relative rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 max-h-48 flex items-center justify-center group">
+                  <img
+                    src={activeAlarmItem.item.imagem_url}
+                    alt="Preview do Anexo"
+                    className="max-h-48 w-full object-contain"
+                  />
+                  <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <ImageIcon className="w-3 h-3" /> Imagem Anexada
+                  </div>
+                </div>
+              )}
+
+              {/* Preview do Texto caso exista */}
+              {(activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem) && (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 max-h-32 overflow-y-auto">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Texto / Legenda para Envio:
+                  </span>
+                  <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-mono">
+                    {activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem}
+                  </p>
+                </div>
+              )}
+
+              <p className="text-[11px] text-slate-500 text-center">
+                Ao clicar em copiar, a <strong>imagem e o texto</strong> vão para sua área de transferência para colar diretamente (<kbd className="bg-slate-100 px-1 py-0.5 rounded border border-slate-200">Ctrl+V</kbd>) no WhatsApp Web.
+              </p>
+            </div>
+
+            {/* Ações do Modal de Alarme */}
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => snoozeAlarm(activeAlarmItem.alarmKey)}
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Lembrar novamente em 5 minutos"
+                >
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Adiar 5 min</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissAlarm(activeAlarmItem.alarmKey)}
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 font-bold text-xs transition-colors cursor-pointer"
+                  title="Dispensar alarme"
+                >
+                  Dispensar
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => handleCopyAlarmOnly(activeAlarmItem.item, activeAlarmItem.alarmKey)}
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Apenas copiar imagem e texto sem marcar check"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Apenas Copiar</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleCopyAndMarkAlarm(activeAlarmItem.item, activeAlarmItem.alarmKey)}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+                  title="Copiar imagem e texto e marcar como enviado"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>Copiar e Marcar Envio</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
