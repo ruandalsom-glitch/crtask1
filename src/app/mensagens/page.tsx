@@ -911,7 +911,11 @@ export default function MensagensPage() {
 
         if (pngBlob) {
           try {
-            // Escreve imagem (PNG) e texto puro juntos na área de transferência
+            // 1. Grava primeiro o texto isolado para que fique salvo no Histórico do Windows (Win + V)
+            await navigator.clipboard.writeText(cleanTxt);
+            await new Promise(r => setTimeout(r, 120));
+
+            // 2. Escreve imagem (PNG) e texto puro juntos na área de transferência atual (Ctrl + V)
             const clipboardItem = new ClipboardItem({
               'image/png': pngBlob,
               'text/plain': new Blob([cleanTxt], { type: 'text/plain' })
