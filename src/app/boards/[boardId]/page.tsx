@@ -106,8 +106,15 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const userRole = profile?.role || 'user';
 
       let visibleTabs: string[] = ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
-      if (workspace?.visible_tabs && Array.isArray(workspace.visible_tabs) && workspace.visible_tabs.length > 0) {
-        visibleTabs = workspace.visible_tabs;
+      if (workspace?.visible_tabs) {
+        if (Array.isArray(workspace.visible_tabs) && workspace.visible_tabs.length > 0) {
+          visibleTabs = workspace.visible_tabs;
+        } else if (typeof workspace.visible_tabs === 'string') {
+          try {
+            const parsed = JSON.parse(workspace.visible_tabs);
+            if (Array.isArray(parsed) && parsed.length > 0) visibleTabs = parsed;
+          } catch {}
+        }
       } else if (typeof window !== 'undefined' && workspace?.id) {
         const local = localStorage.getItem(`crtask_workspace_tabs_${workspace.id}`);
         if (local) {
@@ -178,6 +185,16 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
     }
   }, [accessCheck, boardId, router]);
 
+  const boardName = accessCheck?.board?.name || 'Panorama do projeto';
+  const isReadOnly = accessCheck?.canEdit === false;
+  const visibleTabs: string[] = accessCheck?.visibleTabs || ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
+
+  useEffect(() => {
+    if (visibleTabs && visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
+      setActiveTab(visibleTabs[0] as TabType);
+    }
+  }, [visibleTabs, activeTab]);
+
   if (isLoading || (accessCheck?.allowed === false && accessCheck?.redirectBoardId && accessCheck.redirectBoardId !== boardId)) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-slate-50">
@@ -210,16 +227,6 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       </div>
     );
   }
-
-  const boardName = accessCheck?.board?.name || 'Panorama do projeto';
-  const isReadOnly = accessCheck?.canEdit === false;
-  const visibleTabs: string[] = accessCheck?.visibleTabs || ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
-
-  useEffect(() => {
-    if (visibleTabs && visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
-      setActiveTab(visibleTabs[0] as TabType);
-    }
-  }, [visibleTabs, activeTab]);
 
   return (
     <div className="flex flex-col h-full w-full">
