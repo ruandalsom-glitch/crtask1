@@ -404,6 +404,7 @@ export default function MensagensPage() {
   const [isCopiedText, setIsCopiedText] = useState<boolean>(false);
   const [isCopiedImage, setIsCopiedImage] = useState<boolean>(false);
   const [isCopiedAll, setIsCopiedAll] = useState<boolean>(false);
+  const [isExtensionModalOpen, setIsExtensionModalOpen] = useState<boolean>(false);
 
   // Sistema de Alarme no Horário de Envio
   const [activeAlarmItem, setActiveAlarmItem] = useState<{
@@ -820,6 +821,9 @@ export default function MensagensPage() {
     if (!imageUrl) return;
     try {
       setIsCopiedImage(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('crtask-copy-whatsapp', { detail: { text: '' } }));
+      }
       if (imageUrl.startsWith('data:image/')) {
         const res = await fetch(imageUrl);
         const blob = await res.blob();
@@ -888,6 +892,9 @@ export default function MensagensPage() {
 
       // Cenário 1: Possui Imagem e Texto
       if (cleanImg && cleanTxt) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('crtask-copy-whatsapp', { detail: { text: cleanTxt } }));
+        }
         let pngBlob: Blob | null = null;
         if (cleanImg.startsWith('data:image/png')) {
           const res = await fetch(cleanImg);
@@ -1804,6 +1811,17 @@ export default function MensagensPage() {
                 <span className="hidden sm:inline">Testar Som</span>
               </button>
             </div>
+
+            {/* Botão Extensão WhatsApp Auto-Legenda */}
+            <button
+              type="button"
+              onClick={() => setIsExtensionModalOpen(true)}
+              className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+              title="Baixar extensão do Chrome para colar Imagem + Texto juntos em 1 único Ctrl+V no WhatsApp Web"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden sm:inline">Extensão WhatsApp</span>
+            </button>
 
             {/* Atualizar */}
             <button
@@ -2839,6 +2857,81 @@ export default function MensagensPage() {
                   <span>Copiar e Marcar Envio</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL DE INSTALAÇÃO DA EXTENSÃO WHATSAPP AUTO-LEGENDA
+          ========================================================================= */}
+      {isExtensionModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+            <div className="bg-[#0B2238] px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center">
+                  <Download className="w-5 h-5 text-indigo-300" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black tracking-wide uppercase">
+                    Extensão Auto-Legenda WhatsApp
+                  </h3>
+                  <p className="text-[11px] text-slate-300">
+                    Cole Imagem + Texto juntos com um único Ctrl+V
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsExtensionModalOpen(false)}
+                className="text-slate-300 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-xs text-indigo-950 leading-relaxed">
+                Com esta extensão ativa no Chrome ou Edge, sempre que você clicar em <strong>Copiar</strong> no CR Task e apertar <kbd className="bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-mono font-bold">Ctrl+V</kbd> no WhatsApp Web, ela preenche a <strong>Imagem e o Texto da legenda juntos automaticamente</strong>.
+              </div>
+
+              <div className="space-y-2.5 text-xs text-slate-700">
+                <p className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
+                  Passo a passo para ativar (leva 30 segundos):
+                </p>
+                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">1</span>
+                  <span>Clique no botão abaixo para baixar o arquivo <strong>extensao-crtask-whatsapp.zip</strong> e extraia ele em uma pasta no PC.</span>
+                </div>
+                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">2</span>
+                  <span>No navegador Chrome, digite <strong>chrome://extensions</strong> na barra de endereço e ative a chave <strong>"Modo do desenvolvedor"</strong> no topo direito.</span>
+                </div>
+                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">3</span>
+                  <span>Clique em <strong>"Carregar sem compactação"</strong>, selecione a pasta extraída e atualize a aba do WhatsApp Web (<kbd className="bg-white px-1 py-0.5 rounded border border-slate-300">F5</kbd>).</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setIsExtensionModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs cursor-pointer"
+              >
+                Fechar
+              </button>
+
+              <a
+                href="/extensao-crtask-whatsapp.zip"
+                download="extensao-crtask-whatsapp.zip"
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Baixar Extensão (.ZIP)</span>
+              </a>
             </div>
           </div>
         </div>

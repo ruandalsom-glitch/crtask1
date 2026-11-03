@@ -1,0 +1,15 @@
+=====================================================================
+CR TASK - EXTENSÃO DE AUTO-LEGENDA PARA WHATSAPP WEB
+=====================================================================
+
+COMO INSTALAR NO GOOGLE CHROME OU EDGE (LEVA 30 SEGUNDOS):
+
+1. Extraia este arquivo ZIP em uma pasta no computador (ex: Documentos\extensao-crtask).
+2. Abra o navegador Chrome e digite na barra de endereços:
+   chrome://extensions
+3. No canto superior direito da tela, ative a chave "Modo do desenvolvedor".
+4. Clique no botão "Carregar sem compactação" (que apareceu no canto superior esquerdo).
+5. Selecione a pasta que você extraiu no Passo 1.
+6. Atualize a aba do WhatsApp Web (F5) e a aba do CR Task (F5).
+
+PRONTO! Agora, sempre que você clicar em "Copiar" em uma mensagem com Imagem + Texto no CR Task e apertar Ctrl+V no WhatsApp Web, a imagem e o texto da legenda serão preenchidos juntos automaticamente!
