@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CR Task - Auto Legenda WhatsApp Web",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Cola automaticamente a Imagem + Texto (legenda) no WhatsApp Web ao dar um único Ctrl+V vindo do CR Task.",
   "permissions": ["storage"],
   "content_scripts": [
@@ -11,8 +11,19 @@
         "https://*.vercel.app/*",
         "http://localhost:*/*"
       ],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "https://web.whatsapp.com/*",
+        "https://*.vercel.app/*",
+        "http://localhost:*/*"
+      ],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ]
 }
