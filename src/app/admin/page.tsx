@@ -3,14 +3,49 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck, Settings2, Check, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
+
+const AVAILABLE_MENU_TABS = [
+  {
+    id: 'tabela',
+    label: 'Quadro principal',
+    description: 'Tabela de tarefas com colunas personalizáveis, grupos, status e responsáveis.'
+  },
+  {
+    id: 'kanban',
+    label: 'Kanban',
+    description: 'Visualização ágil em colunas e cartões arrastáveis organizados por status.'
+  },
+  {
+    id: 'calendario',
+    label: 'Calendário',
+    description: 'Visualização cronológica com prazos de entrega e agendamento de plantões SLA.'
+  },
+  {
+    id: 'rotina',
+    label: 'Rotinas Diárias',
+    description: 'Checklist de rotinas diárias com controle por dia da semana e histórico.'
+  },
+  {
+    id: 'escala',
+    label: 'Escala',
+    sublabel: '(ou Minha Escala)',
+    description: 'Planejamento e visualização diária da escala operacional e operadores.'
+  },
+  {
+    id: 'turnos',
+    label: 'Quadro de turnos',
+    description: 'Escala mensal oficial (Roster) com visualização e download de escala.'
+  }
+];
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>('');
   const [selectedUser, setSelectedUser] = useState<string>('');
+  const [selectedTabs, setSelectedTabs] = useState<string[]>(['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos']);
 
   const [userRole, setUserRole] = useState<'admin' | 'leader' | 'user' | null>(null);
   const [leaderWorkspaceIds, setLeaderWorkspaceIds] = useState<string[]>([]);
@@ -87,6 +122,24 @@ export default function AdminPage() {
     enabled: !!selectedWorkspace && hasAccess
   });
 
+  useEffect(() => {
+    if (currentWorkspace) {
+      let tabs: string[] = ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
+      if (currentWorkspace.visible_tabs && Array.isArray(currentWorkspace.visible_tabs) && currentWorkspace.visible_tabs.length > 0) {
+        tabs = currentWorkspace.visible_tabs;
+      } else if (typeof window !== 'undefined') {
+        const local = localStorage.getItem(`crtask_workspace_tabs_${currentWorkspace.id}`);
+        if (local) {
+          try {
+            const parsed = JSON.parse(local);
+            if (Array.isArray(parsed) && parsed.length > 0) tabs = parsed;
+          } catch {}
+        }
+      }
+      setSelectedTabs(tabs);
+    }
+  }, [currentWorkspace]);
+
   // 2. Puxar todos os Perfis (Usuários)
   const { data: profiles } = useQuery({
     queryKey: ['admin_profiles'],
@@ -152,6 +205,62 @@ export default function AdminPage() {
       alert('Erro ao atualizar privacidade: ' + err.message);
     }
   });
+
+  // 4.5 Atualizar Opções do Menu (Abas Visíveis) do Setor
+  const updateWorkspaceTabs = useMutation({
+    mutationFn: async (tabs: string[]) => {
+      if (!selectedWorkspace) return;
+      if (tabs.length === 0) {
+        throw new Error("Selecione pelo menos uma opção de menu para o setor.");
+      }
+
+      // Salva no localStorage como backup instantâneo
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`crtask_workspace_tabs_${selectedWorkspace}`, JSON.stringify(tabs));
+      }
+
+      const { error } = await supabase
+        .from('workspaces')
+        .update({ visible_tabs: tabs })
+        .eq('id', selectedWorkspace);
+
+      if (error) {
+        if (error.message?.includes('visible_tabs') || error.code === '42703' || error.code === 'PGRST204') {
+          alert(
+            'Configuração de abas salva localmente com sucesso!\n\n' +
+            'Para que todos os computadores e colaboradores sincronizem essa configuração pelo banco de dados, execute no Supabase SQL Editor:\n\n' +
+            'ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS visible_tabs JSONB DEFAULT \'["tabela", "kanban", "calendario", "rotina", "escala", "turnos"]\'::jsonb;'
+          );
+          return;
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin_workspaces'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_current_workspace'] });
+      queryClient.invalidateQueries({ queryKey: ['all_workspaces_meta'] });
+      queryClient.invalidateQueries({ queryKey: ['board_access_check'] });
+      alert(`Opções do menu do setor "${selectedWorkspaceName}" atualizadas com sucesso!`);
+    },
+    onError: (err: any) => {
+      alert('Erro ao atualizar opções de menu: ' + err.message);
+    }
+  });
+
+  const handleToggleTab = (tabId: string) => {
+    setSelectedTabs(prev => {
+      if (prev.includes(tabId)) {
+        if (prev.length <= 1) {
+          alert("Pelo menos uma opção do menu deve permanecer ativa.");
+          return prev;
+        }
+        return prev.filter(t => t !== tabId);
+      } else {
+        return [...prev, tabId];
+      }
+    });
+  };
 
   // 5. Adicionar/Alocar Usuário ao Workspace
   const addMember = useMutation({
@@ -461,6 +570,105 @@ export default function AdminPage() {
                     </p>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bloco: Opções do Menu e Abas dos Quadros no Setor */}
+          {selectedWorkspace && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <LayoutGrid className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800">
+                      Opções do Menu e Abas dos Quadros: "{selectedWorkspaceName}"
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Escolha exatamente quais opções e abas de navegação estarão visíveis nos quadros deste setor.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start md:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTabs(['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'])}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                  >
+                    Marcar Todas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTabs(['tabela', 'kanban', 'calendario'])}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                  >
+                    Apenas Padrão (3)
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid com os 6 cards de abas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 my-5">
+                {AVAILABLE_MENU_TABS.map(tab => {
+                  const isChecked = selectedTabs.includes(tab.id);
+                  return (
+                    <div
+                      key={tab.id}
+                      onClick={() => handleToggleTab(tab.id)}
+                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                        isChecked 
+                          ? 'border-blue-600 bg-blue-50/40 shadow-xs' 
+                          : 'border-slate-200 bg-slate-50/50 hover:border-slate-300 opacity-75'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
+                            {tab.label}
+                            {tab.sublabel && <span className="text-[10px] text-slate-500 font-normal">{tab.sublabel}</span>}
+                          </span>
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            isChecked 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-slate-200 text-slate-600'
+                          }`}>
+                            {isChecked ? 'VISÍVEL' : 'OCULTO'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          {tab.description}
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-xs font-medium">
+                        <span className={isChecked ? 'text-blue-700 font-semibold' : 'text-slate-400'}>
+                          {isChecked ? 'Ativo no setor' : 'Inativo no setor'}
+                        </span>
+                        <div className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
+                          isChecked ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
+                        }`}>
+                          {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100">
+                <span className="text-xs text-slate-500">
+                  {selectedTabs.length} de {AVAILABLE_MENU_TABS.length} opções habilitadas para {selectedWorkspaceName}.
+                </span>
+                <button
+                  type="button"
+                  disabled={updateWorkspaceTabs.isPending || selectedTabs.length === 0}
+                  onClick={() => updateWorkspaceTabs.mutate(selectedTabs)}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition-colors shadow-sm disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {updateWorkspaceTabs.isPending ? 'Salvando...' : 'Salvar Opções de Menu deste Setor'}
+                </button>
               </div>
             </div>
           )}

@@ -38,11 +38,13 @@ const BoardMonthlyRosterView = dynamic(
   { loading: () => <TabLoadingSkeleton /> }
 );
 
+type TabType = 'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos';
+
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos'>(() => {
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
     if (typeof window !== 'undefined') {
       const tabParam = new URLSearchParams(window.location.search).get('tab');
       if (tabParam === 'turnos' || tabParam === 'minha-escala') return 'turnos';
@@ -83,7 +85,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         queryClient.fetchQuery({
           queryKey: ['all_workspaces_meta'],
           queryFn: async () => {
-            const { data } = await supabase.from('workspaces').select('id, name, visibility_mode').order('created_at');
+            const { data } = await supabase.from('workspaces').select('*').order('created_at');
             return data || [];
           },
           staleTime: 5 * 60 * 1000
@@ -103,6 +105,19 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const profile = (profiles || []).find((p: any) => p.id === user.id || p.email === user.email);
       const userRole = profile?.role || 'user';
 
+      let visibleTabs: string[] = ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
+      if (workspace?.visible_tabs && Array.isArray(workspace.visible_tabs) && workspace.visible_tabs.length > 0) {
+        visibleTabs = workspace.visible_tabs;
+      } else if (typeof window !== 'undefined' && workspace?.id) {
+        const local = localStorage.getItem(`crtask_workspace_tabs_${workspace.id}`);
+        if (local) {
+          try {
+            const parsed = JSON.parse(local);
+            if (Array.isArray(parsed) && parsed.length > 0) visibleTabs = parsed;
+          } catch {}
+        }
+      }
+
       const allowed = canUserAccessBoard({
         board: { name: board.name, created_by: board.created_by },
         user: { id: user.id, email: user.email || '' },
@@ -118,7 +133,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         );
         const canEdit = userRole === 'admin' || userRole === 'leader' || isOwnBoard;
 
-        return { allowed: true, canEdit, board, userRole, redirectBoardId: null };
+        return { allowed: true, canEdit, board, userRole, visibleTabs, redirectBoardId: null };
       }
 
       // Se caiu em um quadro restrito de outro colega (ex: via notificação de escala), busca o próprio quadro do colaborador no setor
@@ -198,6 +213,13 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
 
   const boardName = accessCheck?.board?.name || 'Panorama do projeto';
   const isReadOnly = accessCheck?.canEdit === false;
+  const visibleTabs: string[] = accessCheck?.visibleTabs || ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
+
+  useEffect(() => {
+    if (visibleTabs && visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
+      setActiveTab(visibleTabs[0] as TabType);
+    }
+  }, [visibleTabs, activeTab]);
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -233,106 +255,88 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         {/* Abas Interativas e Botões */}
         <div className="flex justify-between items-end">
           <div className="flex gap-6 text-[14px] font-medium relative">
-            <button 
-              onClick={() => setActiveTab('tabela')}
-              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                activeTab === 'tabela' 
-                  ? 'border-blue-600 text-blue-600' 
-                  : 'border-transparent text-[#676879] hover:text-[#323338]'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M9 21V9"/></svg>
-              Quadro principal
-            </button>
+            {visibleTabs.includes('tabela') && (
+              <button 
+                onClick={() => setActiveTab('tabela')}
+                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'tabela' 
+                    ? 'border-blue-600 text-blue-600 font-bold' 
+                    : 'border-transparent text-[#676879] hover:text-[#323338]'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M9 21V9"/></svg>
+                Quadro principal
+              </button>
+            )}
 
-            <button 
-              onClick={() => setActiveTab('kanban')}
-              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                activeTab === 'kanban' 
-                  ? 'border-blue-600 text-blue-600' 
-                  : 'border-transparent text-[#676879] hover:text-[#323338]'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 3v18M15 3v18"/></svg>
-              Kanban
-            </button>
+            {visibleTabs.includes('kanban') && (
+              <button 
+                onClick={() => setActiveTab('kanban')}
+                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'kanban' 
+                    ? 'border-blue-600 text-blue-600 font-bold' 
+                    : 'border-transparent text-[#676879] hover:text-[#323338]'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 3v18M15 3v18"/></svg>
+                Kanban
+              </button>
+            )}
             
-            <button 
-              onClick={() => setActiveTab('calendario')}
-              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                activeTab === 'calendario' 
-                  ? 'border-blue-600 text-blue-600' 
-                  : 'border-transparent text-[#676879] hover:text-[#323338]'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-              Calendário
-            </button>
+            {visibleTabs.includes('calendario') && (
+              <button 
+                onClick={() => setActiveTab('calendario')}
+                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'calendario' 
+                    ? 'border-blue-600 text-blue-600 font-bold' 
+                    : 'border-transparent text-[#676879] hover:text-[#323338]'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                Calendário
+              </button>
+            )}
 
-            <button 
-              onClick={() => setActiveTab('rotina')}
-              className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                activeTab === 'rotina' 
-                  ? 'border-blue-600 text-blue-600' 
-                  : 'border-transparent text-[#676879] hover:text-[#323338]'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-              Rotinas Diárias
-            </button>
+            {visibleTabs.includes('rotina') && (
+              <button 
+                onClick={() => setActiveTab('rotina')}
+                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'rotina' 
+                    ? 'border-blue-600 text-blue-600 font-bold' 
+                    : 'border-transparent text-[#676879] hover:text-[#323338]'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                Rotinas Diárias
+              </button>
+            )}
 
-            {accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader' ? (
-              <>
-                <button 
-                  onClick={() => setActiveTab('escala')}
-                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'escala' 
-                      ? 'border-blue-600 text-blue-600 font-bold' 
-                      : 'border-transparent text-[#676879] hover:text-[#323338]'
-                  }`}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                  Escala
-                </button>
+            {visibleTabs.includes('escala') && (
+              <button 
+                onClick={() => setActiveTab('escala')}
+                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'escala' 
+                    ? 'border-blue-600 text-blue-600 font-bold' 
+                    : 'border-transparent text-[#676879] hover:text-[#323338]'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                {accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader' ? 'Escala' : 'Minha Escala'}
+              </button>
+            )}
 
-                <button 
-                  onClick={() => setActiveTab('turnos')}
-                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'turnos' 
-                      ? 'border-blue-600 text-blue-600 font-bold' 
-                      : 'border-transparent text-[#676879] hover:text-[#323338]'
-                  }`}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-                  Quadro de turnos
-                </button>
-              </>
-            ) : (
-              <>
-                <button 
-                  onClick={() => setActiveTab('escala')}
-                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'escala'
-                      ? 'border-blue-600 text-blue-600 font-bold' 
-                      : 'border-transparent text-[#676879] hover:text-[#323338]'
-                  }`}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                  Minha Escala
-                </button>
-
-                <button 
-                  onClick={() => setActiveTab('turnos')}
-                  className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'turnos'
-                      ? 'border-blue-600 text-blue-600 font-bold' 
-                      : 'border-transparent text-[#676879] hover:text-[#323338]'
-                  }`}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-                  Quadro de turnos
-                </button>
-              </>
+            {visibleTabs.includes('turnos') && (
+              <button 
+                onClick={() => setActiveTab('turnos')}
+                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'turnos' 
+                    ? 'border-blue-600 text-blue-600 font-bold' 
+                    : 'border-transparent text-[#676879] hover:text-[#323338]'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                Quadro de turnos
+              </button>
             )}
           </div>
 
