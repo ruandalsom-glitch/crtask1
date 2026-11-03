@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { AssigneeCell } from './AssigneeCell';
-import { Search, PlusCircle, Trash2, CheckCircle2, RotateCcw, X, Clock, History, MessageSquare, Send, AlertTriangle, Loader2, Check } from 'lucide-react';
+import { Search, PlusCircle, Trash2, CheckCircle2, RotateCcw, X, Clock, History, MessageSquare, Send, AlertTriangle, Loader2, Check, Pencil, CalendarDays, Settings, Calendar } from 'lucide-react';
 
 function getWeekNumber(d: Date) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -24,6 +24,25 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
   const [isConfirmingReset, setIsConfirmingReset] = useState<boolean>(false);
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Estados para Edição Individual de Rotina & Dias Elegíveis
+  const [editingRoutine, setEditingRoutine] = useState<{
+    id: string;
+    title: string;
+    assignee_email: string;
+    time: string;
+    timeEnd: string;
+    activeDays: string[];
+  } | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+
+  // Estados para Gerenciador de Dias Elegíveis em Lote
+  const [isManageDaysOpen, setIsManageDaysOpen] = useState<boolean>(false);
+  const [batchActiveDays, setBatchActiveDays] = useState<Record<string, string[]>>({});
+  const [isSavingBatchDays, setIsSavingBatchDays] = useState<boolean>(false);
+
+  // Estado para Confirmação Rápida de Abertura de Dia Fechado
+  const [quickOpenDayTarget, setQuickOpenDayTarget] = useState<{ task: any; dayKey: string } | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -370,6 +389,169 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
     });
   };
 
+  const handleOpenEditModal = (task: any) => {
+    const rConf = task.routine_status || {};
+    const activeDays = rConf.config_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    setEditingRoutine({
+      id: task.id,
+      title: task.title,
+      assignee_email: task.assignee_email || '',
+      time: rConf.config_time || '',
+      timeEnd: rConf.config_time_end || '',
+      activeDays: [...activeDays]
+    });
+  };
+
+  const handleToggleEditRoutineDay = (dayKey: string) => {
+    if (!editingRoutine) return;
+    setEditingRoutine(prev => {
+      if (!prev) return null;
+      const active = prev.activeDays.includes(dayKey);
+      return {
+        ...prev,
+        activeDays: active ? prev.activeDays.filter(d => d !== dayKey) : [...prev.activeDays, dayKey]
+      };
+    });
+  };
+
+  const handleSaveEditRoutine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRoutine || !editingRoutine.title.trim()) return;
+    setIsSavingEdit(true);
+
+    try {
+      const currentTask = tasks?.find((t: any) => t.id === editingRoutine.id);
+      const currentStatus = currentTask?.routine_status || {};
+
+      const updatedRoutineStatus = {
+        ...currentStatus,
+        config_time: editingRoutine.time,
+        config_time_end: editingRoutine.timeEnd,
+        config_days: editingRoutine.activeDays
+      };
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          title: editingRoutine.title.trim(),
+          assignee_email: editingRoutine.assignee_email || null,
+          routine_status: updatedRoutineStatus
+        })
+        .eq('id', editingRoutine.id);
+
+      if (error) throw error;
+
+      showToast('Rotina e dias elegíveis atualizados com sucesso!');
+      setEditingRoutine(null);
+      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+    } catch (err: any) {
+      alert('Erro ao atualizar rotina: ' + err.message);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleOpenManageDays = () => {
+    const initialMap: Record<string, string[]> = {};
+    (tasks || []).filter((t: any) => t.is_routine).forEach((task: any) => {
+      const rConf = task.routine_status || {};
+      const activeDays = rConf.config_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      initialMap[task.id] = [...activeDays];
+    });
+    setBatchActiveDays(initialMap);
+    setIsManageDaysOpen(true);
+  };
+
+  const handleApplyBatchActionToAll = (daysToSet: string[]) => {
+    setBatchActiveDays(prev => {
+      const updated: Record<string, string[]> = {};
+      Object.keys(prev).forEach(taskId => {
+        updated[taskId] = [...daysToSet];
+      });
+      return updated;
+    });
+  };
+
+  const handleAddDaysToAllBatch = (daysToAdd: string[]) => {
+    setBatchActiveDays(prev => {
+      const updated: Record<string, string[]> = {};
+      Object.entries(prev).forEach(([taskId, days]) => {
+        const set = new Set([...days, ...daysToAdd]);
+        updated[taskId] = Array.from(set);
+      });
+      return updated;
+    });
+  };
+
+  const handleToggleBatchDay = (taskId: string, dayKey: string) => {
+    setBatchActiveDays(prev => {
+      const current = prev[taskId] || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      const active = current.includes(dayKey);
+      return {
+        ...prev,
+        [taskId]: active ? current.filter(d => d !== dayKey) : [...current, dayKey]
+      };
+    });
+  };
+
+  const handleSaveBatchDays = async () => {
+    setIsSavingBatchDays(true);
+    try {
+      const routineTasks = (tasks || []).filter((t: any) => t.is_routine);
+      const updatesToRun: Promise<any>[] = [];
+
+      for (const task of routineTasks) {
+        const newDays = batchActiveDays[task.id];
+        if (newDays) {
+          const currentStatus = task.routine_status || {};
+          const updatedStatus = {
+            ...currentStatus,
+            config_days: newDays
+          };
+          updatesToRun.push(
+            Promise.resolve(
+              supabase.from('tasks').update({ routine_status: updatedStatus }).eq('id', task.id)
+            )
+          );
+        }
+      }
+
+      await Promise.all(updatesToRun);
+      await queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+      setIsManageDaysOpen(false);
+      showToast('Dias elegíveis atualizados para todas as rotinas!');
+    } catch (err: any) {
+      alert('Erro ao salvar dias elegíveis: ' + err.message);
+    } finally {
+      setIsSavingBatchDays(false);
+    }
+  };
+
+  const handleConfirmQuickOpenDay = async () => {
+    if (!quickOpenDayTarget) return;
+    const { task, dayKey } = quickOpenDayTarget;
+    const currentRoutine = task.routine_status || {};
+    const activeDays = currentRoutine.config_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+    if (!activeDays.includes(dayKey)) {
+      const newActiveDays = [...activeDays, dayKey];
+      const newRoutine = {
+        ...currentRoutine,
+        config_days: newActiveDays
+      };
+      try {
+        const { error } = await supabase.from('tasks').update({ routine_status: newRoutine }).eq('id', task.id);
+        if (error) throw error;
+        await queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
+        const dayObj = daysOfWeek.find(d => d.key === dayKey);
+        showToast(`Dia ${dayObj?.label || dayKey} aberto para "${task.title}".`);
+      } catch (err: any) {
+        alert('Erro ao abrir dia: ' + err.message);
+      }
+    }
+    setQuickOpenDayTarget(null);
+  };
+
   if (isLoading) {
     return (
       <div className="p-8 flex items-center justify-center h-48">
@@ -460,7 +642,34 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Dias contabilizados</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-slate-700">Dias elegíveis da semana</label>
+                  <span className="text-xs text-slate-500 font-medium">{newRoutine.activeDays.length} de 7 ativos</span>
+                </div>
+                <div className="flex items-center gap-1.5 mb-2.5">
+                  <span className="text-xs text-slate-500 font-medium mr-1">Atalhos:</span>
+                  <button
+                    type="button"
+                    onClick={() => setNewRoutine(prev => ({ ...prev, activeDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] }))}
+                    className="text-[11px] px-2 py-0.5 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 font-medium border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    Todos os dias (7d)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewRoutine(prev => ({ ...prev, activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'] }))}
+                    className="text-[11px] px-2 py-0.5 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 font-medium border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    Seg a Sex (5d)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewRoutine(prev => ({ ...prev, activeDays: ['sat', 'sun'] }))}
+                    className="text-[11px] px-2 py-0.5 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 font-medium border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    Fim de semana (2d)
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   {daysOfWeek.map(day => {
                     const isActive = newRoutine.activeDays.includes(day.key);
@@ -469,7 +678,7 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
                         key={day.key}
                         type="button"
                         onClick={() => toggleNewRoutineDay(day.key)}
-                        className={`flex-1 py-1.5 rounded text-xs font-medium border transition-colors ${isActive ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+                        className={`flex-1 py-1.5 rounded text-xs font-semibold border transition-all cursor-pointer ${isActive ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-2xs' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
                       >
                         {day.label.substring(0,3)}
                       </button>
@@ -489,14 +698,25 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
 
       {/* Toolbar */}
       <div className="px-8 py-4 flex items-center justify-between border-b border-slate-200 bg-white shrink-0">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {canEditBoard && (
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-[14px] font-medium transition-colors shadow-sm cursor-pointer"
-          >
-            Nova Rotina
-          </button>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-[14px] font-medium transition-colors shadow-sm cursor-pointer"
+            >
+              Nova Rotina
+            </button>
+          )}
+
+          {canEditBoard && (
+            <button 
+              onClick={handleOpenManageDays}
+              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-1.5 rounded-md text-[14px] font-medium transition-colors cursor-pointer border border-slate-200 hover:border-slate-300"
+              title="Abrir ou fechar dias elegíveis para as rotinas"
+            >
+              <CalendarDays className="w-4 h-4 text-blue-600" />
+              <span>Gerenciar Dias</span>
+            </button>
           )}
           
           <div className="w-px h-6 bg-slate-200 mx-1"></div>
@@ -718,31 +938,52 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
                                 updateTask.mutate({ id: task.id, updates: { title: e.target.value } });
                               }
                             }}
-                            className="text-[#323338] hover:text-blue-600 font-medium bg-transparent outline-none w-full cursor-text truncate"
+                            className="text-[#323338] hover:text-blue-600 font-medium bg-transparent outline-none w-full cursor-text truncate pr-20"
                           />
-                          <button 
-                            onClick={() => setHistoryTaskId(task.id)}
-                            className="opacity-0 group-hover/title:opacity-100 p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-100 rounded transition-colors absolute right-8"
-                            title="Ver histórico de semanas"
-                          >
-                            <History className="w-[18px] h-[18px]" />
-                          </button>
-                          <button 
-                            onClick={() => { if(confirm('Excluir esta rotina?')) deleteTask.mutate(task.id); }}
-                            className="opacity-0 group-hover/title:opacity-100 p-1 text-slate-400 hover:text-red-500 hover:bg-red-100 rounded transition-colors absolute right-2"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-[18px] h-[18px]" />
-                          </button>
+                          <div className="opacity-0 group-hover/title:opacity-100 flex items-center gap-0.5 absolute right-2 bg-slate-100/90 py-0.5 px-1 rounded shadow-xs transition-opacity">
+                            {canEditBoard && (
+                              <button 
+                                onClick={() => handleOpenEditModal(task)}
+                                className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                                title="Editar rotina e dias elegíveis"
+                              >
+                                <Pencil className="w-[16px] h-[16px]" />
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => setHistoryTaskId(task.id)}
+                              className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                              title="Ver histórico de semanas"
+                            >
+                              <History className="w-[16px] h-[16px]" />
+                            </button>
+                            {canEditBoard && (
+                              <button 
+                                onClick={() => { if(confirm('Excluir esta rotina?')) deleteTask.mutate(task.id); }}
+                                className="p-1 text-slate-500 hover:text-red-500 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                title="Excluir rotina"
+                              >
+                                <Trash2 className="w-[16px] h-[16px]" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 text-center relative text-sm text-slate-600 font-medium">
+                      <td 
+                        onClick={() => { if (canEditBoard) handleOpenEditModal(task); }}
+                        className={`px-4 py-0 border-r border-slate-200 text-center relative text-sm text-slate-600 font-medium ${
+                          canEditBoard ? 'cursor-pointer hover:bg-blue-50/60 hover:text-blue-600 transition-colors' : ''
+                        }`}
+                        title={canEditBoard ? "Clique para editar horários e dias da rotina" : undefined}
+                      >
                         {rConf.config_time || rConf.config_time_end ? (
                           <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
                             <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0"/> 
                             <span>{rConf.config_time || '--:--'} {rConf.config_time_end ? `às ${rConf.config_time_end}` : ''}</span>
                           </div>
-                        ) : '-'}
+                        ) : (
+                          <span className="text-slate-400 text-xs">Definir</span>
+                        )}
                       </td>
                       <td className="px-4 py-0 border-r border-slate-200 text-center relative">
                         <AssigneeCell task={task} />
@@ -767,22 +1008,38 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
                         const isWeekend = day.key === 'sat' || day.key === 'sun';
                         
                         return (
-                          <td key={day.key} className={`p-1 border-r border-slate-200 text-center h-[50px] ${isWeekend && !status ? 'bg-slate-50/50' : ''}`}>
-                            <button
-                              disabled={!isActiveDay}
-                              onClick={() => toggleDayStatus(task, day.key)}
-                              className={`w-full h-full flex items-center justify-center transition-all ${getStatusColor(status, isActiveDay)}`}
-                            >
-                              {!isActiveDay ? (
-                                <span className="opacity-50">-</span>
-                              ) : (
-                                <>
-                                  {status === 'Feito' && <CheckCircle2 className="w-5 h-5" />}
-                                  {status === 'Pendente' && <X className="w-5 h-5" />}
-                                  {!status && <span className="opacity-0 group-hover/row:opacity-100 text-xs font-medium text-slate-400">Marcar</span>}
-                                </>
-                              )}
-                            </button>
+                          <td key={day.key} className={`p-1 border-r border-slate-200 text-center h-[50px] relative ${isWeekend && !status ? 'bg-slate-50/50' : ''}`}>
+                            {isActiveDay ? (
+                              <button
+                                onClick={() => toggleDayStatus(task, day.key)}
+                                className={`w-full h-full flex items-center justify-center transition-all cursor-pointer ${getStatusColor(status, true)}`}
+                                title={`Clique para alternar status de ${day.label}`}
+                              >
+                                {status === 'Feito' && <CheckCircle2 className="w-5 h-5" />}
+                                {status === 'Pendente' && <X className="w-5 h-5" />}
+                                {!status && <span className="opacity-0 group-hover/row:opacity-100 text-xs font-medium text-slate-400">Marcar</span>}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (canEditBoard) setQuickOpenDayTarget({ task, dayKey: day.key });
+                                }}
+                                className={`w-full h-full flex items-center justify-center transition-all ${
+                                  canEditBoard 
+                                    ? 'cursor-pointer hover:bg-blue-50 group/closed text-slate-300 hover:text-blue-600' 
+                                    : 'cursor-not-allowed text-slate-300'
+                                }`}
+                                title={canEditBoard ? `Dia fechado. Clique para abrir ${day.label} nesta rotina.` : 'Dia não elegível'}
+                              >
+                                <span className={`${canEditBoard ? 'group-hover/closed:hidden' : ''} text-slate-300 text-base font-light`}>-</span>
+                                {canEditBoard && (
+                                  <span className="hidden group-hover/closed:inline-flex items-center text-[10px] font-bold text-blue-600 uppercase tracking-wider">
+                                    Abrir
+                                  </span>
+                                )}
+                              </button>
+                            )}
                           </td>
                         );
                       })}
@@ -800,6 +1057,355 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
           </table>
         </div>
       </div>
+
+      {/* Modal de Editar Rotina */}
+      {editingRoutine && (
+        <div className="fixed inset-0 bg-black/40 z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-800">Editar Rotina & Dias Elegíveis</h2>
+                  <p className="text-xs text-slate-500">Configure horários e abra ou feche os dias da semana</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setEditingRoutine(null)} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-md"
+              >
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditRoutine} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Nome da rotina
+                </label>
+                <input 
+                  required
+                  type="text" 
+                  value={editingRoutine.title}
+                  onChange={e => setEditingRoutine({...editingRoutine, title: e.target.value})}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                  placeholder="Ex: Atualizar dashboards - Geral"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Início</label>
+                  <input 
+                    type="time" 
+                    value={editingRoutine.time}
+                    onChange={e => setEditingRoutine({...editingRoutine, time: e.target.value})}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Fim</label>
+                  <input 
+                    type="time" 
+                    value={editingRoutine.timeEnd}
+                    onChange={e => setEditingRoutine({...editingRoutine, timeEnd: e.target.value})}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Responsável</label>
+                  <select 
+                    value={editingRoutine.assignee_email}
+                    onChange={e => setEditingRoutine({...editingRoutine, assignee_email: e.target.value})}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="" className="text-slate-800">Nenhum</option>
+                    {workspaceUsers?.map((u: any) => (
+                      <option key={u.email} value={u.email} className="text-slate-800">{u.email}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Seção de Dias Elegíveis */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Dias da Semana Elegíveis (Abertos)
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {editingRoutine.activeDays.length} de 7 dias ativos
+                  </span>
+                </div>
+
+                {/* Atalhos Rápidos */}
+                <div className="flex items-center gap-1.5 mb-3">
+                  <span className="text-[11px] text-slate-500 font-medium mr-1">Atalhos:</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingRoutine(prev => prev ? ({ ...prev, activeDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] }) : null)}
+                    className="text-[11px] px-2.5 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 font-medium border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    Todos os dias (7d)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingRoutine(prev => prev ? ({ ...prev, activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'] }) : null)}
+                    className="text-[11px] px-2.5 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 font-medium border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    Seg a Sex (5d)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingRoutine(prev => prev ? ({ ...prev, activeDays: ['sat', 'sun'] }) : null)}
+                    className="text-[11px] px-2.5 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 font-medium border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    Fim de semana (2d)
+                  </button>
+                </div>
+
+                {/* Botões dos 7 dias */}
+                <div className="grid grid-cols-7 gap-1.5">
+                  {daysOfWeek.map(day => {
+                    const isActive = editingRoutine.activeDays.includes(day.key);
+                    return (
+                      <button
+                        key={day.key}
+                        type="button"
+                        onClick={() => handleToggleEditRoutineDay(day.key)}
+                        className={`flex flex-col items-center justify-center py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          isActive 
+                            ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-2xs ring-1 ring-blue-300' 
+                            : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300'
+                        }`}
+                      >
+                        <span>{day.short}</span>
+                        <span className="text-[10px] mt-0.5 font-normal opacity-80">
+                          {isActive ? 'Aberto' : 'Fechado'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Dias marcados como "Fechado" aparecerão com traço (-) e não poderão ser marcados na tabela.
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button 
+                  type="button" 
+                  disabled={isSavingEdit}
+                  onClick={() => setEditingRoutine(null)} 
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSavingEdit}
+                  className="px-5 py-2 text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <span>Salvar Alterações</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Gerenciamento em Lote de Dias Elegíveis */}
+      {isManageDaysOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[120] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <CalendarDays className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Gerenciar Dias Elegíveis das Rotinas</h2>
+                  <p className="text-xs text-slate-500">Abra ou feche os dias da semana para cada rotina ou aplique para todas de uma vez.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsManageDaysOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            {/* Ações Rápidas em Massa */}
+            <div className="px-6 py-3 bg-blue-50/60 border-b border-blue-100 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-blue-900 uppercase tracking-wider">Ações em Massa:</span>
+                <button
+                  type="button"
+                  onClick={() => handleAddDaysToAllBatch(['sat', 'sun'])}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-blue-200 hover:border-blue-400 text-blue-700 text-xs font-bold hover:shadow-xs transition-all cursor-pointer"
+                  title="Habilita Sábado e Domingo em todas as rotinas deste quadro"
+                >
+                  Abrir Fins de Semana (Sáb/Dom) em Todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyBatchActionToAll(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-blue-200 hover:border-blue-400 text-blue-700 text-xs font-bold hover:shadow-xs transition-all cursor-pointer"
+                >
+                  Abrir Todos os 7 Dias em Todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyBatchActionToAll(['mon', 'tue', 'wed', 'thu', 'fri'])}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-blue-200 hover:border-blue-400 text-blue-700 text-xs font-bold hover:shadow-xs transition-all cursor-pointer"
+                >
+                  Apenas Dias Úteis (Seg a Sex)
+                </button>
+              </div>
+
+              <span className="text-xs text-blue-700 font-medium">
+                {filteredTasks?.length || 0} rotinas listadas
+              </span>
+            </div>
+
+            {/* Lista com Matriz de Dias por Rotina */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-3">
+              {filteredTasks && filteredTasks.length > 0 ? (
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-bold border-b border-slate-200">
+                        <th className="px-4 py-3">Rotina</th>
+                        <th className="px-2 py-3 text-center w-28">Horário</th>
+                        {daysOfWeek.map(d => (
+                          <th key={d.key} className="px-2 py-3 text-center w-20">
+                            {d.short}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-sm">
+                      {filteredTasks.map(task => {
+                        const taskDays = batchActiveDays[task.id] || [];
+                        const rConf = task.routine_status || {};
+                        return (
+                          <tr key={task.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-semibold text-slate-800">
+                              <span>{task.title}</span>
+                            </td>
+                            <td className="px-2 py-3 text-center text-xs text-slate-500 font-medium">
+                              {rConf.config_time || '--:--'}
+                            </td>
+                            {daysOfWeek.map(d => {
+                              const isActive = taskDays.includes(d.key);
+                              return (
+                                <td key={d.key} className="px-1.5 py-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleBatchDay(task.id, d.key)}
+                                    className={`w-full py-1.5 px-1 rounded-md text-xs font-bold transition-all border cursor-pointer ${
+                                      isActive 
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs' 
+                                        : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                                    }`}
+                                    title={`${task.title}: ${isActive ? 'Clique para fechar' : 'Clique para abrir'} ${d.label}`}
+                                  >
+                                    {isActive ? 'Aberto' : '-'}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-slate-400 text-sm">
+                  Nenhuma rotina cadastrada para gerenciar dias.
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-500">
+                Alterne os dias conforme necessário e clique em salvar para aplicar no quadro.
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={isSavingBatchDays}
+                  onClick={() => setIsManageDaysOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingBatchDays}
+                  onClick={handleSaveBatchDays}
+                  className="px-5 py-2 text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 rounded-lg shadow-sm transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingBatchDays ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <span>Salvar Configurações</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação Rápida para Abrir Dia Inativo */}
+      {quickOpenDayTarget && (
+        <div className="fixed inset-0 bg-black/50 z-[130] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mx-auto mb-3">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800 mb-1">
+              Abrir {daysOfWeek.find(d => d.key === quickOpenDayTarget.dayKey)?.label}?
+            </h3>
+            <p className="text-xs text-slate-600 mb-5">
+              Deseja tornar este dia elegível para a rotina <strong>"{quickOpenDayTarget.task.title}"</strong>? Você poderá marcá-lo como Feito ou Pendente.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setQuickOpenDayTarget(null)}
+                className="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmQuickOpenDay}
+                className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Sim, Abrir Dia
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Moderno de Confirmação para Finalizar Semana */}
       {isConfirmingReset && (
