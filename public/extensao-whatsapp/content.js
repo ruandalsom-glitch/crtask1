@@ -1,41 +1,87 @@
 // ============================================================================
-// CR TASK - EXTENSÃO AUTO-LEGENDA WHATSAPP WEB (MAIN WORLD)
-// Intercepta a cópia no CR Task e injeta o texto direto no editor Lexical
-// do WhatsApp Web quando o usuário aperta Ctrl+V com uma imagem!
+// CR TASK - EXTENSÃO AUTO-LEGENDA WHATSAPP WEB v1.2.0 (MAIN WORLD)
 // ============================================================================
 
 (function () {
   const isWhatsApp = window.location.hostname.includes('whatsapp.com');
 
+  function showExtToast(msg, bg = '#4f46e5') {
+    try {
+      const existing = document.getElementById('crtask-ext-toast');
+      if (existing) existing.remove();
+
+      const div = document.createElement('div');
+      div.id = 'crtask-ext-toast';
+      div.textContent = msg;
+      Object.assign(div.style, {
+        position: 'fixed',
+        top: '18px',
+        right: '18px',
+        zIndex: '2147483647',
+        background: bg,
+        color: '#ffffff',
+        padding: '10px 16px',
+        borderRadius: '12px',
+        fontSize: '12px',
+        fontWeight: '700',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+        pointerEvents: 'none',
+        transition: 'opacity 0.3s ease'
+      });
+      document.body.appendChild(div);
+      setTimeout(() => {
+        div.style.opacity = '0';
+        setTimeout(() => div.remove(), 300);
+      }, 3200);
+    } catch (e) {}
+  }
+
+  function findModalTextOnCRTask() {
+    try {
+      const textarea = document.querySelector('textarea');
+      if (textarea && textarea.value && textarea.value.trim()) {
+        return textarea.value.trim();
+      }
+      const monoP = document.querySelector('p.font-mono');
+      if (monoP && monoP.textContent && monoP.textContent.trim()) {
+        return monoP.textContent.trim();
+      }
+    } catch (e) {}
+    return '';
+  }
+
   function sendCaptionToBridge(text) {
+    const clean = (text || '').trim();
+    if (!clean) return;
     try {
       window.postMessage(
         {
           source: 'CRTASK_EXT_MAIN',
           type: 'SAVE_CAPTION',
-          text: text || ''
+          text: clean
         },
         '*'
       );
+      const preview = clean.length > 30 ? clean.slice(0, 30) + '...' : clean;
+      showExtToast(`⚡ Auto-Legenda pronta: "${preview}"`, '#059669');
     } catch (e) {}
   }
 
   // --------------------------------------------------------------------------
-  // PARTE 1: Roda dentro do CR Task (captura o texto copiado automaticamente)
+  // PARTE 1: Roda dentro do CR Task
   // --------------------------------------------------------------------------
   if (!isWhatsApp) {
-    // 1. Escuta evento customizado disparado pelo CR Task
     window.addEventListener('crtask-copy-whatsapp', (event) => {
       try {
         const detail = (event && event.detail) || {};
-        if (typeof detail.text === 'string') {
-          sendCaptionToBridge(detail.text.trim());
+        const txt = (detail.text || '').trim() || findModalTextOnCRTask();
+        if (txt) {
+          sendCaptionToBridge(txt);
         }
       } catch (e) {}
     });
 
-    // 2. Intercepta navigator.clipboard.writeText e navigator.clipboard.write
-    // (Funciona imediatamente mesmo sem precisar atualizar o deploy do site)
     if (navigator.clipboard) {
       const origWriteText = navigator.clipboard.writeText.bind(navigator.clipboard);
       navigator.clipboard.writeText = async function (text) {
@@ -49,14 +95,18 @@
         const origWrite = navigator.clipboard.write.bind(navigator.clipboard);
         navigator.clipboard.write = async function (items) {
           try {
+            let captured = '';
             if (Array.isArray(items) && items[0] && items[0].types) {
               if (items[0].types.includes('text/plain')) {
                 const blob = await items[0].getType('text/plain');
-                const txt = await blob.text();
-                if (txt && txt.trim()) {
-                  sendCaptionToBridge(txt.trim());
-                }
+                captured = (await blob.text()).trim();
               }
+            }
+            if (!captured) {
+              captured = findModalTextOnCRTask();
+            }
+            if (captured) {
+              sendCaptionToBridge(captured);
             }
           } catch (e) {}
           return origWrite(items);
@@ -67,7 +117,7 @@
   }
 
   // --------------------------------------------------------------------------
-  // PARTE 2: Roda dentro do WhatsApp Web (Main World - mesmo contexto do Lexical)
+  // PARTE 2: Roda dentro do WhatsApp Web (Main World)
   // --------------------------------------------------------------------------
   let cachedCaption = '';
   let cachedTime = 0;
@@ -94,104 +144,127 @@
     const text = (domCaption || cachedCaption || '').trim();
     const time = domTime || cachedTime || 0;
 
-    // Válido por 20 minutos após copiar no CR Task
-    if (text && Date.now() - time < 20 * 60 * 1000) {
+    if (text && (!time || Date.now() - time < 30 * 60 * 1000)) {
       return text;
     }
     return '';
   }
 
-  function placeCaretAtEnd(el) {
+  function hasEditorContent(editor) {
+    const raw = (editor.innerText || editor.textContent || '')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .trim();
+    return raw.length > 0;
+  }
+
+  function focusEditorProperly(editor) {
     try {
-      el.focus();
+      editor.focus();
+      const targetNode = editor.querySelector('p') || editor;
       const sel = window.getSelection();
       if (sel) {
         const range = document.createRange();
-        range.selectNodeContents(el);
-        range.collapse(false);
+        range.selectNodeContents(targetNode);
+        range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
       }
     } catch (e) {}
   }
 
-  function hasEditorContent(editor) {
-    const raw = (editor.innerText || editor.textContent || '').replace(/\u200B/g, '').trim();
-    return raw.length > 0;
-  }
+  function insertIntoLexical(editor, text) {
+    if (!editor || !text) return false;
+    if (hasEditorContent(editor)) return true;
 
-  function tryInsertIntoLexical(editor, text) {
-    if (!editor || !text) return;
-    if (hasEditorContent(editor)) return; // Já foi preenchido
+    focusEditorProperly(editor);
 
-    placeCaretAtEnd(editor);
-
-    // Tentativa 1: Dispara ClipboardEvent('paste') nativo no Main World para o Lexical
+    // Método 1: execCommand('insertText') - dispara beforeinput nativo do Chrome para o Lexical
     try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', text);
-      const pasteEvt = new ClipboardEvent('paste', {
-        clipboardData: dt,
-        bubbles: true,
-        cancelable: true,
-        composed: true
-      });
-      Object.defineProperty(pasteEvt, '_crtaskSynthetic', { value: true });
-      editor.dispatchEvent(pasteEvt);
+      document.execCommand('insertText', false, text);
     } catch (e) {}
 
-    // Tentativa 2: Verifica após 100ms se entrou; se não, usa execCommand('insertText')
-    setTimeout(() => {
-      if (!hasEditorContent(editor)) {
-        placeCaretAtEnd(editor);
-        document.execCommand('insertText', false, text);
-        editor.dispatchEvent(
-          new InputEvent('input', {
-            bubbles: true,
-            cancelable: true,
-            inputType: 'insertText',
-            data: text
-          })
-        );
-      }
-    }, 100);
+    // Método 2: InputEvent('beforeinput')
+    if (!hasEditorContent(editor)) {
+      try {
+        focusEditorProperly(editor);
+        const beforeEvt = new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: text
+        });
+        editor.dispatchEvent(beforeEvt);
+      } catch (e) {}
+    }
+
+    // Método 3: ClipboardEvent('paste')
+    if (!hasEditorContent(editor)) {
+      try {
+        focusEditorProperly(editor);
+        const dt = new DataTransfer();
+        dt.setData('text/plain', text);
+        const pasteEvt = new ClipboardEvent('paste', {
+          clipboardData: dt,
+          bubbles: true,
+          cancelable: true,
+          composed: true
+        });
+        Object.defineProperty(pasteEvt, '_crtaskSynthetic', { value: true });
+        editor.dispatchEvent(pasteEvt);
+      } catch (e) {}
+    }
+
+    return hasEditorContent(editor);
   }
 
-  function findMediaCaptionEditor(existingEditors) {
+  // Encontra APENAS o novo campo de legenda que abriu no modal da imagem
+  function findNewMediaCaptionEditor(existingEditors) {
     const allEditors = Array.from(
       document.querySelectorAll('div[contenteditable="true"]')
     );
 
-    // 1. Procura um contenteditable novo que apareceu após o Ctrl+V
     const newlyMounted = allEditors.find(
       (el) => !existingEditors.has(el) && el.offsetParent !== null
     );
     if (newlyMounted) return newlyMounted;
 
-    // 2. Procura qualquer contenteditable visível fora da barra lateral (#side) e fora do footer principal (#main footer)
-    return allEditors.find((el) => {
-      const inSide = el.closest('#side');
-      const inMainFooter = el.closest('#main footer');
-      return !inSide && !inMainFooter && el.offsetParent !== null;
-    });
+    const active = document.activeElement;
+    if (
+      active &&
+      active.getAttribute &&
+      active.getAttribute('contenteditable') === 'true' &&
+      !existingEditors.has(active)
+    ) {
+      return active;
+    }
+
+    return null;
   }
 
   function waitForCaptionBoxAndInsert(text, existingEditors) {
     let attempts = 0;
-    const maxAttempts = 50; // ~4 segundos
+    const maxAttempts = 60; // até ~4.8 segundos esperando o modal da imagem abrir
+
+    showExtToast('⚡ CR Task: Aguardando tela da imagem para colar legenda...', '#4f46e5');
 
     const interval = setInterval(() => {
       attempts++;
-      const captionEditor = findMediaCaptionEditor(existingEditors);
+      const captionEditor = findNewMediaCaptionEditor(existingEditors);
 
       if (captionEditor) {
         clearInterval(interval);
-        // Dispara em 220ms e faz uma checagem de segurança em 500ms (caso a animação do modal do WhatsApp demore)
-        setTimeout(() => tryInsertIntoLexical(captionEditor, text), 220);
-        setTimeout(() => {
-          const freshEditor = findMediaCaptionEditor(existingEditors) || captionEditor;
-          tryInsertIntoLexical(freshEditor, text);
-        }, 550);
+
+        [250, 550, 950].forEach((delay) => {
+          setTimeout(() => {
+            const target = findNewMediaCaptionEditor(existingEditors) || captionEditor;
+            if (target && !hasEditorContent(target)) {
+              const ok = insertIntoLexical(target, text);
+              if (ok) {
+                showExtToast('✅ CR Task: Legenda inserida automaticamente!', '#059669');
+              }
+            }
+          }, delay);
+        });
       } else if (attempts >= maxAttempts) {
         clearInterval(interval);
       }
@@ -218,12 +291,18 @@
         document.querySelectorAll('div[contenteditable="true"]')
       );
 
-      const directText = (cb.getData('text/plain') || '').trim();
-      const textToUse = directText || getSavedCaption();
+      window.postMessage({ source: 'CRTASK_EXT_MAIN', type: 'REQUEST_SYNC' }, '*');
 
-      if (textToUse) {
-        waitForCaptionBoxAndInsert(textToUse, existingEditors);
-      }
+      setTimeout(() => {
+        const directText = (cb.getData('text/plain') || '').trim();
+        const textToUse = directText || getSavedCaption();
+
+        if (textToUse) {
+          waitForCaptionBoxAndInsert(textToUse, existingEditors);
+        } else {
+          showExtToast('⚠️ CR Task: Nenhuma legenda salva. Copie a mensagem no CR Task primeiro.', '#d97706');
+        }
+      }, 30);
     },
     true // Capture phase
   );

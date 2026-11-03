@@ -1,5 +1,5 @@
 // ============================================================================
-// CR TASK - PONTE DE ARMAZENAMENTO (ISOLATED WORLD)
+// CR TASK - PONTE DE ARMAZENAMENTO (ISOLATED WORLD) v1.2.0
 // Sincroniza a legenda entre a aba do CR Task e a aba do WhatsApp Web
 // ============================================================================
 
@@ -24,7 +24,17 @@
     } catch (e) {}
   }
 
-  // Escuta mensagens do MAIN world (CR Task) para salvar no chrome.storage.local
+  function loadFromStorage() {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['crtask_pending_caption', 'crtask_caption_time'], (res) => {
+        if (res) {
+          syncToDOM(res.crtask_pending_caption || '', res.crtask_caption_time || 0);
+        }
+      });
+    }
+  }
+
+  // Escuta mensagens do MAIN world
   window.addEventListener('message', (event) => {
     if (!event.data || event.data.source !== 'CRTASK_EXT_MAIN') return;
 
@@ -37,25 +47,18 @@
           crtask_caption_time: now
         });
       }
+    } else if (event.data.type === 'REQUEST_SYNC') {
+      loadFromStorage();
     }
   });
 
-  // Se estiver no WhatsApp Web: mantém o DOM sempre atualizado com a última legenda copiada
-  if (isWhatsApp && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    const loadFromStorage = () => {
-      chrome.storage.local.get(['crtask_pending_caption', 'crtask_caption_time'], (res) => {
-        if (res) {
-          syncToDOM(res.crtask_pending_caption || '', res.crtask_caption_time || 0);
-        }
-      });
-    };
-
+  if (isWhatsApp) {
     loadFromStorage();
     document.addEventListener('DOMContentLoaded', loadFromStorage);
     window.addEventListener('focus', loadFromStorage);
     document.addEventListener('visibilitychange', loadFromStorage);
 
-    if (chrome.storage.onChanged) {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes) => {
         if (changes.crtask_pending_caption || changes.crtask_caption_time) {
           loadFromStorage();

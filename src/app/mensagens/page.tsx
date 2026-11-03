@@ -822,7 +822,7 @@ export default function MensagensPage() {
     try {
       setIsCopiedImage(true);
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('crtask-copy-whatsapp', { detail: { text: '' } }));
+        window.dispatchEvent(new CustomEvent('crtask-copy-whatsapp', { detail: { text: detailText || '' } }));
       }
       if (imageUrl.startsWith('data:image/')) {
         const res = await fetch(imageUrl);
