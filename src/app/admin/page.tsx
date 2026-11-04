@@ -848,6 +848,7 @@ export default function AdminPage() {
       <SlaManagementModal
         isOpen={isSlaManagementOpen}
         onClose={() => setIsSlaManagementOpen(false)}
+        workspaceId={selectedWorkspace || leaderWorkspaceIds[0]}
       />
     </div>
   );

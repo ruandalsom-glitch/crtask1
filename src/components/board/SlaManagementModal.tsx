@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import {
   Headset,
   Calendar,
@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  ShieldAlert,
   ArrowRight,
   CheckSquare,
   AlertTriangle
@@ -61,9 +62,61 @@ export function SlaManagementModal({
   const [editAssignee, setEditAssignee] = useState('');
   const [editStatus, setEditStatus] = useState('');
 
-  // 1. Busca todos os plantões SLA
+  // Workspace / Setor Ativo
+  const activeWorkspaceId = useMemo(() => {
+    if (workspaceId) return workspaceId;
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('monday_active_workspace') || null;
+    }
+    return null;
+  }, [workspaceId]);
+
+  // Informações do Workspace / Setor
+  const { data: workspaceData } = useQuery({
+    queryKey: ['workspace_info_for_sla', activeWorkspaceId],
+    queryFn: async () => {
+      if (!activeWorkspaceId) return null;
+      const { data } = await supabase
+        .from('workspaces')
+        .select('id, name')
+        .eq('id', activeWorkspaceId)
+        .single();
+      return data;
+    },
+    enabled: isOpen && !!activeWorkspaceId,
+    staleTime: 5 * 60 * 1000
+  });
+
+  // Membros cadastrados estritamente no setor atual
+  const { data: sectorMemberUserIds = [] } = useQuery({
+    queryKey: ['workspace_members_for_sla', activeWorkspaceId],
+    queryFn: async () => {
+      if (!activeWorkspaceId) return [];
+      const { data, error } = await supabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', activeWorkspaceId);
+      if (error) {
+        console.error('Erro ao buscar membros do setor:', error);
+        return [];
+      }
+      return (data || []).map((m: any) => m.user_id);
+    },
+    enabled: isOpen && !!activeWorkspaceId,
+    staleTime: 5 * 60 * 1000
+  });
+
+  // Usuário autenticado
+  const { data: currentUser } = useQuery({
+    queryKey: ['current_user_for_sla'],
+    queryFn: () => getFastUser(),
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000
+  });
+
+  // 1. Busca todos os plantões SLA (filtrando estritamente pelos quadros do setor)
   const { data: rawSlaTasks = [], isLoading } = useQuery({
-    queryKey: ['sla_management_tasks', workspaceId],
+    queryKey: ['sla_management_tasks', activeWorkspaceId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tasks')
@@ -87,7 +140,15 @@ export function SlaManagementModal({
         console.error('Erro ao buscar escalas SLA:', error);
         return [];
       }
-      return data || [];
+
+      const allTasks = data || [];
+      if (!activeWorkspaceId) return allTasks;
+
+      // Filtra estritamente os plantões dos quadros pertencentes ao setor atual
+      return allTasks.filter((t: any) => {
+        const boardWsId = Array.isArray(t.boards) ? t.boards[0]?.workspace_id : t.boards?.workspace_id;
+        return !boardWsId || boardWsId === activeWorkspaceId;
+      });
     },
     enabled: isOpen,
     staleTime: 30 * 1000
@@ -107,12 +168,34 @@ export function SlaManagementModal({
     staleTime: 5 * 60 * 1000
   });
 
-  // Perfis operacionais válidos para o SLA (exclui a conta admin pura do Ruan)
+  const currentUserProfile = useMemo(() => {
+    if (!currentUser?.email) return null;
+    return (allProfiles || []).find((p: any) => p.email === currentUser.email) || null;
+  }, [allProfiles, currentUser?.email]);
+
+  const isLeaderOrAdmin = useMemo(() => {
+    if (!currentUserProfile) return false;
+    const role = (currentUserProfile.role || '').toLowerCase();
+    return ['admin', 'administrador', 'leader', 'lider', 'líder'].includes(role);
+  }, [currentUserProfile]);
+
+  // Perfis operacionais válidos para o SLA: restritos ESTRITAMENTE aos membros do setor atual
   const operationalProfiles = useMemo(() => {
-    return (allProfiles || []).filter(
-      (p: any) => p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
-    );
-  }, [allProfiles]);
+    const memberSet = new Set(sectorMemberUserIds);
+    return (allProfiles || []).filter((p: any) => {
+      // Exclui a conta pura de admin do Ruan
+      if (p.email === 'ruan.dalsom@crexpresstransportessp.com.br') return false;
+      // Se houver setor ativo e membros retornados, inclui SOMENTE membros deste setor
+      if (activeWorkspaceId && sectorMemberUserIds.length > 0) {
+        return memberSet.has(p.id);
+      }
+      // Se tiver activeWorkspaceId mas não tem membros carregados ainda, não vaza colaboradores de outros setores
+      if (activeWorkspaceId) {
+        return false;
+      }
+      return true;
+    });
+  }, [allProfiles, sectorMemberUserIds, activeWorkspaceId]);
 
   // Navegação de Mês
   const prevMonth = () => {
@@ -151,15 +234,23 @@ export function SlaManagementModal({
     });
   }, [rawSlaTasks, filterMonthOnly, currentMonthPrefix, selectedCollab, selectedStatus, searchQuery]);
 
-  // Contagem por Colaborador no período filtrado
+  // Contagem por Colaborador no período filtrado (garante presença dos colaboradores do setor)
   const collaboratorCounts = useMemo(() => {
     const counts: Record<string, number> = {};
+    // Garante que todos os colaboradores do setor apareçam no card de métricas (mesmo com 0 plantões)
+    operationalProfiles.forEach((p: any) => {
+      if (p.email) counts[p.email] = 0;
+    });
     filteredTasks.forEach((t: any) => {
       const email = t.assignee_email || 'Sem Responsável';
-      counts[email] = (counts[email] || 0) + 1;
+      if (counts[email] !== undefined) {
+        counts[email] += 1;
+      } else {
+        counts[email] = (counts[email] || 0) + 1;
+      }
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [filteredTasks]);
+  }, [filteredTasks, operationalProfiles]);
 
   // Helpers de Usuário
   const getProfile = (email?: string) => {
@@ -178,6 +269,9 @@ export function SlaManagementModal({
   // MUTAÇÃO: Excluir plantão individual
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      if (!isLeaderOrAdmin) {
+        throw new Error('Apenas líderes de setor e administradores podem excluir escalas SLA.');
+      }
       const { error } = await supabase.from('tasks').delete().eq('id', id);
       if (error) throw error;
     },
@@ -190,6 +284,9 @@ export function SlaManagementModal({
   // MUTAÇÃO: Exclusão em Lote
   const batchDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
+      if (!isLeaderOrAdmin) {
+        throw new Error('Apenas líderes de setor e administradores podem excluir escalas SLA.');
+      }
       const { error } = await supabase.from('tasks').delete().in('id', ids);
       if (error) throw error;
     },
@@ -203,6 +300,9 @@ export function SlaManagementModal({
   // MUTAÇÃO: Alterar Colaborador em Lote
   const batchReassignMutation = useMutation({
     mutationFn: async ({ ids, newEmail }: { ids: string[]; newEmail: string }) => {
+      if (!isLeaderOrAdmin) {
+        throw new Error('Apenas líderes de setor e administradores podem alterar escalas SLA.');
+      }
       const { error } = await supabase
         .from('tasks')
         .update({ assignee_email: newEmail })
@@ -232,6 +332,9 @@ export function SlaManagementModal({
       assignee_email: string;
       status: string;
     }) => {
+      if (!isLeaderOrAdmin) {
+        throw new Error('Apenas líderes de setor e administradores podem editar escalas SLA.');
+      }
       const { error } = await supabase
         .from('tasks')
         .update({
@@ -277,6 +380,35 @@ export function SlaManagementModal({
 
   if (!isOpen) return null;
 
+  // Bloqueio de segurança: exclusivo para líderes e administradores
+  if (currentUserProfile && !isLeaderOrAdmin) {
+    return typeof document !== 'undefined'
+      ? createPortal(
+          <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-[#111625] max-w-sm w-full p-6 rounded-2xl text-center shadow-2xl border border-slate-200 dark:border-white/[0.08]">
+              <div className="w-12 h-12 rounded-full bg-rose-50 dark:bg-rose-950/50 text-rose-600 mx-auto flex items-center justify-center mb-3">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white mb-1.5">
+                Acesso Restrito
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+                O Painel de Gestão da Escala SLA é exclusivo para Líderes de Setor e Administradores.
+              </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Voltar
+              </button>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+  }
+
   return typeof document !== 'undefined'
     ? createPortal(
         <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -288,16 +420,21 @@ export function SlaManagementModal({
                   <Headset className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
                       Painel Administrativo • Escala SLA
                     </h2>
+                    {workspaceData?.name && (
+                      <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
+                        {workspaceData.name}
+                      </span>
+                    )}
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
                       {filteredTasks.length} plantões
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Controle de plantonistas, alteração de datas/horários e exclusão de escalas SLA
+                    Controle exclusivo de líderes: colaboradores do setor, alteração de datas/horários e gestão da escala SLA
                   </p>
                 </div>
               </div>

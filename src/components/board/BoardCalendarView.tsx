@@ -351,17 +351,20 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     queryKey: ['workspace_users', boardId, boardInfo?.workspace_id],
     queryFn: async () => {
       const profiles = allProfiles || [];
-      if (!boardInfo?.workspace_id) return profiles;
+      const targetWorkspaceId = boardInfo?.workspace_id || (typeof window !== 'undefined' ? localStorage.getItem('monday_active_workspace') : null);
+      if (!targetWorkspaceId) {
+        return profiles.filter((p: any) => p.email !== 'ruan.dalsom@crexpresstransportessp.com.br');
+      }
 
-      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardInfo.workspace_id);
+      const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', targetWorkspaceId);
       const memberUserIds = new Set(members?.map(m => m.user_id) || []);
 
       return profiles.filter((p: any) =>
-        (p.role === 'admin' || memberUserIds.has(p.id)) &&
+        memberUserIds.has(p.id) &&
         p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
       );
     },
-    enabled: !!allProfiles && boardInfo !== undefined,
+    enabled: !!allProfiles,
     staleTime: 5 * 60 * 1000
   });
 
@@ -376,8 +379,20 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     staleTime: 10 * 60 * 1000
   });
 
-  const currentUserProfile = (allProfiles || workspaceUsers)?.find((u: any) => u.email === userProfile?.email);
-  const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
+  const { data: myProfileDirect } = useQuery({
+    queryKey: ['my_profile_direct_role', userProfile?.id],
+    queryFn: async () => {
+      if (!userProfile?.id) return null;
+      const { data } = await supabase.from('profiles').select('id, email, role').eq('id', userProfile.id).single();
+      return data;
+    },
+    enabled: !!userProfile?.id,
+    staleTime: 5 * 60 * 1000
+  });
+
+  const currentUserProfile = (allProfiles || [])?.find((u: any) => u.email === userProfile?.email) || myProfileDirect;
+  const currentRole = (currentUserProfile?.role || '').toLowerCase();
+  const isLeaderOrAdmin = ['admin', 'administrador', 'leader', 'lider', 'líder'].includes(currentRole);
 
   // Identifica se o quadro atual pertence ao Setor de Análise
   const isAnaliseSector = useMemo(() => {
@@ -1732,7 +1747,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                       className="bg-white border border-slate-200 hover:border-slate-300 rounded-md px-4 py-2.5 w-full outline-none text-[15px] font-medium text-slate-800 shadow-sm"
                     >
                       <option value="">- Selecione o Colaborador do SLA -</option>
-                      {((workspaceUsers && workspaceUsers.length > 0 ? workspaceUsers : allProfiles) || []).map((u: any) => {
+                      {(workspaceUsers || []).map((u: any) => {
                         const cleanName = u.email.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
                         return (
                           <option key={u.email} value={u.email}>{cleanName} ({u.email})</option>
@@ -2201,7 +2216,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
                   className="w-full text-xs px-3.5 py-2.5 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-medium text-slate-800 cursor-pointer"
                 >
                   <option value="">Selecione o colaborador...</option>
-                  {((workspaceUsers && workspaceUsers.length > 0 ? workspaceUsers : allProfiles) || []).map((u: any) => {
+                  {(workspaceUsers || []).map((u: any) => {
                     const cleanName = u.email.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
                     return (
                       <option key={u.email} value={u.email}>
@@ -2404,7 +2419,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
         isOpen={isSlaManagementOpen}
         onClose={() => setIsSlaManagementOpen(false)}
         boardId={boardId}
-        workspaceId={boardInfo?.workspace_id}
+        workspaceId={boardInfo?.workspace_id || workspaceInfo?.id}
         onOpenCreateSla={() => setIsSlaModalOpen(true)}
       />
     </div>
