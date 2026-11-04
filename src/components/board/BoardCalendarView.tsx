@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
-import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle, Headset } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle, Headset, ShieldCheck } from 'lucide-react';
 
 import { DndContext, DragEndEvent, DragStartEvent, useDraggable, useDroppable, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { StatusCell } from './StatusCell';
@@ -10,6 +10,7 @@ import { PriorityCell } from './PriorityCell';
 import { AssigneeCell } from './AssigneeCell';
 import { Reactions } from './Reactions';
 import { UpdateContent } from './UpdateContent';
+import { SlaManagementModal } from './SlaManagementModal';
 
 const STATUS_COLORS: any = {
   'Feito': 'bg-[#00c875]',
@@ -388,7 +389,17 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
 
   // Estados da Escala / Lembrete de SLA - ATENDIMENTO (Setor de Análise)
   const [isSlaModalOpen, setIsSlaModalOpen] = useState(false);
+  const [isSlaManagementOpen, setIsSlaManagementOpen] = useState(false);
   const [slaCollaboratorEmail, setSlaCollaboratorEmail] = useState('');
+
+  const slaPlantaoCount = useMemo(() => {
+    return rawTasks?.filter(
+      (t: any) =>
+        t.priority === 'SLA' ||
+        t.title?.toUpperCase().includes('SLA') ||
+        t.group_name === 'SLA Atendimento'
+    )?.length || 0;
+  }, [rawTasks]);
   const [slaTitle, setSlaTitle] = useState('SLA - ATENDIMENTO');
   const [slaSelectedDates, setSlaSelectedDates] = useState<string[]>([]);
   const [slaRangeStart, setSlaRangeStart] = useState('');
@@ -1101,14 +1112,34 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
         </button>
 
         {isAnaliseSector && isLeaderOrAdmin && (
-          <button 
-            onClick={() => setIsSlaModalOpen(true)} 
-            className="h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 shadow-xs"
-            title="Escalar colaborador para SLA - Atendimento"
-          >
-            <Headset className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Escalar SLA Atendimento</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Botão de Acesso ao Painel Administrativo de Escalas SLA */}
+            <button 
+              type="button"
+              onClick={() => setIsSlaManagementOpen(true)} 
+              className="h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer border border-purple-200 dark:border-purple-800/60 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-300 shadow-xs"
+              title="Painel Administrativo: Verificar colaboradores escalados, alterar e retirar plantões SLA"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <span>Painel Escala SLA</span>
+              {slaPlantaoCount > 0 && (
+                <span className="bg-purple-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                  {slaPlantaoCount}
+                </span>
+              )}
+            </button>
+
+            {/* Botão de Criação Rápida de Plantão SLA */}
+            <button 
+              type="button"
+              onClick={() => setIsSlaModalOpen(true)} 
+              className="h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 shadow-xs"
+              title="Escalar colaborador para SLA - Atendimento"
+            >
+              <Headset className="w-3.5 h-3.5 text-indigo-600" />
+              <span>+ Escalar SLA</span>
+            </button>
+          </div>
         )}
 
         <div className="flex-1"></div>
@@ -2367,6 +2398,15 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           <span className="text-sm font-semibold">{slaFeedbackMsg}</span>
         </div>
       )}
+
+      {/* Painel Administrativo de Gestão da Escala SLA */}
+      <SlaManagementModal
+        isOpen={isSlaManagementOpen}
+        onClose={() => setIsSlaManagementOpen(false)}
+        boardId={boardId}
+        workspaceId={boardInfo?.workspace_id}
+        onOpenCreateSla={() => setIsSlaModalOpen(true)}
+      />
     </div>
   );
 }

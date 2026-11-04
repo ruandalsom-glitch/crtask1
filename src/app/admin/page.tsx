@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck, Settings2, Check, LayoutGrid } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck, Settings2, Check, LayoutGrid, Headset } from 'lucide-react';
 import Link from 'next/link';
+import { SlaManagementModal } from '@/components/board/SlaManagementModal';
 
 const AVAILABLE_MENU_TABS = [
   {
@@ -46,6 +47,7 @@ export default function AdminPage() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>('');
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [selectedTabs, setSelectedTabs] = useState<string[]>(['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos']);
+  const [isSlaManagementOpen, setIsSlaManagementOpen] = useState(false);
 
   const [userRole, setUserRole] = useState<'admin' | 'leader' | 'user' | null>(null);
   const [leaderWorkspaceIds, setLeaderWorkspaceIds] = useState<string[]>([]);
@@ -814,8 +816,39 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* Bloco Gestão de Escalas SLA de Atendimento */}
+          {hasAccess && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                    <Headset className="w-5 h-5 text-purple-600" />
+                    Gestão de Escalas SLA de Atendimento
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Verifique os colaboradores escalados, altere plantonistas e horários ou retire escalas de atendimento SLA.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSlaManagementOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-sm cursor-pointer shrink-0"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Abrir Painel Escalas SLA</span>
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
+
+      {/* Modal de Gestão Administrativa de Escalas SLA */}
+      <SlaManagementModal
+        isOpen={isSlaManagementOpen}
+        onClose={() => setIsSlaManagementOpen(false)}
+      />
     </div>
   );
 }
