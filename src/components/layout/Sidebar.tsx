@@ -21,9 +21,11 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { canUserAccessBoard } from '@/lib/privacy';
+import { useIsDesktopApp } from '@/lib/useIsDesktopApp';
 
 export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const isDesktopApp = useIsDesktopApp();
 
   const router = useRouter();
   const pathname = usePathname();
@@ -161,7 +163,7 @@ export function Sidebar() {
 
   return (
     <div
-      className={`relative bg-[#f7f8f9] dark:bg-[#0f172a] border-slate-200 dark:border-slate-800 flex flex-col z-40 hidden md:flex shrink-0 transition-all duration-300 ease-in-out select-none ${
+      className={`relative bg-white dark:bg-[#0b1120] border-slate-200/70 dark:border-white/[0.06] flex flex-col z-40 hidden md:flex shrink-0 transition-all duration-300 ease-in-out select-none ${
         isCollapsed ? 'w-3.5 border-r-0 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer' : 'w-[264px] border-r'
       }`}
       onClick={() => isCollapsed && setIsCollapsed(false)}
@@ -179,10 +181,10 @@ export function Sidebar() {
 
       <div className={`flex flex-col h-full w-[264px] overflow-hidden transition-opacity duration-200 ${isCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         {/* Topo: Seletor de Setor (Workspace) */}
-        <div className="p-3.5 border-b border-slate-200 dark:border-slate-800/80 shrink-0 relative">
+        <div className="p-3.5 shrink-0 relative">
           <div
             onClick={() => hasMultipleWorkspaces && setIsDropdownOpen(!isDropdownOpen)}
-            className={`w-full flex items-center justify-between p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-2xs transition-all ${
+            className={`w-full flex items-center justify-between p-2.5 rounded-2xl border border-slate-200/70 dark:border-white/[0.06] bg-slate-50/60 dark:bg-white/[0.03] transition-all ${
               hasMultipleWorkspaces ? 'hover:border-blue-400 dark:hover:border-blue-500/60 cursor-pointer' : ''
             }`}
           >
@@ -254,14 +256,14 @@ export function Sidebar() {
                 href="/my-work"
                 className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl cursor-pointer transition-all w-full ${
                   pathname === '/my-work'
-                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold border border-blue-200/80 dark:border-blue-800/60 shadow-2xs'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 font-medium border border-transparent'
+                    ? 'bg-slate-100 dark:bg-white/[0.06] text-slate-900 dark:text-white font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-white/[0.04] font-medium'
                 }`}
               >
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                   pathname === '/my-work'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                    : 'text-blue-500 dark:text-blue-400'
                 }`}>
                   <CheckSquare className="w-4 h-4" />
                 </div>
@@ -273,15 +275,15 @@ export function Sidebar() {
                   href="/mensagens"
                   className={`flex items-center justify-between px-2.5 py-2 rounded-xl cursor-pointer transition-all w-full ${
                     pathname === '/mensagens'
-                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-200/80 dark:border-emerald-800/60 shadow-2xs'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 font-medium border border-transparent'
+                      ? 'bg-slate-100 dark:bg-white/[0.06] text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-white/[0.04] font-medium'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                       pathname === '/mensagens'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                        : 'text-emerald-500 dark:text-emerald-400'
                     }`}>
                       <MessageSquare className="w-4 h-4" />
                     </div>
@@ -296,14 +298,14 @@ export function Sidebar() {
                   href="/admin"
                   className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl cursor-pointer transition-all w-full ${
                     pathname.startsWith('/admin')
-                      ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-200/80 dark:border-purple-800/60 shadow-2xs'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 font-medium border border-transparent'
+                      ? 'bg-slate-100 dark:bg-white/[0.06] text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-white/[0.04] font-medium'
                   }`}
                 >
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                     pathname.startsWith('/admin')
-                      ? 'bg-purple-600 text-white shadow-xs'
-                      : 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                      : 'text-purple-500 dark:text-purple-400'
                   }`}>
                     <ShieldCheck className="w-4 h-4" />
                   </div>
@@ -322,7 +324,7 @@ export function Sidebar() {
                 <LayoutTemplate className="w-3.5 h-3.5 text-slate-400" />
                 <span>Meus Quadros</span>
                 {boards && (
-                  <span className="ml-0.5 px-1.5 py-0.2 bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full text-[9px]">
+                  <span className="ml-0.5 px-1.5 py-px bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 rounded-full text-[9px]">
                     {boards.length}
                   </span>
                 )}
@@ -330,7 +332,7 @@ export function Sidebar() {
 
               <button 
                 onClick={handleCreateBoard}
-                className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-600 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/60 rounded-lg text-[10px] font-bold transition-all cursor-pointer shrink-0"
+                className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer shrink-0"
                 title="Adicionar Novo Quadro"
               >
                 <Plus className="w-3 h-3 stroke-[2.5]" />
@@ -350,14 +352,14 @@ export function Sidebar() {
                         href={`/boards/${board.id}`}
                         className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl cursor-pointer transition-all w-full border ${
                           isBoardActive
-                            ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold border-slate-200 dark:border-slate-700 shadow-xs'
-                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 font-medium border-transparent'
+                            ? 'bg-slate-100 dark:bg-white/[0.06] text-slate-900 dark:text-white font-semibold border-transparent'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-white/[0.04] font-medium border-transparent'
                         }`}
                       >
                         <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
                           isBoardActive
                             ? 'bg-blue-600 text-white'
-                            : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                            : 'bg-slate-100 dark:bg-white/[0.05] text-slate-400 dark:text-slate-500'
                         }`}>
                           <Grid className="w-3.5 h-3.5" />
                         </div>
@@ -385,8 +387,9 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Rodapé: Download do Aplicativo Desktop Windows */}
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 shrink-0">
+        {/* Rodapé: Download do Aplicativo Desktop Windows (oculto dentro do próprio App Desktop) */}
+        {!isDesktopApp && (
+        <div className="p-3 shrink-0">
           <a
             href="/CR-Task-Desktop.exe"
             download="CR-Task-Desktop.exe"
@@ -409,6 +412,7 @@ export function Sidebar() {
             <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-400 shrink-0 transition-colors" />
           </a>
         </div>
+        )}
       </div>
     </div>
   );

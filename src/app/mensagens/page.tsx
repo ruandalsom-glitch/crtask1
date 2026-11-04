@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
+import { useIsDesktopApp } from '@/lib/useIsDesktopApp';
 import { 
   Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
@@ -409,6 +410,7 @@ export default function MensagensPage() {
   const [isCopiedAll, setIsCopiedAll] = useState<boolean>(false);
   const [isExtensionModalOpen, setIsExtensionModalOpen] = useState<boolean>(false);
   const [isDesktopModalOpen, setIsDesktopModalOpen] = useState<boolean>(false);
+  const isDesktopApp = useIsDesktopApp();
 
   // Sistema de Alarme no Horário de Envio
   const [activeAlarmItem, setActiveAlarmItem] = useState<{
@@ -1894,16 +1896,18 @@ export default function MensagensPage() {
                 </button>
               </div>
 
-              {/* Botão App Desktop Windows (Bandeja do Sistema ^ + Auto-Legenda WhatsApp) */}
-              <button
-                type="button"
-                onClick={() => setIsDesktopModalOpen(true)}
-                className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
-                title="Baixar Aplicativo CR Task para Windows (Fica na bandeja ^, toca alarme em 2º plano e já cola Imagem + Texto juntos no WhatsApp)"
-              >
-                <Monitor className="w-3.5 h-3.5 text-emerald-400" />
-                <span>App Desktop (PC)</span>
-              </button>
+              {/* Botão App Desktop Windows (oculto quando já está dentro do App Desktop) */}
+              {!isDesktopApp && (
+                <button
+                  type="button"
+                  onClick={() => setIsDesktopModalOpen(true)}
+                  className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+                  title="Baixar Aplicativo CR Task para Windows (Fica na bandeja ^, toca alarme em 2º plano e já cola Imagem + Texto juntos no WhatsApp)"
+                >
+                  <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>App Desktop (PC)</span>
+                </button>
+              )}
             </div>
 
             {/* Direita Linha 2: Ações Principais (Nova Mensagem + Copiar Tabela WhatsApp + Baixar PNG) */}
