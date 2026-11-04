@@ -984,10 +984,19 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
       {/* Toolbar do Calendário */}
       <div className="flex items-center gap-4 p-6 border-b border-slate-200">
         {canEditBoard && (
-        <div className="flex bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors overflow-hidden h-8">
-           <button onClick={() => setCreatingTaskDate(new Date())} className="px-4 font-medium text-sm">Criar tarefa</button>
-           <button onClick={() => setCreatingTaskDate(new Date())} className="px-2 border-l border-blue-700 flex items-center justify-center">
-             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M6 9l6 6 6-6"/></svg>
+        <div className="flex items-center bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors overflow-hidden h-9 shadow-xs shrink-0">
+           <button 
+             onClick={() => setCreatingTaskDate(new Date())} 
+             className="px-4 font-semibold text-xs whitespace-nowrap h-full flex items-center cursor-pointer"
+           >
+             Criar tarefa
+           </button>
+           <button 
+             onClick={() => setCreatingTaskDate(new Date())} 
+             className="px-2.5 border-l border-blue-700/60 h-full flex items-center justify-center hover:bg-blue-800 transition-colors cursor-pointer"
+             title="Opções de criação"
+           >
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><path d="M6 9l6 6 6-6"/></svg>
            </button>
         </div>
         )}

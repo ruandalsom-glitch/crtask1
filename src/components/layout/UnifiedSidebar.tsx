@@ -22,10 +22,17 @@ import {
   Download,
   Sun,
   Moon,
-  LogOut
+  LogOut,
+  Camera,
+  ShieldCheck,
+  FileText,
+  Mail,
+  MailWarning,
+  BarChart3
 } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, usePathname } from 'next/navigation';
 import { canUserAccessBoard } from '@/lib/privacy';
 import { useIsDesktopApp } from '@/lib/useIsDesktopApp';
@@ -45,8 +52,36 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [isSectorDropdownOpen, setIsSectorDropdownOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ bottom: number; left: number } | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [currentTab, setCurrentTab] = useState<string>('tabela');
+
+  const userButtonRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Sincronização segura da aba ativa sem chamar useSearchParams() (evita erro CSR bailout do Next.js)
+  useEffect(() => {
+    const syncTabFromUrl = () => {
+      if (typeof window !== 'undefined') {
+        const tab = new URLSearchParams(window.location.search).get('tab') || 'tabela';
+        setCurrentTab(tab);
+      }
+    };
+    syncTabFromUrl();
+
+    const handleCustomSwitch = (e: any) => {
+      if (e.detail?.tab) setCurrentTab(e.detail.tab);
+    };
+
+    window.addEventListener('popstate', syncTabFromUrl);
+    window.addEventListener('crtask_tab_switch', handleCustomSwitch);
+    return () => {
+      window.removeEventListener('popstate', syncTabFromUrl);
+      window.removeEventListener('crtask_tab_switch', handleCustomSwitch);
+    };
+  }, [pathname]);
 
   // Usuário atual
   const { data: userProfile } = useQuery({
@@ -136,24 +171,9 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
     staleTime: 5 * 60 * 1000
   });
 
-  // Quantidade de tarefas reais pendentes (excluindo rotinas automáticas de lote e lembretes de calendário)
-  const { data: pendingTasksCount = 0 } = useQuery({
-    queryKey: ['sidebar_pending_tasks_count_clean', userProfile?.email],
-    queryFn: async () => {
-      if (!userProfile?.email) return 0;
-      const { count } = await supabase
-        .from('tasks')
-        .select('id', { count: 'exact', head: true })
-        .ilike('assignee_email', `%${userProfile.email}%`)
-        .not('status', 'in', '("Feito","Concluído")')
-        .neq('task_type', 'Lembrete')
-        .neq('task_type', 'Rotina')
-        .neq('is_routine', true);
-      return count || 0;
-    },
-    enabled: !!userProfile?.email,
-    staleTime: 60 * 1000
-  });
+  // Identifica o board atual selecionado ou o primeiro do setor
+  const pathBoardIdMatch = pathname.match(/^\/boards\/([^/?]+)/);
+  const currentBoardId = pathBoardIdMatch ? pathBoardIdMatch[1] : (boards[0]?.id || '');
 
   // Sincronização do tema Claro / Escuro
   useEffect(() => {
@@ -183,14 +203,85 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
     window.dispatchEvent(new Event('crtask_theme_change'));
   };
 
+  // Upload de Foto de Perfil
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !userProfile?.id) return;
+
+    try {
+      setIsUploadingAvatar(true);
+      const fileExt = file.name.split('.').pop() || 'png';
+      const fileName = `${userProfile.id}-${Date.now()}.${fileExt}`;
+
+      let uploadRes = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
+
+      let publicUrl = '';
+      if (!uploadRes.error) {
+        const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+        publicUrl = data.publicUrl;
+      } else {
+        const fallbackRes = await supabase.storage
+          .from('attachments')
+          .upload(fileName, file, { upsert: true });
+        if (fallbackRes.error) throw uploadRes.error;
+        const { data } = supabase.storage.from('attachments').getPublicUrl(fileName);
+        publicUrl = data.publicUrl;
+      }
+
+      await supabase
+        .from('profiles')
+        .upsert({ id: userProfile.id, email: userProfile.email, avatar_url: publicUrl }, { onConflict: 'id' });
+
+      queryClient.invalidateQueries({ queryKey: ['all_profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['current_user'] });
+      alert('Foto de perfil atualizada com sucesso!');
+    } catch (err: any) {
+      alert('Erro ao atualizar foto: ' + (err.message || 'Falha no upload'));
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const toggleUserMenu = () => {
+    if (!isUserMenuOpen && userButtonRef.current) {
+      const rect = userButtonRef.current.getBoundingClientRect();
+      if (isCollapsed) {
+        setDropdownPos({
+          bottom: Math.max(16, window.innerHeight - rect.bottom),
+          left: rect.right + 12
+        });
+      } else {
+        setDropdownPos({
+          bottom: Math.max(16, window.innerHeight - rect.top + 8),
+          left: Math.max(12, rect.left)
+        });
+      }
+      setIsUserMenuOpen(true);
+    } else {
+      setIsUserMenuOpen(false);
+    }
+  };
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node) &&
+        userButtonRef.current &&
+        !userButtonRef.current.contains(e.target as Node)
+      ) {
         setIsUserMenuOpen(false);
       }
     }
+    const handleResize = () => setIsUserMenuOpen(false);
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   const activeWorkspaceName = workspaces?.find(w => w.id === activeWorkspaceId)?.name || 'Operação';
@@ -227,56 +318,75 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
     }
   };
 
-  const primaryBoardId = boards[0]?.id;
+  const handleTabClick = (tab: string) => {
+    setCurrentTab(tab);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab } }));
+    }
+    if (currentBoardId) {
+      router.push(`/boards/${currentBoardId}?tab=${tab}`);
+    }
+  };
 
   return (
     <aside
-      className={`h-screen flex flex-col shrink-0 z-40 transition-all duration-300 ease-in-out select-none bg-slate-50 dark:bg-[#0e121e] border-r border-slate-200 dark:border-white/[0.06] text-slate-700 dark:text-slate-300 ${
-        isCollapsed ? 'w-[68px]' : 'w-[256px]'
+      className={`h-screen flex flex-col shrink-0 z-40 transition-all duration-300 ease-in-out select-none bg-white dark:bg-[#0e121e] border-r border-slate-200 dark:border-white/[0.06] text-slate-700 dark:text-slate-300 overflow-x-hidden ${
+        isCollapsed ? 'w-[64px]' : 'w-[256px]'
       }`}
     >
       {/* 1. TOPO DA SIDEBAR: LOGO + NOME DO APP + BOTÃO DE RECOLHER */}
-      <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200 dark:border-white/[0.06] shrink-0 bg-white dark:bg-[#0e121e]">
-        <Link href="/" className="flex items-center gap-2.5 overflow-hidden group">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-0.5 shadow-md shadow-blue-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <div className="w-full h-full bg-white dark:bg-[#0e121e] rounded-[10px] flex items-center justify-center p-1">
-              <img src="/logo.png" alt="CR Task" className="w-full h-full object-contain" />
-            </div>
-          </div>
-          {!isCollapsed && (
-            <div className="flex flex-col min-w-0">
-              <span className="font-extrabold text-[15px] tracking-tight text-slate-900 dark:text-white leading-tight">
-                CR Task
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide truncate">
-                Workspace Operacional
-              </span>
-            </div>
-          )}
-        </Link>
+      <div className={`h-16 flex items-center border-b border-slate-200 dark:border-white/[0.06] shrink-0 bg-white dark:bg-[#0e121e] ${isCollapsed ? 'justify-center px-1' : 'justify-between px-4'}`}>
+        {!isCollapsed ? (
+          <>
+            <Link href="/" className="flex items-center gap-2.5 overflow-hidden group">
+              {/* Box da Logo com fundo escuro elegante para o logo branco ficar 100% visível em ambos os temas */}
+              <div className="w-9 h-9 rounded-xl bg-[#0a0f1d] border border-slate-700/60 p-1.5 shadow-sm flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <img src="/logo.png" alt="CR Task" className="w-full h-full object-contain" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-extrabold text-[15px] tracking-tight text-slate-900 dark:text-white leading-tight">
+                  CR Task
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide truncate">
+                  Workspace Operacional
+                </span>
+              </div>
+            </Link>
 
-        {/* Botão de Recolher « / Expandir » */}
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
-          title={isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
-        >
-          {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
+              title="Recolher menu lateral"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.1] flex items-center justify-center text-slate-600 dark:text-slate-300 transition-all cursor-pointer shadow-2xs"
+            title="Expandir menu lateral"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* 2. CORPO ROLÁVEL DA SIDEBAR */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin">
+      <div className={`flex-1 overflow-y-auto space-y-5 scrollbar-thin ${isCollapsed ? 'px-2 py-3' : 'px-3 py-4'}`}>
         {/* SEÇÃO 1: NAVEGAÇÃO RÁPIDA PRINCIPAL */}
         <div className="space-y-1">
           {/* Início */}
           <Link
             href="/"
-            className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all cursor-pointer ${
+            className={`flex items-center rounded-xl transition-all cursor-pointer ${
+              isCollapsed ? 'w-10 h-10 justify-center mx-auto' : 'gap-3 px-3 py-2'
+            } ${
               pathname === '/'
-                ? 'bg-blue-600 dark:bg-indigo-600 text-white font-bold shadow-md shadow-blue-500/25'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.04]'
+                ? 'bg-blue-600 dark:bg-indigo-600 text-white font-bold shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
             }`}
             title="Início"
           >
@@ -284,38 +394,78 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
             {!isCollapsed && <span className="text-xs truncate">Início</span>}
           </Link>
 
-          {/* Minhas Tarefas com Badge Limpo de Tarefas Pessoais */}
+          {/* Minhas Tarefas (Limpo, sem notificação desnecessária) */}
           <Link
             href="/my-work"
-            className={`flex items-center justify-between px-3 py-2 rounded-xl transition-all cursor-pointer ${
+            className={`flex items-center rounded-xl transition-all cursor-pointer ${
+              isCollapsed ? 'w-10 h-10 justify-center mx-auto' : 'gap-3 px-3 py-2'
+            } ${
               pathname === '/my-work'
-                ? 'bg-blue-600 dark:bg-indigo-600 text-white font-bold shadow-md shadow-blue-500/25'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.04]'
+                ? 'bg-blue-600 dark:bg-indigo-600 text-white font-bold shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
             }`}
             title="Minhas Tarefas"
           >
-            <div className="flex items-center gap-3 min-w-0">
-              <CheckSquare className="w-4 h-4 shrink-0" />
-              {!isCollapsed && <span className="text-xs truncate">Minhas Tarefas</span>}
-            </div>
-            {!isCollapsed && pendingTasksCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-pink-100 dark:bg-pink-500/20 text-pink-700 dark:text-pink-400 border border-pink-200 dark:border-pink-500/30">
-                {pendingTasksCount}
-              </span>
-            )}
+            <CheckSquare className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span className="text-xs truncate">Minhas Tarefas</span>}
           </Link>
 
+          {/* Envio de Mensagens (Acesso Direto) */}
+          {(isOperacional || userRole === 'admin') && (
+            <Link
+              href="/mensagens"
+              className={`flex items-center rounded-xl transition-all cursor-pointer ${
+                isCollapsed ? 'w-10 h-10 justify-center mx-auto' : 'gap-3 px-3 py-2'
+              } ${
+                pathname === '/mensagens'
+                  ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+              }`}
+              title="Envio de Mensagens"
+            >
+              <MessageSquare className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              {!isCollapsed && (
+                <div className="flex items-center justify-between flex-1 min-w-0">
+                  <span className="text-xs truncate">Envio de Mensagens</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-2"></span>
+                </div>
+              )}
+            </Link>
+          )}
+
+          {/* Painel de Administração (Acesso Direto para Admin e Líder) */}
+          {isAdminOrLeader && (
+            <Link
+              href="/admin"
+              className={`flex items-center rounded-xl transition-all cursor-pointer ${
+                isCollapsed ? 'w-10 h-10 justify-center mx-auto' : 'gap-3 px-3 py-2'
+              } ${
+                pathname.startsWith('/admin')
+                  ? 'bg-purple-600 text-white font-bold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+              }`}
+              title={userRole === 'admin' ? 'Painel de Administração' : 'Gestão do Setor'}
+            >
+              <ShieldCheck className="w-4 h-4 shrink-0 text-purple-600 dark:text-purple-400" />
+              {!isCollapsed && (
+                <span className="text-xs truncate">
+                  {userRole === 'admin' ? 'Painel de Administração' : 'Gestão do Setor'}
+                </span>
+              )}
+            </Link>
+          )}
+
           {/* Notificações */}
-          <div className="w-full">
+          <div className="w-full flex justify-center">
             {!isCollapsed ? (
-              <div className="flex items-center justify-between px-3 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/[0.04] transition-all">
+              <div className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-all">
                 <div className="flex items-center gap-3">
                   <NotificationBell />
                   <span className="text-xs">Notificações</span>
                 </div>
               </div>
             ) : (
-              <div className="flex justify-center py-1">
+              <div className="w-10 h-10 flex items-center justify-center">
                 <NotificationBell />
               </div>
             )}
@@ -323,192 +473,225 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
         </div>
 
         {/* SEÇÃO 2: "MEU SETOR" COM ÁRVORE DE MÓDULOS */}
-        <div className="space-y-2">
-          {!isCollapsed && (
+        <div className="space-y-1.5">
+          {!isCollapsed ? (
             <div className="px-3 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
               Meu Setor
             </div>
+          ) : (
+            <div className="w-8 h-px bg-slate-200 dark:bg-white/[0.08] mx-auto my-1"></div>
           )}
 
           {/* Card Seletor de Setor */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsSectorDropdownOpen(!isSectorDropdownOpen)}
-              className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.06] transition-all cursor-pointer group shadow-2xs"
-              title={activeWorkspaceName}
-            >
-              <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <Building2 className="w-4 h-4" />
-                </div>
-                {!isCollapsed && (
+          {!isCollapsed ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsSectorDropdownOpen(!isSectorDropdownOpen)}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.06] transition-all cursor-pointer group shadow-2xs"
+                title={activeWorkspaceName}
+              >
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <Building2 className="w-4 h-4" />
+                  </div>
                   <div className="flex flex-col text-left overflow-hidden">
                     <span className="text-xs font-bold text-slate-800 dark:text-white truncate">
                       {activeWorkspaceName}
                     </span>
                     <span className="text-[10px] text-slate-400 truncate">Setor Ativo</span>
                   </div>
-                )}
-              </div>
-              {!isCollapsed && (
+                </div>
                 <ChevronDown
                   className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-800 dark:group-hover:text-white transition-transform ${
                     isSectorDropdownOpen ? 'rotate-180 text-blue-600 dark:text-indigo-400' : ''
                   }`}
                 />
-              )}
-            </button>
+              </button>
 
-            {/* Dropdown de Setores */}
-            {isSectorDropdownOpen && !isCollapsed && (
-              <div className="absolute top-full left-0 right-0 mt-1.5 bg-white dark:bg-[#141a2b] border border-slate-200 dark:border-white/[0.1] shadow-2xl rounded-xl z-50 py-1.5 max-h-56 overflow-y-auto">
-                <div className="px-3 py-1 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-white/[0.06] mb-1">
-                  Alternar Setor
+              {/* Dropdown de Setores */}
+              {isSectorDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1.5 bg-white dark:bg-[#141a2b] border border-slate-200 dark:border-white/[0.1] shadow-2xl rounded-xl z-50 py-1.5 max-h-56 overflow-y-auto">
+                  <div className="px-3 py-1 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-white/[0.06] mb-1">
+                    Alternar Setor
+                  </div>
+                  {workspaces?.map((w: any) => {
+                    const isSelected = w.id === activeWorkspaceId;
+                    return (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => {
+                          if (w.id !== activeWorkspaceId && userProfile?.id) {
+                            setActiveWorkspaceId(w.id);
+                            localStorage.setItem(`monday_active_workspace_${userProfile.id}`, w.id);
+                            localStorage.setItem('monday_active_workspace', w.id);
+                            setIsSectorDropdownOpen(false);
+                            router.push('/');
+                          } else {
+                            setIsSectorDropdownOpen(false);
+                          }
+                        }}
+                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-50 dark:bg-indigo-600/30 text-blue-700 dark:text-indigo-300 font-bold'
+                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        <span className="truncate">{w.name}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-indigo-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
                 </div>
-                {workspaces?.map((w: any) => {
-                  const isSelected = w.id === activeWorkspaceId;
-                  return (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() => {
-                        if (w.id !== activeWorkspaceId && userProfile?.id) {
-                          setActiveWorkspaceId(w.id);
-                          localStorage.setItem(`monday_active_workspace_${userProfile.id}`, w.id);
-                          localStorage.setItem('monday_active_workspace', w.id);
-                          setIsSectorDropdownOpen(false);
-                          router.push('/');
-                        } else {
-                          setIsSectorDropdownOpen(false);
-                        }
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                        isSelected
-                          ? 'bg-blue-50 dark:bg-indigo-600/30 text-blue-700 dark:text-indigo-300 font-bold'
-                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
-                      }`}
-                    >
-                      <span className="truncate">{w.name}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-indigo-400 shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-indigo-600/20 text-blue-600 dark:text-indigo-400 flex items-center justify-center mx-auto shadow-2xs hover:scale-105 transition-transform"
+              title={`Setor: ${activeWorkspaceName}`}
+            >
+              <Building2 className="w-4 h-4" />
+            </button>
+          )}
 
-          {/* Árvore de Módulos do Setor */}
-          {!isCollapsed && (
+          {/* Árvore de Módulos do Setor (com redirecionamento perfeito de abas) */}
+          {!isCollapsed ? (
             <div className="pl-3 border-l border-slate-200 dark:border-white/[0.06] ml-4 space-y-1 pt-1">
               {/* Quadro de Tarefas */}
-              {primaryBoardId && (
-                <Link
-                  href={`/boards/${primaryBoardId}`}
-                  className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    pathname.startsWith('/boards') &&
-                    (typeof window === 'undefined' ||
-                      !new URLSearchParams(window.location.search).get('tab') ||
-                      new URLSearchParams(window.location.search).get('tab') === 'tabela')
+              {currentBoardId && (
+                <button
+                  type="button"
+                  onClick={() => handleTabClick('tabela')}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
+                    pathname.startsWith('/boards') && currentTab === 'tabela'
                       ? 'text-blue-700 dark:text-indigo-300 font-bold bg-blue-50/80 dark:bg-indigo-500/15'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/[0.03]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]'
                   }`}
                 >
-                  <LayoutGrid className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  <span>Quadro de Tarefas</span>
-                </Link>
-              )}
-
-              {/* Envio de Mensagens */}
-              {isOperacional && (
-                <Link
-                  href="/mensagens"
-                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    pathname === '/mensagens'
-                      ? 'text-emerald-700 dark:text-emerald-300 font-bold bg-emerald-50 dark:bg-emerald-500/15'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/[0.03]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span className="truncate">Envio de Mensagens</span>
-                  </div>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                </Link>
+                  <LayoutGrid className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="truncate">Quadro de Tarefas</span>
+                </button>
               )}
 
               {/* Rotinas Diárias */}
-              {primaryBoardId && (
-                <Link
-                  href={`/boards/${primaryBoardId}?tab=rotina`}
-                  className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    pathname.startsWith('/boards') &&
-                    typeof window !== 'undefined' &&
-                    new URLSearchParams(window.location.search).get('tab') === 'rotina'
+              {currentBoardId && (
+                <button
+                  type="button"
+                  onClick={() => handleTabClick('rotina')}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
+                    pathname.startsWith('/boards') && currentTab === 'rotina'
                       ? 'text-amber-700 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-500/15'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/[0.03]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]'
                   }`}
                 >
-                  <ListChecks className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                  <span>Rotinas Diárias</span>
-                </Link>
+                  <ListChecks className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="truncate">Rotinas Diárias</span>
+                </button>
               )}
 
               {/* Escalas e Turnos */}
-              {primaryBoardId && (
-                <Link
-                  href={`/boards/${primaryBoardId}?tab=turnos`}
-                  className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    pathname.startsWith('/boards') &&
-                    typeof window !== 'undefined' &&
-                    (new URLSearchParams(window.location.search).get('tab') === 'turnos' ||
-                      new URLSearchParams(window.location.search).get('tab') === 'escala')
+              {currentBoardId && (
+                <button
+                  type="button"
+                  onClick={() => handleTabClick('turnos')}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
+                    pathname.startsWith('/boards') && (currentTab === 'turnos' || currentTab === 'escala')
                       ? 'text-violet-700 dark:text-violet-300 font-bold bg-violet-50 dark:bg-violet-500/15'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/[0.03]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]'
                   }`}
                 >
-                  <Users className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-                  <span>Escalas e Turnos</span>
-                </Link>
+                  <Users className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
+                  <span className="truncate">Escalas e Turnos</span>
+                </button>
               )}
 
               {/* Calendário do Setor */}
-              {primaryBoardId && (
-                <Link
-                  href={`/boards/${primaryBoardId}?tab=calendario`}
-                  className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    pathname.startsWith('/boards') &&
-                    typeof window !== 'undefined' &&
-                    new URLSearchParams(window.location.search).get('tab') === 'calendario'
+              {currentBoardId && (
+                <button
+                  type="button"
+                  onClick={() => handleTabClick('calendario')}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
+                    pathname.startsWith('/boards') && currentTab === 'calendario'
                       ? 'text-rose-700 dark:text-rose-300 font-bold bg-rose-50 dark:bg-rose-500/15'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/[0.03]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]'
                   }`}
                 >
-                  <CalendarDays className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                  <span>Calendário do Setor</span>
-                </Link>
+                  <CalendarDays className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <span className="truncate">Calendário do Setor</span>
+                </button>
               )}
 
-              {/* Relatórios / Gestão */}
+              {/* Relatórios & Gestão */}
               {isAdminOrLeader && (
                 <Link
                   href="/admin"
                   className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     pathname.startsWith('/admin')
                       ? 'text-purple-700 dark:text-purple-300 font-bold bg-purple-50 dark:bg-purple-500/15'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/[0.03]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]'
                   }`}
                 >
-                  <BarChart2 className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                  <span>Relatórios & Gestão</span>
+                  <BarChart2 className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="truncate">Relatórios & Gestão</span>
                 </Link>
+              )}
+            </div>
+          ) : (
+            /* Ícones Rápidos quando colapsado */
+            <div className="space-y-1 pt-1 flex flex-col items-center">
+              {currentBoardId && (
+                <button
+                  type="button"
+                  onClick={() => handleTabClick('tabela')}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                    pathname.startsWith('/boards') && currentTab === 'tabela'
+                      ? 'bg-blue-600 dark:bg-indigo-600 text-white font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+                  }`}
+                  title="Quadro de Tarefas"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              )}
+
+              {currentBoardId && (
+                <button
+                  type="button"
+                  onClick={() => handleTabClick('rotina')}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                    pathname.startsWith('/boards') && currentTab === 'rotina'
+                      ? 'bg-amber-600 text-white font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+                  }`}
+                  title="Rotinas Diárias"
+                >
+                  <ListChecks className="w-4 h-4" />
+                </button>
+              )}
+
+              {currentBoardId && (
+                <button
+                  type="button"
+                  onClick={() => handleTabClick('calendario')}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                    pathname.startsWith('/boards') && currentTab === 'calendario'
+                      ? 'bg-rose-600 text-white font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+                  }`}
+                  title="Calendário do Setor"
+                >
+                  <CalendarDays className="w-4 h-4" />
+                </button>
               )}
             </div>
           )}
         </div>
 
         {/* SEÇÃO 3: "MEUS QUADROS" */}
-        {!isCollapsed && (
+        {!isCollapsed ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between px-3">
               <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
@@ -534,18 +717,18 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
                       className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs transition-all ${
                         isActive
                           ? 'bg-blue-50 dark:bg-white/[0.08] text-blue-700 dark:text-white font-bold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/[0.03]'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]'
                       }`}
                     >
                       <LayoutGrid className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate pr-5">{b.name}</span>
+                      <span className="truncate">{b.name}</span>
                     </Link>
                   </div>
                 );
               })}
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* SEÇÃO 4: BOTÃO APP DESKTOP (SÓ SE NÃO ESTIVER NO DESKTOP) */}
         {!isDesktopApp && !isCollapsed && (
@@ -553,7 +736,7 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
             <a
               href="/CR-Task-Desktop.exe"
               download="CR-Task-Desktop.exe"
-              className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-gradient-to-r dark:from-[#141a2c] dark:to-[#1c243c] border border-slate-200 dark:border-white/[0.08] hover:border-emerald-500/40 text-slate-800 dark:text-white shadow-xs transition-all group"
+              className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-gradient-to-r dark:from-[#141a2c] dark:to-[#1c243c] border border-slate-200 dark:border-white/[0.08] hover:border-emerald-500/40 text-slate-800 dark:text-white shadow-2xs transition-all group"
             >
               <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
                 <Monitor className="w-4 h-4" />
@@ -568,26 +751,34 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
         )}
       </div>
 
-      {/* 3. RODAPÉ DA SIDEBAR: PERFIL DO USUÁRIO COM MENU COMPLETO */}
-      <div className="p-3 border-t border-slate-200 dark:border-white/[0.06] shrink-0 relative bg-white dark:bg-[#0e121e]" ref={userMenuRef}>
+      {/* 3. RODAPÉ DA SIDEBAR: PERFIL DO USUÁRIO COMPLETO */}
+      <div
+        className={`border-t border-slate-200 dark:border-white/[0.06] shrink-0 relative bg-white dark:bg-[#0e121e] ${
+          isCollapsed ? 'p-2 flex justify-center' : 'p-3'
+        }`}
+        ref={userButtonRef}
+      >
         <div
-          onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-          className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all cursor-pointer group"
+          onClick={toggleUserMenu}
+          className={`rounded-xl bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all cursor-pointer group flex items-center ${
+            isCollapsed ? 'w-10 h-10 justify-center p-0' : 'w-full justify-between p-2'
+          }`}
+          title={userName}
         >
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="relative shrink-0">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-black shadow-xs overflow-hidden">
                 {currentProfile?.avatar_url ? (
                   <img
                     src={currentProfile.avatar_url}
                     alt={userName}
-                    className="w-full h-full object-cover rounded-full"
+                    className="w-full h-full object-cover"
                   />
                 ) : (
                   userName[0]?.toUpperCase() || 'R'
                 )}
               </div>
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-[#0e121e]"></span>
+              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-[#0e121e]"></span>
             </div>
 
             {!isCollapsed && (
@@ -600,55 +791,192 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
             )}
           </div>
 
-          {!isCollapsed && <MoreVertical className="w-4 h-4 text-slate-400 group-hover:text-slate-800 dark:group-hover:text-white" />}
+          {!isCollapsed && <MoreVertical className="w-4 h-4 text-slate-400 group-hover:text-slate-800 dark:group-hover:text-white shrink-0" />}
         </div>
+      </div>
 
-        {/* Menu Popover do Usuário */}
-        {isUserMenuOpen && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 bg-white dark:bg-[#141a2b] border border-slate-200 dark:border-white/[0.1] shadow-2xl rounded-2xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-3 py-2 border-b border-slate-100 dark:border-white/[0.06]">
-              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{currentProfile?.email}</p>
-              <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider">
-                Função: {userRole}
-              </p>
-            </div>
-
-            {/* Alternador de Tema Escuro / Claro */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
-            >
-              {isDarkMode ? (
-                <>
-                  <Sun className="w-4 h-4 text-amber-500" />
-                  <span>Alternar p/ Tema Claro</span>
-                </>
+      {/* Menu Popover do Perfil via Portal (Nunca cortado pelo overflow-hidden da sidebar) */}
+      {isUserMenuOpen && dropdownPos && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={dropdownRef}
+          className="fixed z-[99999] w-[285px] bg-white dark:bg-[#141a2b] border border-slate-200 dark:border-white/[0.1] shadow-2xl rounded-2xl p-2.5 text-left animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-100"
+          style={{
+            bottom: `${dropdownPos.bottom}px`,
+            left: `${dropdownPos.left}px`,
+            maxWidth: 'calc(100vw - 32px)'
+          }}
+        >
+          {/* Header do Usuário */}
+          <div className="p-3 border-b border-slate-100 dark:border-white/[0.06] flex items-center gap-3 bg-slate-50 dark:bg-white/[0.03] rounded-xl mb-1.5">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-white/[0.1] shrink-0 text-white font-black text-sm shadow-xs">
+              {currentProfile?.avatar_url ? (
+                <img src={currentProfile.avatar_url} alt={userName} className="w-full h-full object-cover" />
               ) : (
-                <>
-                  <Moon className="w-4 h-4 text-blue-600" />
-                  <span>Alternar p/ Tema Escuro</span>
-                </>
+                userName[0]?.toUpperCase() || 'U'
               )}
-            </button>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate capitalize">
+                {userName.replace('.', ' ')}
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium">{currentProfile?.email}</p>
+              <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-indigo-950/80 text-blue-700 dark:text-indigo-300 border border-blue-200/60 dark:border-indigo-800/60">
+                {userRole === 'admin' ? 'Administrador' : userRole === 'leader' ? 'Líder de Setor' : 'Colaborador'}
+              </span>
+            </div>
+          </div>
 
-            {/* Botão de Logout */}
+          {/* Lista de Ações do Menu de Perfil */}
+          <div className="flex flex-col gap-0.5">
+            {/* 1. Trocar Foto de Perfil */}
+            <label className="flex items-center gap-2.5 w-full px-2.5 py-2 hover:bg-slate-100 dark:hover:bg-white/[0.06] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer">
+              <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-500/15 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+                <Camera className="w-4 h-4" />
+              </div>
+              <div className="flex flex-col text-left">
+                <span>{isUploadingAvatar ? 'Enviando imagem...' : 'Alterar foto de perfil'}</span>
+                <span className="text-[10px] font-normal text-slate-400">JPG, PNG ou GIF</span>
+              </div>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                disabled={isUploadingAvatar}
+                onChange={handleAvatarUpload}
+                className="hidden"
+              />
+            </label>
+
+            {/* 2. Painel de Administração (se admin ou líder) */}
+            {isAdminOrLeader && (
+              <Link
+                href="/admin"
+                onClick={() => setIsUserMenuOpen(false)}
+                className="flex items-center gap-2.5 w-full px-2.5 py-2 hover:bg-slate-100 dark:hover:bg-white/[0.06] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+              >
+                <div className="w-7 h-7 rounded-lg bg-purple-50 dark:bg-purple-500/15 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span>Painel de Administração</span>
+                  <span className="text-[10px] font-normal text-slate-400">Gerenciar setores e permissões</span>
+                </div>
+              </Link>
+            )}
+
+            {/* 3. Relatórios do Setor */}
+            {isAdminOrLeader && (
+              <Link
+                href="/admin/reports"
+                onClick={() => setIsUserMenuOpen(false)}
+                className="flex items-center gap-2.5 w-full px-2.5 py-2 hover:bg-slate-100 dark:hover:bg-white/[0.06] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+              >
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span>Relatórios e Insights</span>
+                  <span className="text-[10px] font-normal text-slate-400">Métricas e produtividade</span>
+                </div>
+              </Link>
+            )}
+
+            {/* 4. Notificações por E-mail */}
             <button
               type="button"
               onClick={async () => {
-                localStorage.clear();
-                sessionStorage.clear();
-                await supabase.auth.signOut();
-                window.location.href = '/login';
+                const currentStatus = currentProfile?.receive_emails ?? true;
+                const newStatus = !currentStatus;
+                try {
+                  await supabase.from('profiles').update({ receive_emails: newStatus }).eq('id', userProfile?.id);
+                  queryClient.invalidateQueries({ queryKey: ['all_profiles'] });
+                } catch (e: any) {
+                  alert('Erro ao atualizar preferência de e-mail.');
+                }
               }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
+              className="flex items-center justify-between w-full px-2.5 py-2 hover:bg-slate-100 dark:hover:bg-white/[0.06] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
             >
-              <LogOut className="w-4 h-4" />
-              <span>Sair da Conta</span>
+              <div className="flex items-center gap-2.5">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  (currentProfile?.receive_emails ?? true)
+                    ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                }`}>
+                  {(currentProfile?.receive_emails ?? true) ? (
+                    <Mail className="w-4 h-4" />
+                  ) : (
+                    <MailWarning className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="flex flex-col text-left">
+                  <span>Notificações por E-mail</span>
+                  <span className="text-[10px] font-normal text-slate-400">
+                    {(currentProfile?.receive_emails ?? true) ? 'Notificações ativadas' : 'Notificações pausadas'}
+                  </span>
+                </div>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                (currentProfile?.receive_emails ?? true)
+                  ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+              }`}>
+                {(currentProfile?.receive_emails ?? true) ? 'Ativo' : 'Inativo'}
+              </span>
             </button>
+
+            {/* 5. Alternador de Tema Escuro / Claro */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center justify-between w-full px-2.5 py-2 hover:bg-slate-100 dark:hover:bg-white/[0.06] rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  isDarkMode
+                    ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-500 dark:text-indigo-400'
+                    : 'bg-amber-50 text-amber-500'
+                }`}>
+                  {isDarkMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                </div>
+                <div className="flex flex-col text-left">
+                  <span>Tema Escuro</span>
+                  <span className="text-[10px] font-normal text-slate-400">
+                    {isDarkMode ? 'Modo noturno ativo' : 'Modo claro ativo'}
+                  </span>
+                </div>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                isDarkMode
+                  ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+              }`}>
+                {isDarkMode ? 'Ligado' : 'Desligado'}
+              </span>
+            </button>
+
+            {/* 6. Botão Sair da Conta */}
+            <div className="pt-1 mt-1 border-t border-slate-100 dark:border-white/[0.06]">
+              <button
+                type="button"
+                onClick={async () => {
+                  localStorage.clear();
+                  sessionStorage.clear();
+                  queryClient.clear();
+                  await supabase.auth.signOut();
+                  window.location.href = '/login';
+                }}
+                className="flex items-center gap-2.5 w-full px-2.5 py-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+              >
+                <div className="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-500/15 flex items-center justify-center text-rose-500 shrink-0">
+                  <LogOut className="w-4 h-4" />
+                </div>
+                <span>Sair da Conta</span>
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>,
+        document.body
+      )}
     </aside>
   );
 }

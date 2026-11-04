@@ -162,6 +162,38 @@ export default function AdminPage() {
     enabled: hasAccess
   });
 
+  // 2.8 Puxar Quadros do Setor para o Bloco de Exclusão de Administrador
+  const { data: adminBoards } = useQuery({
+    queryKey: ['admin_boards_management', selectedWorkspace],
+    queryFn: async () => {
+      if (!selectedWorkspace) return [];
+      const { data, error } = await supabase
+        .from('boards')
+        .select('id, name, created_at, created_by, workspace_id')
+        .eq('workspace_id', selectedWorkspace)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedWorkspace && isAdmin
+  });
+
+  const deleteBoardMutation = useMutation({
+    mutationFn: async (boardId: string) => {
+      if (!isAdmin) throw new Error("Apenas administradores podem excluir quadros.");
+      const { error } = await supabase.from('boards').delete().eq('id', boardId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin_boards_management', selectedWorkspace] });
+      queryClient.invalidateQueries({ queryKey: ['sidebar_boards'] });
+      alert('Quadro excluído com sucesso pelo Administrador!');
+    },
+    onError: (err: any) => {
+      alert('Erro ao excluir quadro: ' + err.message);
+    }
+  });
+
   // 3. Criar novo Workspace (Setor - Apenas Admin)
   const createWorkspace = useMutation({
     mutationFn: async (name: string) => {
@@ -669,6 +701,68 @@ export default function AdminPage() {
                 >
                   {updateWorkspaceTabs.isPending ? 'Salvando...' : 'Salvar Opções de Menu deste Setor'}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bloco 3.8: Gerenciamento e Exclusão de Quadros do Setor (Apenas Administrador) */}
+          {isAdmin && selectedWorkspace && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <LayoutGrid className="w-5 h-5 text-rose-600" />
+                  <span>Gerenciamento e Exclusão de Quadros: "{selectedWorkspaceName}"</span>
+                </h2>
+                <span className="text-xs px-3 py-1 rounded-full font-bold bg-rose-50 text-rose-700 border border-rose-200 self-start sm:self-auto">
+                  Apenas Administrador
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mb-5">
+                Exclua quadros obsoletos ou de teste deste setor com segurança. Esta ação apaga o quadro e todas as tarefas nele contidas.
+              </p>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                {adminBoards && adminBoards.length > 0 ? (
+                  adminBoards.map((b: any) => {
+                    const creator = profiles?.find((p: any) => p.id === b.created_by || p.email === b.created_by);
+                    return (
+                      <div key={b.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0">
+                            <LayoutGrid className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-sm font-bold text-slate-800 truncate block">
+                              {b.name}
+                            </span>
+                            <span className="text-xs text-slate-400 truncate block">
+                              Criado por: {creator?.email || 'Sistema'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`ATENÇÃO ADMINISTRADOR:\n\nTem certeza absoluta que deseja excluir o quadro "${b.name}"?\nTodas as tarefas deste quadro serão excluídas permanentemente.`)) {
+                              deleteBoardMutation.mutate(b.id);
+                            }
+                          }}
+                          disabled={deleteBoardMutation.isPending}
+                          className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                          title="Excluir quadro definitivamente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Excluir Quadro</span>
+                        </button>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="p-6 text-center text-xs text-slate-400 italic">
+                    Nenhum quadro encontrado neste setor.
+                  </div>
+                )}
               </div>
             </div>
           )}

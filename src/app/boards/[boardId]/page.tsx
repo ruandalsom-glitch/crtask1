@@ -68,9 +68,8 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   });
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search);
-      const tabParam = searchParams.get('tab');
+    const handleTabSwitch = (e: any) => {
+      const tabParam = e.detail?.tab;
       if (tabParam === 'turnos' || tabParam === 'minha-escala') {
         setActiveTab('turnos');
       } else if (tabParam === 'escala') {
@@ -84,8 +83,36 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       } else if (tabParam === 'tabela') {
         setActiveTab('tabela');
       }
-    }
+    };
+
+    const syncFromUrl = () => {
+      if (typeof window !== 'undefined') {
+        const searchParams = new URLSearchParams(window.location.search);
+        const tabParam = searchParams.get('tab');
+        if (tabParam) {
+          handleTabSwitch({ detail: { tab: tabParam } });
+        }
+      }
+    };
+
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    window.addEventListener('crtask_tab_switch', handleTabSwitch);
+    return () => {
+      window.removeEventListener('popstate', syncFromUrl);
+      window.removeEventListener('crtask_tab_switch', handleTabSwitch);
+    };
   }, []);
+
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.replaceState(null, '', url.toString());
+      window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab } }));
+    }
+  };
 
   const { data: accessCheck, isLoading } = useQuery({
     queryKey: ['board_access_check', boardId],
@@ -147,6 +174,12 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         profiles
       });
 
+      const creatorProfile = (profiles || []).find((p: any) =>
+        p.id === board.created_by ||
+        (board.created_by && p.email === board.created_by) ||
+        (board.name && p.email && p.email.toLowerCase().startsWith(board.name.toLowerCase()))
+      ) || null;
+
       if (allowed) {
         const isOwnBoard = isBoardOwnedByUser(
           { name: board.name, created_by: board.created_by },
@@ -154,7 +187,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         );
         const canEdit = userRole === 'admin' || userRole === 'leader' || isOwnBoard;
 
-        return { allowed: true, canEdit, board, workspace, userRole, visibleTabs, redirectBoardId: null };
+        return { allowed: true, canEdit, board, workspace, userRole, visibleTabs, creatorProfile, redirectBoardId: null };
       }
 
       const { data: sectorBoards } = await supabase
@@ -200,6 +233,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   }, [accessCheck, boardId, router]);
 
   const boardName = accessCheck?.board?.name || 'Quadro';
+  const creatorProfile = accessCheck?.creatorProfile;
   const isReadOnly = accessCheck?.canEdit === false;
   const visibleTabs: string[] = accessCheck?.visibleTabs || ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
 
@@ -254,11 +288,17 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       {/* HEADER DO QUADRO (HARMONIZADO COM TEMA CLARO E ESCURO) */}
       <div className="flex flex-col border-b border-slate-200 dark:border-white/[0.06] px-6 md:px-8 pt-5 pb-0 gap-4 bg-white dark:bg-[#0e1322] z-20 shrink-0 relative">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Esquerda: Ícone do Quadro + Nome + Badge */}
+          {/* Esquerda: Foto de Perfil do Criador do Quadro + Nome + Badge */}
           <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
-              <LayoutGrid className="w-5 h-5 stroke-[2.2]" />
-            </div>
+            {creatorProfile?.avatar_url ? (
+              <div className="w-11 h-11 rounded-2xl p-0.5 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 shadow-md shadow-blue-500/20 shrink-0 overflow-hidden">
+                <img src={creatorProfile.avatar_url} alt={boardName} className="w-full h-full object-cover rounded-[14px]" />
+              </div>
+            ) : (
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-black shadow-md shadow-blue-500/20 shrink-0">
+                {boardName.slice(0, 2).toUpperCase()}
+              </div>
+            )}
 
             <div className="min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
@@ -332,7 +372,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabChange(tab.id)}
                   className={`group relative px-4 pt-2 pb-2.5 text-xs whitespace-nowrap flex items-center gap-2 cursor-pointer transition-all border-b-2 ${
                     isActive
                       ? 'border-blue-600 dark:border-indigo-500 text-blue-700 dark:text-white font-bold bg-blue-50/60 dark:bg-indigo-500/10 rounded-t-xl'
