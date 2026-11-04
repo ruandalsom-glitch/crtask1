@@ -49,6 +49,11 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// Chaves de Armazenamento Local para Persistência Confiável de Alarmes
+const DISMISSED_ALARMS_STORAGE_KEY = 'cr_task_dismissed_alarms_v2';
+const SNOOZED_ALARMS_STORAGE_KEY = 'cr_task_snoozed_alarms_v2';
+const SELECTED_BASE_STORAGE_KEY = 'cr_task_selected_base';
+
 // =========================================================================
 // SISTEMA DE ÁUDIO DO ALARME VIA WEB AUDIO API (NATIVO, SEM ARQUIVOS EXTERNOS)
 // =========================================================================
@@ -388,9 +393,23 @@ export default function MensagensPage() {
     return new Date().toISOString().split('T')[0];
   });
 
-  // Bases restritas estritamente para: Sumarezinho, Recreio, Aldeota
+  // Bases restritas estritamente para: Sumarezinho, Recreio, Aldeota (persistida)
   const bases = useMemo(() => ['Sumarezinho', 'Recreio', 'Aldeota'], []);
-  const [selectedBase, setSelectedBase] = useState<string>('Sumarezinho');
+  const [selectedBase, setSelectedBase] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(SELECTED_BASE_STORAGE_KEY);
+      if (saved && ['Sumarezinho', 'Recreio', 'Aldeota'].includes(saved)) {
+        return saved;
+      }
+    }
+    return 'Sumarezinho';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && selectedBase) {
+      localStorage.setItem(SELECTED_BASE_STORAGE_KEY, selectedBase);
+    }
+  }, [selectedBase]);
 
   const [shareFeedbackMsg, setShareFeedbackMsg] = useState<string>('');
   const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
@@ -419,7 +438,40 @@ export default function MensagensPage() {
     alarmKey: string;
   } | null>(null);
   const [isAlarmSoundEnabled, setIsAlarmSoundEnabled] = useState<boolean>(true);
-  const [dismissedAlarms, setDismissedAlarms] = useState<Record<string, boolean>>({});
+
+  // Alarmes dispensados (persistidos em localStorage para nunca voltarem a tocar caso feche o app)
+  const [dismissedAlarms, setDismissedAlarms] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem(DISMISSED_ALARMS_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'object' && parsed !== null ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Alarmes adiados (persistidos com timestamp de término do adiamento)
+  const [snoozedAlarms, setSnoozedAlarms] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem(SNOOZED_ALARMS_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      const now = Date.now();
+      const valid: Record<string, number> = {};
+      Object.entries(parsed).forEach(([k, ts]) => {
+        if (typeof ts === 'number' && ts > now) {
+          valid[k] = ts;
+        }
+      });
+      return valid;
+    } catch {
+      return {};
+    }
+  });
+
   const alarmAudioLoopRef = useRef<any>(null);
 
   // Modal de Adicionar / Editar Mensagem
@@ -652,6 +704,10 @@ export default function MensagensPage() {
     const current = checksMap[msgId];
     const willCheck = !current?.checked;
     const nowTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    if (willCheck) {
+      dismissAlarm(undefined, msgId);
+    }
 
     // Atualização otimista com o usuário logado
     queryClient.setQueryData(['mensagens_checklist', selectedDate, selectedBase], (old: any[] = []) => {
@@ -1027,38 +1083,61 @@ export default function MensagensPage() {
     }
   };
 
-  const dismissAlarm = (alarmKey?: string) => {
+  const dismissAlarm = (alarmKey?: string, itemId?: string) => {
     stopAlarmSound();
-    if (alarmKey) {
-      setDismissedAlarms(prev => ({ ...prev, [alarmKey]: true }));
+    if (alarmKey || itemId) {
+      setDismissedAlarms(prev => {
+        const next = { ...prev };
+        if (alarmKey) next[alarmKey] = true;
+        if (itemId) {
+          next[`${selectedDate}_${selectedBase}_${itemId}`] = true;
+          next[`${selectedDate}_${itemId}`] = true;
+        }
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(DISMISSED_ALARMS_STORAGE_KEY, JSON.stringify(next));
+          }
+        } catch (e) {
+          console.error('[Mensagens] Erro ao salvar alarme dispensado:', e);
+        }
+        return next;
+      });
     }
     setActiveAlarmItem(null);
   };
 
   const snoozeAlarm = (alarmKey: string) => {
     stopAlarmSound();
-    setDismissedAlarms(prev => ({ ...prev, [alarmKey]: true }));
     setActiveAlarmItem(null);
     setShareFeedbackMsg('Alarme adiado em 5 minutos.');
-    setTimeout(() => {
-      setDismissedAlarms(prev => {
-        const updated = { ...prev };
-        delete updated[alarmKey];
-        return updated;
-      });
-    }, 5 * 60 * 1000);
+
+    const snoozeUntil = Date.now() + 5 * 60 * 1000;
+    setSnoozedAlarms(prev => {
+      const next = { ...prev, [alarmKey]: snoozeUntil };
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(SNOOZED_ALARMS_STORAGE_KEY, JSON.stringify(next));
+        }
+      } catch (e) {
+        console.error('[Mensagens] Erro ao salvar alarme adiado:', e);
+      }
+      return next;
+    });
   };
 
   const handleCopyAndMarkAlarm = async (item: MensagemItem, alarmKey: string) => {
+    // 1. Imediatamente dispensa e grava no localStorage para nunca mais tocar hoje
+    dismissAlarm(alarmKey, item.id);
     await handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem);
     await handleToggleCheck(item.id);
-    dismissAlarm(alarmKey);
     setShareFeedbackMsg('Comunicado copiado e marcado como enviado!');
   };
 
   const handleCopyAlarmOnly = async (item: MensagemItem, alarmKey: string) => {
+    // 1. Imediatamente dispensa e grava no localStorage para nunca mais tocar hoje
+    dismissAlarm(alarmKey, item.id);
     await handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem);
-    dismissAlarm(alarmKey);
+    setShareFeedbackMsg('Comunicado copiado para a área de transferência!');
   };
 
   // Monitoramento contínuo dos horários das mensagens para disparar o alarme
@@ -1084,8 +1163,21 @@ export default function MensagensPage() {
         if (normItemTime === currentTimeStr) {
           const isChecked = checksMap[item.id]?.checked;
           const alarmKey = `${todayStr}_${selectedBase}_${item.id}_${normItemTime}`;
+          const itemKey = `${todayStr}_${selectedBase}_${item.id}`;
+          const globalItemKey = `${todayStr}_${item.id}`;
 
-          if (!isChecked && !dismissedAlarms[alarmKey]) {
+          // 1. Verifica se já foi dispensado (persistido no localStorage)
+          if (dismissedAlarms[alarmKey] || dismissedAlarms[itemKey] || dismissedAlarms[globalItemKey]) {
+            continue;
+          }
+
+          // 2. Verifica se está em modo "adiado" (snooze)
+          const snoozedUntil = snoozedAlarms[alarmKey];
+          if (snoozedUntil && Date.now() < snoozedUntil) {
+            continue;
+          }
+
+          if (!isChecked) {
             if (activeAlarmItem?.alarmKey === alarmKey) return;
 
             setActiveAlarmItem({ item, alarmKey });
@@ -1374,6 +1466,13 @@ export default function MensagensPage() {
       .eq('data', selectedDate)
       .eq('base', selectedBase)
       .neq('msg_id', '__equipe__');
+
+    try {
+      localStorage.removeItem(DISMISSED_ALARMS_STORAGE_KEY);
+      localStorage.removeItem(SNOOZED_ALARMS_STORAGE_KEY);
+      setDismissedAlarms({});
+      setSnoozedAlarms({});
+    } catch {}
 
     queryClient.invalidateQueries({ queryKey: ['mensagens_checklist', selectedDate, selectedBase] });
     setShareFeedbackMsg(`Checklist de hoje de ${selectedBase} reiniciado.`);
@@ -2394,7 +2493,12 @@ export default function MensagensPage() {
                           <div className="flex items-center justify-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
                             {(item.imagem_url || item.texto_completo) && (
                               <button
-                                onClick={() => handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem)}
+                                onClick={() => {
+                                  handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem);
+                                  const normTime = normalizeTime(item.horario);
+                                  const key = `${selectedDate}_${selectedBase}_${item.id}_${normTime}`;
+                                  dismissAlarm(key, item.id);
+                                }}
                                 className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors cursor-pointer"
                                 title="Copiar Imagem + Texto juntos para colar no WhatsApp"
                               >
@@ -2834,7 +2938,14 @@ export default function MensagensPage() {
                 {(detailImage || detailText) && (
                   <button
                     type="button"
-                    onClick={() => handleCopyAllToClipboard(detailImage, detailText)}
+                    onClick={() => {
+                      handleCopyAllToClipboard(detailImage, detailText);
+                      if (selectedItemForDetail) {
+                        const normTime = normalizeTime(selectedItemForDetail.horario);
+                        const key = `${selectedDate}_${selectedBase}_${selectedItemForDetail.id}_${normTime}`;
+                        dismissAlarm(key, selectedItemForDetail.id);
+                      }
+                    }}
                     className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
                       isCopiedAll
                         ? 'bg-emerald-600 text-white'
@@ -2859,7 +2970,14 @@ export default function MensagensPage() {
                 {/* Botão Copiar Texto em Destaque */}
                 <button
                   type="button"
-                  onClick={() => handleCopyTextToClipboard(detailText)}
+                  onClick={() => {
+                    handleCopyTextToClipboard(detailText);
+                    if (selectedItemForDetail) {
+                      const normTime = normalizeTime(selectedItemForDetail.horario);
+                      const key = `${selectedDate}_${selectedBase}_${selectedItemForDetail.id}_${normTime}`;
+                      dismissAlarm(key, selectedItemForDetail.id);
+                    }
+                  }}
                   className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
                     isCopiedText
                       ? 'bg-blue-600 text-white'
