@@ -30,7 +30,6 @@ export function NotificationBell() {
     staleTime: 5 * 60 * 1000
   });
 
-  // Redireciona com segurança para o próprio quadro do colaborador na aba "Minha Escala" (sem cair em quadro restrito de outro colega)
   const navigateToUserScaleBoard = async () => {
     if (!userProfile) return;
     const activeWs = typeof window !== 'undefined' ? localStorage.getItem('monday_active_workspace') : null;
@@ -48,7 +47,6 @@ export function NotificationBell() {
     const userRole = currentProf?.role || 'user';
     const wsMap = new Map((workspacesRes.data || []).map((w: any) => [w.id, w.visibility_mode || 'own_only']));
 
-    // 1. Prioriza quadros do workspace ativo (se houver), seguidos pelos demais quadros
     const orderedBoards = activeWs
       ? [
           ...allBoards.filter((b: any) => b.workspace_id === activeWs),
@@ -56,7 +54,6 @@ export function NotificationBell() {
         ]
       : allBoards;
 
-    // 2. Busca primeiro o quadro que pertence ao próprio usuário logado (ex: Teffy <-> estefany, Davis <-> davis.lmarques, Ruan <-> ruan.dalsom)
     const ownBoard = orderedBoards.find((b: any) =>
       isBoardOwnedByUser(
         { name: b.name, created_by: b.created_by },
@@ -70,7 +67,6 @@ export function NotificationBell() {
       return;
     }
 
-    // 3. Caso não tenha quadro próprio com seu nome, busca apenas quadros que o usuário tem permissão real de acessar
     const accessibleBoard = orderedBoards.find((b: any) =>
       canUserAccessBoard({
         board: { name: b.name, created_by: b.created_by },
@@ -105,7 +101,7 @@ export function NotificationBell() {
       return data;
     },
     enabled: !!userProfile?.email,
-    refetchInterval: 30000, // Polling leve a cada 30s apenas com aba visível
+    refetchInterval: 30000,
     refetchIntervalInBackground: false
   });
 
@@ -137,7 +133,6 @@ export function NotificationBell() {
 
   const unreadCount = notifications?.filter(n => !n.read).length || 0;
 
-  // Solicitar permissão para notificações do Windows/Navegador
   useEffect(() => {
     if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
       Notification.requestPermission();
@@ -151,19 +146,16 @@ export function NotificationBell() {
     if (!notifications) return;
 
     if (!initialLoadDone.current) {
-      // Na primeira carga da página, apenas marca todos como processados para não subir pop-up antigo
       notifications.forEach((notif: any) => notifiedSet.current.add(notif.id));
       initialLoadDone.current = true;
       return;
     }
 
     notifications.forEach((notif: any) => {
-      // Se não está lida e é uma notificação nova (não estava no initial load)
       if (!notif.read && !notifiedSet.current.has(notif.id)) {
         notifiedSet.current.add(notif.id);
 
         if ('Notification' in window && Notification.permission === 'granted') {
-          // Extrai o email exato se existir o formato "email||mensagem"
           let actualMessage = notif.message;
           let authorEmail = '';
           
@@ -173,7 +165,6 @@ export function NotificationBell() {
             actualMessage = parts[1];
           }
 
-          // Pega o nome do autor (usa authorEmail quando a mensagem começa com emoji como 📅)
           const authorMatch = actualMessage.split(' ')[0];
           const isScheduleNotif = actualMessage.toLowerCase().includes('escala');
           
@@ -219,34 +210,51 @@ export function NotificationBell() {
   }, [notifications]);
 
   return (
-    <div className="relative">
+    <div className="relative flex justify-center w-full">
       <button 
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex justify-center p-2 transition-colors border-l-[3px] ${isOpen ? 'text-white border-blue-400 bg-white/10' : 'text-slate-400 hover:text-white border-transparent'}`}
+        className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all relative group cursor-pointer border ${
+          isOpen
+            ? 'bg-blue-600/20 text-blue-400 border-blue-500/40'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800/70 border-transparent'
+        }`}
+        title="Notificações"
       >
         <div className="relative">
-          <Bell strokeWidth={2.5} className="w-5 h-5" />
+          <Bell strokeWidth={2.1} className="w-5 h-5 group-hover:scale-110 transition-transform" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-[#292f4c]">
+            <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-[#0b1120]">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
         </div>
+        {!isOpen && (
+          <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-700">
+            Notificações {unreadCount > 0 ? `(${unreadCount})` : ''}
+          </div>
+        )}
       </button>
 
       {isOpen && (
         <div 
           ref={dropdownRef}
-          className="absolute left-16 top-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden flex flex-col animate-in slide-in-from-left-2"
+          className="absolute left-16 top-0 w-80 sm:w-96 bg-white dark:bg-[#1e293b] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden flex flex-col animate-in slide-in-from-left-2"
         >
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-            <h3 className="font-bold text-slate-800">Notificações</h3>
+          <div className="p-4 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between bg-slate-50 dark:bg-[#0f172a]">
+            <div className="flex items-center gap-2">
+              <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-100">Notificações</h3>
+              {unreadCount > 0 && (
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                  {unreadCount} nova{unreadCount > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-3">
               {typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default' && (
                 <button 
                   onClick={() => Notification.requestPermission().then(() => window.location.reload())}
-                  className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-semibold transition-colors"
+                  className="text-xs bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-200 font-semibold transition-colors cursor-pointer"
                 >
                   Ativar pop-ups
                 </button>
@@ -259,19 +267,19 @@ export function NotificationBell() {
               {unreadCount > 0 && (
                 <button 
                   onClick={() => markAllAsRead.mutate()}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
                 >
-                  <Check className="w-3 h-3" /> Lidas
+                  <Check className="w-3.5 h-3.5" /> Marcar lidas
                 </button>
               )}
             </div>
           </div>
           
-          <div className="max-h-[400px] overflow-y-auto">
+          <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/80">
             {!notifications || notifications.length === 0 ? (
               <div className="p-8 text-center text-slate-400 flex flex-col items-center">
-                <Bell className="w-12 h-12 text-slate-200 mb-3" />
-                <p className="text-sm">Você não tem notificações</p>
+                <Bell className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2.5" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Você não tem notificações no momento</p>
               </div>
             ) : (
               <div className="flex flex-col">
@@ -289,14 +297,22 @@ export function NotificationBell() {
                          await navigateToUserScaleBoard();
                       }
                     }}
-                    className={`p-4 border-b border-slate-50 cursor-pointer transition-colors ${notif.read ? 'bg-white opacity-60' : 'bg-blue-50/50 hover:bg-blue-50'}`}
+                    className={`p-3.5 border-b border-slate-100 dark:border-slate-700/60 cursor-pointer transition-colors ${
+                      notif.read
+                        ? 'bg-white dark:bg-[#1e293b] opacity-65 hover:opacity-100'
+                        : 'bg-blue-50/50 dark:bg-blue-950/30 hover:bg-blue-50 dark:hover:bg-blue-950/50'
+                    }`}
                   >
                     <div className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0 mt-1">
+                      <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 mt-0.5 border border-blue-200/60 dark:border-blue-800/60">
                         <Bell className="w-4 h-4" />
                       </div>
-                      <div className="flex-1">
-                        <p className={`text-sm ${notif.read ? 'text-slate-600' : 'text-slate-800 font-semibold'}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs leading-relaxed ${
+                          notif.read
+                            ? 'text-slate-600 dark:text-slate-300'
+                            : 'text-slate-900 dark:text-white font-bold'
+                        }`}>
                           {notif.message.includes('||') ? notif.message.split('||')[1] : notif.message}
                         </p>
                         <span className="text-[10px] text-slate-400 mt-1 block">

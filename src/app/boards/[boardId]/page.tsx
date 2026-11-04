@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
+import { LayoutGrid, Table2, Columns3, CalendarDays, ListChecks, Users, Grid3x3 } from 'lucide-react';
 
 const TabLoadingSkeleton = () => (
   <div className="flex h-full w-full items-center justify-center bg-slate-50/60 p-8">
@@ -229,10 +230,10 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   }
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full bg-white dark:bg-[#0f172a]">
       {/* Banner de Modo de Leitura */}
       {isReadOnly && (
-        <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5 flex items-center justify-between text-xs font-semibold text-amber-800 shrink-0">
+        <div className="bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/30 px-8 py-2.5 flex items-center justify-between text-xs font-semibold text-amber-800 shrink-0">
           <div className="flex items-center gap-2">
             <span className="p-1 bg-amber-200/60 rounded text-amber-900">👁️</span>
             <span><strong>Modo de Leitura:</strong> Você está visualizando o quadro de um colega do setor. A criação e alteração de tarefas são restritas ao proprietário do quadro e líderes.</span>
@@ -244,119 +245,77 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       )}
 
       {/* Header do Quadro */}
-      <div className="flex flex-col border-b border-slate-200 px-8 pt-8 pb-0 gap-6 bg-white z-20 shrink-0">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center gap-3">
-            <h1 className="text-[36px] md:text-[42px] font-bold text-[#323338] tracking-tight">{boardName}</h1>
-            {isReadOnly && (
-              <span className="text-xs bg-slate-100 text-slate-600 font-bold px-3 py-1 rounded-full border border-slate-200">
-                Apenas Leitura
-              </span>
-            )}
+      <div className="flex flex-col border-b border-slate-200 dark:border-slate-800 px-6 md:px-8 pt-6 pb-0 gap-5 bg-white dark:bg-[#0f172a] z-20 shrink-0">
+        <div className="flex justify-between items-center gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-600/25 shrink-0">
+              <LayoutGrid className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight truncate">{boardName}</h1>
+                {isReadOnly && (
+                  <span className="text-[10px] uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700">
+                    Apenas Leitura
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                Gerencie tarefas, rotinas e escalas do seu quadro
+              </p>
+            </div>
           </div>
-          <button className="p-2 hover:bg-slate-100 rounded text-slate-500">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M6 12a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-          </button>
+
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shrink-0">
+            <span className="relative flex w-2 h-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
+              <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500"></span>
+            </span>
+            Tempo Real
+          </span>
         </div>
-        
-        {/* Abas Interativas e Botões */}
-        <div className="flex justify-between items-end">
-          <div className="flex gap-6 text-[14px] font-medium relative">
-            {visibleTabs.includes('tabela') && (
-              <button 
-                onClick={() => setActiveTab('tabela')}
-                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'tabela' 
-                    ? 'border-blue-600 text-blue-600 font-bold' 
-                    : 'border-transparent text-[#676879] hover:text-[#323338]'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M9 21V9"/></svg>
-                Quadro principal
-              </button>
-            )}
 
-            {visibleTabs.includes('kanban') && (
-              <button 
-                onClick={() => setActiveTab('kanban')}
-                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'kanban' 
-                    ? 'border-blue-600 text-blue-600 font-bold' 
-                    : 'border-transparent text-[#676879] hover:text-[#323338]'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 3v18M15 3v18"/></svg>
-                Kanban
-              </button>
-            )}
-            
-            {visibleTabs.includes('calendario') && (
-              <button 
-                onClick={() => setActiveTab('calendario')}
-                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'calendario' 
-                    ? 'border-blue-600 text-blue-600 font-bold' 
-                    : 'border-transparent text-[#676879] hover:text-[#323338]'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-                Calendário
-              </button>
-            )}
-
-            {visibleTabs.includes('rotina') && (
-              <button 
-                onClick={() => setActiveTab('rotina')}
-                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'rotina' 
-                    ? 'border-blue-600 text-blue-600 font-bold' 
-                    : 'border-transparent text-[#676879] hover:text-[#323338]'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-                Rotinas Diárias
-              </button>
-            )}
-
-            {visibleTabs.includes('escala') && (
-              <button 
-                onClick={() => setActiveTab('escala')}
-                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'escala' 
-                    ? 'border-blue-600 text-blue-600 font-bold' 
-                    : 'border-transparent text-[#676879] hover:text-[#323338]'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                {accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader' ? 'Escala' : 'Minha Escala'}
-              </button>
-            )}
-
-            {visibleTabs.includes('turnos') && (
-              <button 
-                onClick={() => setActiveTab('turnos')}
-                className={`pb-2 border-b-[3px] transition-colors flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'turnos' 
-                    ? 'border-blue-600 text-blue-600 font-bold' 
-                    : 'border-transparent text-[#676879] hover:text-[#323338]'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-                Quadro de turnos
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-4 text-[13px] text-[#676879] mb-2 font-medium">
-            <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 rounded transition-colors">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-              Integrar
-            </button>
-            <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 rounded transition-colors">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
-              Automatizar / 2
-            </button>
-          </div>
+        {/* Abas Interativas */}
+        <div className="flex gap-1 overflow-x-auto -mb-px scrollbar-none">
+          {([
+            { id: 'tabela', label: 'Quadro principal', icon: Table2 },
+            { id: 'kanban', label: 'Kanban', icon: Columns3 },
+            { id: 'calendario', label: 'Calendário', icon: CalendarDays },
+            { id: 'rotina', label: 'Rotinas Diárias', icon: ListChecks },
+            {
+              id: 'escala',
+              label: accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader' ? 'Escala' : 'Minha Escala',
+              icon: Users
+            },
+            { id: 'turnos', label: 'Quadro de turnos', icon: Grid3x3 }
+          ] as { id: TabType; label: string; icon: typeof Table2 }[])
+            .filter(tab => visibleTabs.includes(tab.id))
+            .map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`group relative px-3.5 pt-2 pb-3 text-[13px] whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors border-b-2 ${
+                    isActive
+                      ? 'border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 font-bold'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 font-semibold hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </span>
+                  {tab.label}
+                </button>
+              );
+            })}
         </div>
       </div>
 

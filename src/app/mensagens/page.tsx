@@ -2431,7 +2431,7 @@ export default function MensagensPage() {
       {/* MODAL DE ADICIONAR / EDITAR MENSAGEM */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-[#1e293b] rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-[#0B2238] px-6 py-4 flex items-center justify-between text-white">
               <div className="flex items-center gap-2.5">
                 <MessageSquare className="w-5 h-5 text-emerald-400" />
@@ -2449,7 +2449,7 @@ export default function MensagensPage() {
 
             <form onSubmit={handleSaveModalMessage} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                   Mensagem / Assunto *
                 </label>
                 <input
@@ -2458,13 +2458,13 @@ export default function MensagensPage() {
                   value={formMensagem}
                   onChange={e => setFormMensagem(e.target.value)}
                   placeholder="Ex: BOM DIA, ADIANTAMENTO, REGULARIZE O MEI"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                     Horário Programado *
                   </label>
                   <input
@@ -2473,18 +2473,18 @@ export default function MensagensPage() {
                     value={formHorario}
                     onChange={e => setFormHorario(e.target.value)}
                     placeholder="Ex: 07:00, 14:30"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                     Tipo de Envio
                   </label>
                   <select
                     value={formTipo}
                     onChange={e => setFormTipo(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all cursor-pointer"
+                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all cursor-pointer"
                   >
                     <option value="GRUPO">GRUPO</option>
                     <option value="STATUS">STATUS</option>
@@ -2495,7 +2495,7 @@ export default function MensagensPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                     Último Check / Validade
                   </label>
                   <input
@@ -2503,12 +2503,12 @@ export default function MensagensPage() {
                     value={formUltimoCheck}
                     onChange={e => setFormUltimoCheck(e.target.value)}
                     placeholder="Ex: FIXA (14/09), TEMPORÁRIA"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                     Obs / Dias da Semana
                   </label>
                   <input
@@ -2516,14 +2516,14 @@ export default function MensagensPage() {
                     value={formObs}
                     onChange={e => setFormObs(e.target.value)}
                     placeholder="Ex: QUINTA, SEG Á SÁB"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
                   />
                 </div>
               </div>
 
               {/* Anexo de Imagem (URL ou Upload) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
                     <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
                     <span>Imagem do Comunicado (Opcional)</span>
@@ -2544,9 +2544,9 @@ export default function MensagensPage() {
                     value={formImagemUrl}
                     onChange={e => setFormImagemUrl(e.target.value)}
                     placeholder="Cole a URL da imagem ou use o botão de upload..."
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
+                    className="flex-1 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
                   />
-                  <label className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer transition-colors shrink-0">
+                  <label className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors shrink-0">
                     <Upload className="w-3.5 h-3.5" />
                     <span>Arquivo</span>
                     <input
@@ -2574,7 +2574,7 @@ export default function MensagensPage() {
                   </label>
                 </div>
                 {formImagemUrl && (
-                  <div className="mt-2 p-2 bg-slate-100/70 rounded-xl border border-slate-200 flex justify-center">
+                  <div className="mt-2 p-2 bg-slate-100/70 dark:bg-[#0f172a] rounded-xl border border-slate-200 dark:border-slate-700 flex justify-center">
                     <img src={formImagemUrl} alt="Pré-visualização" className="max-h-24 object-contain rounded-lg" />
                   </div>
                 )}
@@ -2582,7 +2582,7 @@ export default function MensagensPage() {
 
               {/* Texto Completo / Mensagem para Disparo */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1 flex items-center gap-1.5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1 flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Texto Completo do Comunicado (Opcional - WhatsApp / Status)</span>
                 </label>
@@ -2591,15 +2591,15 @@ export default function MensagensPage() {
                   value={formTextoCompleto}
                   onChange={e => setFormTextoCompleto(e.target.value)}
                   placeholder="Texto a ser copiado pelos operadores no momento do envio..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all resize-y"
+                  className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all resize-y"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -2618,7 +2618,7 @@ export default function MensagensPage() {
       {/* MODAL DEDICADO: VISUALIZADOR DE COMUNICADO (IMAGEM CENTRALIZADA + TEXTO + COPIAR) */}
       {selectedItemForDetail && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 my-6 flex flex-col max-h-[92vh]">
+          <div className="bg-white dark:bg-[#1e293b] rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-150 my-6 flex flex-col max-h-[92vh]">
             
             {/* Cabeçalho do Modal */}
             <div className="bg-[#0B2238] px-6 py-4 flex items-center justify-between text-white shrink-0">
@@ -2656,7 +2656,7 @@ export default function MensagensPage() {
               {/* SEÇÃO 1: IMAGEM CENTRALIZADA NO TOPO */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                     <ImageIcon className="w-4 h-4 text-blue-600" />
                     <span>Imagem do Comunicado</span>
                   </label>
@@ -2669,9 +2669,9 @@ export default function MensagensPage() {
                 </div>
 
                 {detailImage ? (
-                  <div className="flex flex-col items-center justify-center bg-slate-900/5 border border-slate-200 rounded-2xl p-4 gap-3">
+                  <div className="flex flex-col items-center justify-center bg-slate-900/5 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-2xl p-4 gap-3">
                     {/* Imagem Centralizada */}
-                    <div className="relative group max-h-72 w-full flex items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+                    <div className="relative group max-h-72 w-full flex items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-900">
                       <img
                         src={detailImage}
                         alt={selectedItemForDetail.mensagem}
@@ -2687,7 +2687,7 @@ export default function MensagensPage() {
                         className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
                           isCopiedImage 
                             ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
                         }`}
                         title="Copiar imagem para colar no WhatsApp"
                       >
@@ -2695,7 +2695,7 @@ export default function MensagensPage() {
                         <span>{isCopiedImage ? 'Imagem Copiada!' : 'Copiar Imagem'}</span>
                       </button>
 
-                      <label className="px-3.5 py-1.5 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs">
+                      <label className="px-3.5 py-1.5 bg-white text-slate-700 hover:bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs">
                         <Upload className="w-3.5 h-3.5 text-slate-500" />
                         <span>{isUploadingDetailImage ? 'Enviando...' : 'Trocar Imagem'}</span>
                         <input
@@ -2713,7 +2713,7 @@ export default function MensagensPage() {
                       <button
                         type="button"
                         onClick={() => setDetailImage('')}
-                        className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        className="px-3 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                         title="Remover anexo de imagem"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -2722,12 +2722,12 @@ export default function MensagensPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-2xl p-6 text-center bg-slate-50/50 hover:bg-blue-50/20 transition-all flex flex-col items-center justify-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                  <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-blue-400 rounded-2xl p-6 text-center bg-slate-50/50 dark:bg-[#0f172a] hover:bg-blue-50/20 dark:hover:bg-blue-500/5 transition-all flex flex-col items-center justify-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-100 dark:border-blue-500/30">
                       <ImageIcon className="w-6 h-6 stroke-[1.5]" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-slate-800">
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
                         Nenhuma imagem anexada a esta mensagem
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
@@ -2757,7 +2757,7 @@ export default function MensagensPage() {
                           const url = prompt('Cole o link direto da imagem (https://...):');
                           if (url && url.trim()) setDetailImage(url.trim());
                         }}
-                        className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                        className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                       >
                         Inserir URL
                       </button>
@@ -2769,7 +2769,7 @@ export default function MensagensPage() {
               {/* SEÇÃO 2: ESPAÇO PARA O TEXTO DA MENSAGEM */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                     <FileText className="w-4 h-4 text-emerald-600" />
                     <span>Texto do Comunicado (WhatsApp / Status)</span>
                   </label>
@@ -2783,14 +2783,14 @@ export default function MensagensPage() {
                   value={detailText}
                   onChange={(e) => setDetailText(e.target.value)}
                   placeholder="Digite aqui o texto detalhado da mensagem para envio..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs font-medium text-slate-800 leading-relaxed outline-none focus:border-blue-500 focus:bg-white transition-all resize-y shadow-2xs font-mono"
+                  className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl p-3.5 text-xs font-medium text-slate-800 leading-relaxed outline-none focus:border-blue-500 focus:bg-white transition-all resize-y shadow-2xs font-mono"
                 />
               </div>
 
             </div>
 
             {/* Barra de Ações Inferior com Botão de Copiar */}
-            <div className="bg-slate-50 border-t border-slate-200 px-6 py-3.5 flex items-center justify-between flex-wrap gap-3 shrink-0">
+            <div className="bg-slate-50 dark:bg-[#0f172a] border-t border-slate-200 dark:border-slate-700 px-6 py-3.5 flex items-center justify-between flex-wrap gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 {/* Botão de Marcar Check */}
                 <button
@@ -2798,8 +2798,8 @@ export default function MensagensPage() {
                   onClick={() => handleToggleCheck(selectedItemForDetail.id)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
                     checksMap[selectedItemForDetail.id]?.checked
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
                   }`}
                   title="Marcar ou desmarcar o check de hoje desta mensagem"
                 >
@@ -2818,7 +2818,7 @@ export default function MensagensPage() {
                   type="button"
                   onClick={handleSaveDetailModal}
                   disabled={isSavingDetail}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  className="px-4 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
                   title="Salvar o texto e a imagem permanentemente para esta mensagem"
                 >
                   {isSavingDetail ? 'Salvando...' : 'Salvar Alterações'}
@@ -2857,7 +2857,7 @@ export default function MensagensPage() {
                   className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
                     isCopiedText
                       ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                   }`}
                   title="Copiar texto para colar no WhatsApp"
                 >
@@ -2945,12 +2945,12 @@ export default function MensagensPage() {
 
             {/* Corpo do Alarme */}
             <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              <div className="flex items-center justify-between bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-2xl p-4">
                 <div>
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
                     Comunicado Programado
                   </span>
-                  <span className="text-base font-black text-slate-900">
+                  <span className="text-base font-black text-slate-900 dark:text-white">
                     {activeAlarmItem.item.mensagem}
                   </span>
                 </div>
@@ -2958,7 +2958,7 @@ export default function MensagensPage() {
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
                     Horário
                   </span>
-                  <span className="text-lg font-black text-blue-600 flex items-center gap-1 justify-end">
+                  <span className="text-lg font-black text-blue-600 dark:text-blue-400 flex items-center gap-1 justify-end">
                     <Clock className="w-4 h-4" />
                     {activeAlarmItem.item.horario}
                   </span>
@@ -2967,7 +2967,7 @@ export default function MensagensPage() {
 
               {/* Preview da Imagem caso exista */}
               {activeAlarmItem.item.imagem_url && (
-                <div className="relative rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 max-h-48 flex items-center justify-center group">
+                <div className="relative rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900 max-h-48 flex items-center justify-center group">
                   <img
                     src={activeAlarmItem.item.imagem_url}
                     alt="Preview do Anexo"
@@ -2981,28 +2981,28 @@ export default function MensagensPage() {
 
               {/* Preview do Texto caso exista */}
               {(activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem) && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 max-h-32 overflow-y-auto">
+                <div className="bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-2xl p-3.5 max-h-32 overflow-y-auto">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                     Texto / Legenda para Envio:
                   </span>
-                  <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-mono">
+                  <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed font-mono">
                     {activeAlarmItem.item.texto_completo || activeAlarmItem.item.mensagem}
                   </p>
                 </div>
               )}
 
-              <p className="text-[11px] text-slate-500 text-center">
-                Ao clicar em copiar, a <strong>imagem e o texto</strong> vão para sua área de transferência para colar diretamente (<kbd className="bg-slate-100 px-1 py-0.5 rounded border border-slate-200">Ctrl+V</kbd>) no WhatsApp Web.
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
+                Ao clicar em copiar, a <strong>imagem e o texto</strong> vão para sua área de transferência para colar diretamente (<kbd className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700">Ctrl+V</kbd>) no WhatsApp Web.
               </p>
             </div>
 
             {/* Ações do Modal de Alarme */}
-            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="bg-slate-50 dark:bg-[#0f172a] border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => snoozeAlarm(activeAlarmItem.alarmKey)}
-                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   title="Lembrar novamente em 5 minutos"
                 >
                   <Clock className="w-3.5 h-3.5 text-slate-500" />
@@ -3011,7 +3011,7 @@ export default function MensagensPage() {
                 <button
                   type="button"
                   onClick={() => dismissAlarm(activeAlarmItem.alarmKey)}
-                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 font-bold text-xs transition-colors cursor-pointer"
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 font-bold text-xs transition-colors cursor-pointer"
                   title="Dispensar alarme"
                 >
                   Dispensar
@@ -3022,7 +3022,7 @@ export default function MensagensPage() {
                 <button
                   type="button"
                   onClick={() => handleCopyAlarmOnly(activeAlarmItem.item, activeAlarmItem.alarmKey)}
-                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   title="Apenas copiar imagem e texto sem marcar check"
                 >
                   <Copy className="w-3.5 h-3.5" />
