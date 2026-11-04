@@ -849,8 +849,15 @@ export default function MensagensPage() {
     if (!imageUrl) return;
     try {
       setIsCopiedImage(true);
+      const cleanTxt = (detailText || '').trim();
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('crtask-copy-whatsapp', { detail: { text: detailText || '' } }));
+        window.dispatchEvent(new CustomEvent('crtask-copy-whatsapp', { detail: { text: cleanTxt } }));
+      }
+      if (cleanTxt) {
+        try {
+          await navigator.clipboard.writeText(cleanTxt);
+          await new Promise(r => setTimeout(r, 120));
+        } catch {}
       }
       if (imageUrl.startsWith('data:image/')) {
         const res = await fetch(imageUrl);
@@ -1058,10 +1065,12 @@ export default function MensagensPage() {
       const currentHours = String(now.getHours()).padStart(2, '0');
       const currentMinutes = String(now.getMinutes()).padStart(2, '0');
       const currentTimeStr = `${currentHours}:${currentMinutes}`;
-      const todayStr = now.toISOString().split('T')[0];
+      const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const utcTodayStr = now.toISOString().split('T')[0];
 
-      // Apenas dispara na data de hoje
-      if (selectedDate !== todayStr) return;
+      // Dispara na data de hoje (compatível com fuso local e UTC)
+      if (selectedDate !== localTodayStr && selectedDate !== utcTodayStr) return;
+      const todayStr = selectedDate;
 
       for (const item of mensagensList) {
         if (!item.horario) continue;
@@ -1853,40 +1862,53 @@ export default function MensagensPage() {
 
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   getAudioContext();
                   playAlarmTune();
-                  setShareFeedbackMsg('Toque de teste do alarme emitido!');
-                  setTimeout(() => setShareFeedbackMsg(''), 2500);
+                  if (typeof document !== 'undefined') {
+                    document.title = `🔔 [ALARME] Teste de Alarme (${selectedBase}) - CR Task`;
+                    setTimeout(() => {
+                      if (!activeAlarmItem) {
+                        document.title = 'CR Task • Envio de Mensagens';
+                      }
+                    }, 5000);
+                  }
+                  if (typeof window !== 'undefined' && 'Notification' in window) {
+                    if (Notification.permission === 'default') {
+                      try {
+                        await Notification.requestPermission();
+                      } catch {}
+                    }
+                    if (Notification.permission === 'granted') {
+                      try {
+                        const n = new Notification(`🔔 Teste de Alarme (${selectedBase})`, {
+                          body: 'O som e as notificações do CR Task estão funcionando perfeitamente!',
+                          icon: '/logo.png'
+                        });
+                        n.onclick = () => window.focus();
+                      } catch {}
+                    }
+                  }
+                  setShareFeedbackMsg('Toque e notificação de teste emitidos!');
+                  setTimeout(() => setShareFeedbackMsg(''), 3000);
                 }}
                 className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
-                title="Testar sinal sonoro de alarme"
+                title="Testar sinal sonoro e notificação de alarme"
               >
                 <Volume2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span className="hidden sm:inline">Testar Som</span>
               </button>
             </div>
 
-            {/* Botão App Desktop Windows (Bandeja do Sistema ^) */}
+            {/* Botão App Desktop Windows (Bandeja do Sistema ^ + Auto-Legenda WhatsApp) */}
             <button
               type="button"
               onClick={() => setIsDesktopModalOpen(true)}
               className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
-              title="Baixar Aplicativo CR Task para Windows (Fica na bandeja do sistema ^ igual ao Slack e toca alarme em 2º plano)"
+              title="Baixar Aplicativo CR Task para Windows (Fica na bandeja ^, toca alarme em 2º plano e já cola Imagem + Texto juntos no WhatsApp)"
             >
               <Monitor className="w-3.5 h-3.5 text-emerald-400" />
               <span className="hidden sm:inline">App Desktop (PC)</span>
-            </button>
-
-            {/* Botão Extensão WhatsApp Auto-Legenda */}
-            <button
-              type="button"
-              onClick={() => setIsExtensionModalOpen(true)}
-              className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/80 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
-              title="Baixar extensão do Chrome para colar Imagem + Texto juntos em 1 único Ctrl+V no WhatsApp Web"
-            >
-              <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span className="hidden sm:inline">Extensão WhatsApp</span>
             </button>
 
             {/* Atualizar */}
@@ -3103,15 +3125,15 @@ export default function MensagensPage() {
               <div className="space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
                 <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
-                  <span><strong>Alarmes sempre ativos:</strong> Mesmo oculto na bandeja (<kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600">^</kbd>), quando dá o horário de uma mensagem o aplicativo toca a musiquinha, exibe notificação no Windows e abre a janela na tela automaticamente.</span>
+                  <span><strong>Auto-Legenda no WhatsApp (Sem Extensão!):</strong> Ao clicar em <strong>Copiar</strong> no CR Task e dar <kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600">Ctrl+V</kbd> no WhatsApp (Web ou PC), o aplicativo cola a <strong>Imagem e o Texto da legenda juntos automaticamente</strong>!</span>
+                </div>
+                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
+                  <span><strong>Alarmes e Notificações Nativas:</strong> Mesmo oculto na bandeja (<kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600">^</kbd>), quando dá o horário de uma mensagem o aplicativo toca o alarme, exibe um card de notificação no canto da tela e abre a janela automaticamente.</span>
                 </div>
                 <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
                   <span><strong>Atualização 100% Automática:</strong> Você instala apenas 1 única vez. Qualquer melhoria futura no sistema ou nas mensagens já abre atualizada na hora.</span>
-                </div>
-                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
-                  <span><strong>Cria atalho sozinho:</strong> Ao abrir o arquivo baixado, ele já cria o atalho <strong>"CR Task"</strong> com a logo na sua Área de Trabalho e configura para iniciar junto com o Windows.</span>
                 </div>
               </div>
             </div>

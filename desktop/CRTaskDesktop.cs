@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
+using System.Media;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -16,14 +18,35 @@ namespace CRTaskDesktop
         [STAThread]
         static void Main(string[] args)
         {
+            string appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CRTaskApp");
+            string installedExePath = Path.Combine(appDataFolder, "CR-Task-Desktop.exe");
+            string currentExe = Application.ExecutablePath;
+
+            // If running from Downloads/Project (not the installed path), stop any older running instance so we upgrade cleanly
+            if (!string.Equals(Path.GetFullPath(currentExe), Path.GetFullPath(installedExePath), StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    int currentPid = Process.GetCurrentProcess().Id;
+                    foreach (Process p in Process.GetProcessesByName("CR-Task-Desktop"))
+                    {
+                        if (p.Id != currentPid)
+                        {
+                            try { p.Kill(); p.WaitForExit(2000); } catch { }
+                        }
+                    }
+                }
+                catch { }
+            }
+
             bool createdNew;
-            using (Mutex mutex = new Mutex(true, "CRTaskDesktopAppMutex_v1", out createdNew))
+            using (Mutex mutex = new Mutex(true, "CRTaskDesktopAppMutex_v2", out createdNew))
             {
                 if (!createdNew)
                 {
                     try
                     {
-                        EventWaitHandle showEvent = EventWaitHandle.OpenExisting("CRTaskDesktopShowEvent_v1");
+                        EventWaitHandle showEvent = EventWaitHandle.OpenExisting("CRTaskDesktopShowEvent_v2");
                         showEvent.Set();
                     }
                     catch { }
@@ -41,6 +64,7 @@ namespace CRTaskDesktop
     {
         // Win32 APIs
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+        private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
@@ -63,6 +87,12 @@ namespace CRTaskDesktop
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
@@ -75,15 +105,53 @@ namespace CRTaskDesktop
         [DllImport("user32.dll", EntryPoint = "SetClassLong")]
         private static extern uint SetClassLong32(IntPtr hWnd, int nIndex, uint dwNewLong);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        [DllImport("user32.dll")]
+        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
         private const int SW_HIDE = 0;
         private const int SW_SHOWNORMAL = 1;
         private const int SW_RESTORE = 9;
         private const uint WM_CLOSE = 0x0010;
         private const uint WM_SETICON = 0x0080;
+        private const int WM_CLIPBOARDUPDATE = 0x031D;
         private const int ICON_SMALL = 0;
         private const int ICON_BIG = 1;
         private const int GCLP_HICON = -14;
         private const int GCLP_HICONSM = -34;
+
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_SHOWWINDOW = 0x0040;
+
+        private const int WH_KEYBOARD_LL = 13;
+        private const int WM_KEYDOWN = 0x0100;
+        private const int VK_CONTROL = 0x11;
+        private const byte VK_V = 0x56;
+        private const uint KEYEVENTF_KEYUP = 0x0002;
 
         private const string APP_URL = "https://crtask1.vercel.app/mensagens";
         private const string RUN_REGISTRY_KEY = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -92,6 +160,8 @@ namespace CRTaskDesktop
         private NotifyIcon trayIcon;
         private Icon appIcon;
         private System.Windows.Forms.Timer monitorTimer;
+        private System.Windows.Forms.Timer pasteCaptionTimer;
+        private System.Windows.Forms.Timer restoreClipboardTimer;
         private EventWaitHandle showEvent;
         private IntPtr appHwnd = IntPtr.Zero;
         private IntPtr lastIconAppliedHwnd = IntPtr.Zero;
@@ -101,11 +171,26 @@ namespace CRTaskDesktop
         private DateTime lastLaunchAttempt = DateTime.MinValue;
         private bool launchHiddenNext = false;
 
+        // WhatsApp Auto-Caption State
+        private ClipboardWatcherForm clipboardForm;
+        private IntPtr keyboardHookId = IntPtr.Zero;
+        private LowLevelKeyboardProc keyboardProcDelegate;
+        private string pendingCaption = "";
+        private DateTime pendingCaptionTime = DateTime.MinValue;
+        private Image pendingImage = null;
+        private bool hasPendingImageAndCaption = false;
+        private bool isInternalClipboardChange = false;
+        private bool isSimulatingPaste = false;
+
+        private Form activeAlarmToast = null;
+
         private string appDataFolder;
         private string installedExePath;
         private string installedIconPath;
         private string profileFolder;
         private ToolStripMenuItem startupMenuItem;
+        private ToolStripMenuItem autoCaptionMenuItem;
+        private bool autoCaptionEnabled = true;
 
         public TrayApplicationContext()
         {
@@ -131,6 +216,15 @@ namespace CRTaskDesktop
 
             menu.Items.Add(new ToolStripSeparator());
 
+            autoCaptionMenuItem = new ToolStripMenuItem("Auto-Legenda WhatsApp (Ctrl+V Imagem + Texto)");
+            autoCaptionMenuItem.Checked = autoCaptionEnabled;
+            autoCaptionMenuItem.Click += (s, e) =>
+            {
+                autoCaptionEnabled = !autoCaptionEnabled;
+                autoCaptionMenuItem.Checked = autoCaptionEnabled;
+            };
+            menu.Items.Add(autoCaptionMenuItem);
+
             startupMenuItem = new ToolStripMenuItem("Iniciar junto com o Windows");
             startupMenuItem.Checked = IsStartupEnabled();
             startupMenuItem.Click += (s, e) => ToggleStartup();
@@ -153,7 +247,7 @@ namespace CRTaskDesktop
             trayIcon = new NotifyIcon
             {
                 Icon = appIcon,
-                Text = "CR Task • Rodando em 2º Plano",
+                Text = "CR Task • Ativo (Alarmes + Auto-Legenda WhatsApp)",
                 ContextMenuStrip = menu,
                 Visible = true
             };
@@ -168,7 +262,24 @@ namespace CRTaskDesktop
             trayIcon.DoubleClick += (s, e) => RestoreOrLaunchApp();
             trayIcon.BalloonTipClicked += (s, e) => RestoreOrLaunchApp();
 
-            showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "CRTaskDesktopShowEvent_v1");
+            showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "CRTaskDesktopShowEvent_v2");
+
+            // Initialize Clipboard Listener & Keyboard Hook for WhatsApp Auto-Caption
+            clipboardForm = new ClipboardWatcherForm(OnClipboardChanged);
+            keyboardProcDelegate = HookCallback;
+            using (Process curProcess = Process.GetCurrentProcess())
+            using (ProcessModule curModule = curProcess.MainModule)
+            {
+                keyboardHookId = SetWindowsHookEx(WH_KEYBOARD_LL, keyboardProcDelegate, GetModuleHandle(curModule.ModuleName), 0);
+            }
+
+            pasteCaptionTimer = new System.Windows.Forms.Timer();
+            pasteCaptionTimer.Interval = 750;
+            pasteCaptionTimer.Tick += PasteCaptionTimer_Tick;
+
+            restoreClipboardTimer = new System.Windows.Forms.Timer();
+            restoreClipboardTimer.Interval = 350;
+            restoreClipboardTimer.Tick += RestoreClipboardTimer_Tick;
 
             LaunchBrowserApp();
 
@@ -176,6 +287,145 @@ namespace CRTaskDesktop
             monitorTimer.Interval = 250;
             monitorTimer.Tick += MonitorTimer_Tick;
             monitorTimer.Start();
+        }
+
+        private void OnClipboardChanged()
+        {
+            if (isInternalClipboardChange) return;
+
+            try
+            {
+                IntPtr fg = GetForegroundWindow();
+                string fgTitle = GetWindowTitle(fg);
+                bool isFromCRTask = fgTitle.IndexOf("CR Task", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    fgTitle.IndexOf("CR Admin Workspace", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    fgTitle.IndexOf("crtask", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    (fg == appHwnd && appHwnd != IntPtr.Zero);
+
+                bool hasImg = Clipboard.ContainsImage();
+                bool hasTxt = Clipboard.ContainsText();
+
+                if (hasTxt && !hasImg)
+                {
+                    string txt = (Clipboard.GetText() ?? "").Trim();
+                    if (!string.IsNullOrEmpty(txt) && !txt.StartsWith("http", StringComparison.OrdinalIgnoreCase) && isFromCRTask)
+                    {
+                        pendingCaption = txt;
+                        pendingCaptionTime = DateTime.Now;
+                        hasPendingImageAndCaption = false;
+                    }
+                }
+                else if (hasImg)
+                {
+                    if (hasTxt)
+                    {
+                        string txt = (Clipboard.GetText() ?? "").Trim();
+                        if (!string.IsNullOrEmpty(txt))
+                        {
+                            pendingCaption = txt;
+                            pendingCaptionTime = DateTime.Now;
+                        }
+                    }
+
+                    // If we captured a caption from CR Task just milliseconds ago (or together with the image), arm the WhatsApp combo!
+                    if (!string.IsNullOrEmpty(pendingCaption) && (DateTime.Now - pendingCaptionTime).TotalSeconds < 10)
+                    {
+                        pendingImage = Clipboard.GetImage();
+                        hasPendingImageAndCaption = true;
+                        pendingCaptionTime = DateTime.Now;
+                    }
+                    else if (!isFromCRTask)
+                    {
+                        // User copied a regular screenshot outside CR Task
+                        hasPendingImageAndCaption = false;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN && autoCaptionEnabled && !isSimulatingPaste)
+            {
+                int vkCode = Marshal.ReadInt32(lParam);
+                if (vkCode == VK_V)
+                {
+                    bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+                    if (ctrlDown && hasPendingImageAndCaption && !string.IsNullOrEmpty(pendingCaption))
+                    {
+                        if ((DateTime.Now - pendingCaptionTime).TotalMinutes < 30)
+                        {
+                            IntPtr fg = GetForegroundWindow();
+                            string fgTitle = GetWindowTitle(fg);
+                            if (fgTitle.IndexOf("WhatsApp", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                // User just pressed Ctrl+V in WhatsApp! Let the image paste now, and schedule caption paste in 750ms
+                                pasteCaptionTimer.Stop();
+                                pasteCaptionTimer.Start();
+                            }
+                        }
+                    }
+                }
+            }
+            return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+        }
+
+        private void PasteCaptionTimer_Tick(object sender, EventArgs e)
+        {
+            pasteCaptionTimer.Stop();
+            if (string.IsNullOrEmpty(pendingCaption)) return;
+
+            try
+            {
+                isInternalClipboardChange = true;
+                isSimulatingPaste = true;
+
+                if (pendingImage == null && Clipboard.ContainsImage())
+                {
+                    pendingImage = Clipboard.GetImage();
+                }
+
+                // Set caption text onto clipboard and simulate Ctrl+V inside WhatsApp's focused caption box
+                Clipboard.SetText(pendingCaption);
+
+                keybd_event((byte)VK_CONTROL, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event((byte)VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+                restoreClipboardTimer.Stop();
+                restoreClipboardTimer.Start();
+            }
+            catch
+            {
+                isInternalClipboardChange = false;
+                isSimulatingPaste = false;
+            }
+        }
+
+        private void RestoreClipboardTimer_Tick(object sender, EventArgs e)
+        {
+            restoreClipboardTimer.Stop();
+            try
+            {
+                if (pendingImage != null)
+                {
+                    DataObject data = new DataObject();
+                    data.SetImage(pendingImage);
+                    if (!string.IsNullOrEmpty(pendingCaption))
+                    {
+                        data.SetText(pendingCaption);
+                    }
+                    Clipboard.SetDataObject(data, true);
+                }
+            }
+            catch { }
+            finally
+            {
+                isInternalClipboardChange = false;
+                isSimulatingPaste = false;
+            }
         }
 
         private Icon LoadEmbeddedIcon()
@@ -216,6 +466,134 @@ namespace CRTaskDesktop
             catch { }
         }
 
+        private void BringWindowToFront(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero || !IsWindow(hWnd)) return;
+            try
+            {
+                ShowWindow(hWnd, SW_RESTORE);
+                ShowWindow(hWnd, SW_SHOWNORMAL);
+                SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetForegroundWindow(hWnd);
+                SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            }
+            catch { }
+        }
+
+        private void ShowNativeAlarmCard(string messageText)
+        {
+            try
+            {
+                if (activeAlarmToast != null && !activeAlarmToast.IsDisposed)
+                {
+                    activeAlarmToast.Close();
+                }
+
+                Form toast = new Form
+                {
+                    FormBorderStyle = FormBorderStyle.None,
+                    StartPosition = FormStartPosition.Manual,
+                    ShowInTaskbar = false,
+                    TopMost = true,
+                    BackColor = Color.FromArgb(15, 23, 42),
+                    Size = new Size(370, 115)
+                };
+
+                Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
+                toast.Location = new Point(workArea.Right - toast.Width - 18, workArea.Bottom - toast.Height - 18);
+
+                Panel topAccent = new Panel
+                {
+                    Dock = DockStyle.Top,
+                    Height = 5,
+                    BackColor = Color.FromArgb(245, 158, 11)
+                };
+                toast.Controls.Add(topAccent);
+
+                PictureBox pic = new PictureBox
+                {
+                    Image = appIcon.ToBitmap(),
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    Location = new Point(16, 20),
+                    Size = new Size(42, 42)
+                };
+                toast.Controls.Add(pic);
+
+                Label lblHeader = new Label
+                {
+                    Text = "🔔 ALARME DE MENSAGEM • CR TASK",
+                    ForeColor = Color.FromArgb(251, 191, 36),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                    Location = new Point(70, 16),
+                    AutoSize = true
+                };
+                toast.Controls.Add(lblHeader);
+
+                Label lblBody = new Label
+                {
+                    Text = messageText,
+                    ForeColor = Color.White,
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                    Location = new Point(70, 36),
+                    Size = new Size(280, 38),
+                    AutoEllipsis = true
+                };
+                toast.Controls.Add(lblBody);
+
+                Button btnOpen = new Button
+                {
+                    Text = "Abrir CR Task Agora",
+                    BackColor = Color.FromArgb(16, 185, 129),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                    Location = new Point(70, 76),
+                    Size = new Size(155, 28),
+                    Cursor = Cursors.Hand
+                };
+                btnOpen.FlatAppearance.BorderSize = 0;
+                btnOpen.Click += (s, e) =>
+                {
+                    RestoreOrLaunchApp();
+                    toast.Close();
+                };
+                toast.Controls.Add(btnOpen);
+
+                Button btnDismiss = new Button
+                {
+                    Text = "Fechar",
+                    BackColor = Color.FromArgb(30, 41, 59),
+                    ForeColor = Color.FromArgb(148, 163, 184),
+                    FlatStyle = FlatStyle.Flat,
+                    Font = new Font("Segoe UI", 8f, FontStyle.Regular),
+                    Location = new Point(235, 76),
+                    Size = new Size(80, 28),
+                    Cursor = Cursors.Hand
+                };
+                btnDismiss.FlatAppearance.BorderSize = 0;
+                btnDismiss.Click += (s, e) => toast.Close();
+                toast.Controls.Add(btnDismiss);
+
+                toast.Click += (s, e) =>
+                {
+                    RestoreOrLaunchApp();
+                    toast.Close();
+                };
+
+                System.Windows.Forms.Timer closeTimer = new System.Windows.Forms.Timer { Interval = 12000 };
+                closeTimer.Tick += (s, e) =>
+                {
+                    closeTimer.Stop();
+                    if (!toast.IsDisposed) toast.Close();
+                };
+                closeTimer.Start();
+
+                activeAlarmToast = toast;
+                toast.Show();
+            }
+            catch { }
+        }
+
         private void EnsureInstalledAndShortcut()
         {
             try
@@ -241,13 +619,8 @@ namespace CRTaskDesktop
                     }
                 }
 
-                string firstRunFlag = Path.Combine(appDataFolder, ".installed_v1");
-                if (!File.Exists(firstRunFlag))
-                {
-                    CreateDesktopShortcut();
-                    SetStartup(true);
-                    File.WriteAllText(firstRunFlag, DateTime.Now.ToString("O"));
-                }
+                CreateDesktopShortcut();
+                SetStartup(true);
             }
             catch { }
         }
@@ -330,11 +703,11 @@ namespace CRTaskDesktop
         {
             string[] candidates = new string[]
             {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft\Edge\Application\msedge.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Google\Chrome\Application\chrome.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Google\Chrome\Application\chrome.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Google\Chrome\Application\chrome.exe")
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Google\Chrome\Application\chrome.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft\Edge\Application\msedge.exe")
             };
 
             foreach (string path in candidates)
@@ -352,7 +725,7 @@ namespace CRTaskDesktop
                 lastLaunchAttempt = DateTime.Now;
                 string browserExe = FindBrowserExecutable();
                 string args = string.Format(
-                    "--user-data-dir=\"{0}\" --app=\"{1}\" --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --autoplay-policy=no-user-gesture-required",
+                    "--user-data-dir=\"{0}\" --app=\"{1}\" --disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,AudioServiceOutOfProcess --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --autoplay-policy=no-user-gesture-required",
                     profileFolder,
                     APP_URL
                 );
@@ -428,7 +801,7 @@ namespace CRTaskDesktop
                     trayIcon.ShowBalloonTip(
                         4000,
                         "CR Task em 2º Plano",
-                        "O CR Task foi minimizado para a bandeja do sistema (^). Os alarmes continuarão tocando normalmente!",
+                        "O CR Task foi minimizado para a bandeja do sistema (^). Os alarmes e a Auto-Legenda do WhatsApp seguem ativos!",
                         ToolTipIcon.Info
                     );
                 }
@@ -441,9 +814,7 @@ namespace CRTaskDesktop
             if (appHwnd != IntPtr.Zero && IsWindow(appHwnd))
             {
                 ApplyWindowIcon(appHwnd);
-                ShowWindow(appHwnd, SW_RESTORE);
-                ShowWindow(appHwnd, SW_SHOWNORMAL);
-                SetForegroundWindow(appHwnd);
+                BringWindowToFront(appHwnd);
             }
             else
             {
@@ -451,9 +822,7 @@ namespace CRTaskDesktop
                 if (appHwnd != IntPtr.Zero && IsWindow(appHwnd))
                 {
                     ApplyWindowIcon(appHwnd);
-                    ShowWindow(appHwnd, SW_RESTORE);
-                    ShowWindow(appHwnd, SW_SHOWNORMAL);
-                    SetForegroundWindow(appHwnd);
+                    BringWindowToFront(appHwnd);
                 }
                 else
                 {
@@ -508,7 +877,6 @@ namespace CRTaskDesktop
                 ApplyWindowIcon(appHwnd);
             }
 
-            // Re-apply window icon periodically in case browser page navigation resets it
             SendMessage(appHwnd, WM_SETICON, (IntPtr)ICON_BIG, appIcon.Handle);
             SendMessage(appHwnd, WM_SETICON, (IntPtr)ICON_SMALL, appIcon.Handle);
 
@@ -527,10 +895,13 @@ namespace CRTaskDesktop
                         .Replace("🔔", "")
                         .Replace("[ALARME]", "")
                         .Replace("- CR Task", "")
+                        .Replace("• Gestão Operacional", "")
                         .Replace("- CR Admin Workspace", "")
                         .Trim();
                     if (string.IsNullOrEmpty(cleanMsg))
                         cleanMsg = "Hora de enviar uma mensagem programada no WhatsApp!";
+
+                    try { SystemSounds.Exclamation.Play(); } catch { }
 
                     trayIcon.ShowBalloonTip(
                         10000,
@@ -539,9 +910,8 @@ namespace CRTaskDesktop
                         ToolTipIcon.Warning
                     );
 
-                    ShowWindow(appHwnd, SW_RESTORE);
-                    ShowWindow(appHwnd, SW_SHOWNORMAL);
-                    SetForegroundWindow(appHwnd);
+                    ShowNativeAlarmCard(cleanMsg);
+                    BringWindowToFront(appHwnd);
                 }
             }
             else
@@ -557,6 +927,25 @@ namespace CRTaskDesktop
 
             try
             {
+                if (keyboardHookId != IntPtr.Zero)
+                {
+                    UnhookWindowsHookEx(keyboardHookId);
+                    keyboardHookId = IntPtr.Zero;
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (clipboardForm != null && !clipboardForm.IsDisposed)
+                {
+                    clipboardForm.Close();
+                }
+            }
+            catch { }
+
+            try
+            {
                 if (appHwnd != IntPtr.Zero && IsWindow(appHwnd))
                 {
                     PostMessage(appHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
@@ -567,6 +956,47 @@ namespace CRTaskDesktop
             trayIcon.Visible = false;
             trayIcon.Dispose();
             Application.Exit();
+        }
+
+        private class ClipboardWatcherForm : Form
+        {
+            private readonly Action onUpdate;
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+
+            public ClipboardWatcherForm(Action onUpdateCallback)
+            {
+                onUpdate = onUpdateCallback;
+                ShowInTaskbar = false;
+                WindowState = FormWindowState.Minimized;
+                FormBorderStyle = FormBorderStyle.None;
+                CreateHandle();
+            }
+
+            protected override void OnHandleCreated(EventArgs e)
+            {
+                base.OnHandleCreated(e);
+                AddClipboardFormatListener(Handle);
+            }
+
+            protected override void OnHandleDestroyed(EventArgs e)
+            {
+                RemoveClipboardFormatListener(Handle);
+                base.OnHandleDestroyed(e);
+            }
+
+            protected override void WndProc(ref Message m)
+            {
+                if (m.Msg == 0x031D) // WM_CLIPBOARDUPDATE
+                {
+                    if (onUpdate != null) onUpdate();
+                }
+                base.WndProc(ref m);
+            }
         }
     }
 }
