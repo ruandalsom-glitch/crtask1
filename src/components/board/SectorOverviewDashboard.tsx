@@ -132,14 +132,18 @@ export function SectorOverviewDashboard({
     const title = prompt('Título da nova tarefa:');
     if (!title || !title.trim()) return;
 
+    const creatorEmail = currentUser?.email === 'ruan.dalsom@crexpresstransportessp.com.br'
+      ? 'ruan.dalsom@masterdeliveryexpress.com.br'
+      : (currentUser?.email || '');
+
     await supabase.from('tasks').insert([
       {
         board_id: boardId,
         title: title.trim(),
         status: 'Trabalhando',
         priority: 'Média',
-        assignee_name: currentUser?.email?.split('@')[0] || 'Eu',
-        assignee_email: currentUser?.email || ''
+        assignee_name: creatorEmail.split('@')[0] || 'Eu',
+        assignee_email: creatorEmail
       }
     ]);
     queryClient.invalidateQueries({ queryKey: ['board_overview_tasks', boardId] });

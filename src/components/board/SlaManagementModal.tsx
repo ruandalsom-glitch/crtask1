@@ -702,7 +702,7 @@ export function SlaManagementModal({
                       <th className="py-2.5 px-3">Colaborador Escalado</th>
                       <th className="py-2.5 px-3">Quadro / Origem</th>
                       <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">Ações</th>
+                      <th className="py-2.5 px-3 text-right w-[90px] min-w-[90px]">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/[0.04] text-xs">
@@ -811,7 +811,7 @@ export function SlaManagementModal({
                           </td>
 
                           {/* Ações */}
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap w-[90px] min-w-[90px]">
                             <div className="flex items-center justify-end gap-1">
                               {/* Botão Alterar / Editar */}
                               <button

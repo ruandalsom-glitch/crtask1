@@ -2267,7 +2267,7 @@ export default function MensagensPage() {
         {/* TABELA DE CHECKLIST OPERACIONAL */}
         <div className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full min-w-[1020px] text-left border-collapse">
               <thead>
                 <tr className="bg-[#0B2238] text-white text-[12px] font-bold tracking-wider uppercase">
                   <th className="py-3.5 px-2 text-center w-[54px] border-r border-[#1E3A56]" title="Arraste para reordenar as mensagens">
@@ -2298,7 +2298,7 @@ export default function MensagensPage() {
                   </th>
                   <th className="py-3.5 px-4 text-center w-[70px] border-r border-[#1E3A56]">Check</th>
                   <th className="py-3.5 px-6 text-center w-[220px] border-r border-[#1E3A56]">Horário Check / Envio</th>
-                  <th className="py-3.5 px-3 text-center w-[90px]">Ações</th>
+                  <th className="py-3.5 px-3 text-center w-[145px] min-w-[145px]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700/80 text-xs">
@@ -2489,8 +2489,8 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Ações: Visualizar/Copiar, Editar e Excluir */}
-                        <td className="py-2 px-3 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                        <td className="py-2 px-3 text-center whitespace-nowrap w-[145px] min-w-[145px]">
+                          <div className="flex items-center justify-center gap-1.5">
                             {(item.imagem_url || item.texto_completo) && (
                               <button
                                 onClick={() => {
@@ -2499,7 +2499,7 @@ export default function MensagensPage() {
                                   const key = `${selectedDate}_${selectedBase}_${item.id}_${normTime}`;
                                   dismissAlarm(key, item.id);
                                 }}
-                                className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors cursor-pointer"
+                                className="w-7 h-7 flex items-center justify-center hover:bg-emerald-100 dark:hover:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors cursor-pointer"
                                 title="Copiar Imagem + Texto juntos para colar no WhatsApp"
                               >
                                 <Copy className="w-3.5 h-3.5" />
@@ -2507,21 +2507,21 @@ export default function MensagensPage() {
                             )}
                             <button
                               onClick={() => openDetailModal(item)}
-                              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-950/70 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer"
+                              className="w-7 h-7 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-950/70 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer"
                               title="Visualizar comunicado e copiar"
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => openEditModal(item)}
-                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
+                              className="w-7 h-7 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
                               title="Editar Configurações da Mensagem"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleDeleteMessage(item)}
-                              className="p-1 hover:bg-red-100 dark:hover:bg-red-950/70 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors cursor-pointer"
+                              className="w-7 h-7 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-950/70 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors cursor-pointer"
                               title="Remover Mensagem"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

@@ -162,6 +162,11 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
   const currentUserProfile = (allProfiles || workspaceUsers)?.find((u: any) => u.email === userProfile?.email);
   const isLeaderOrAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'leader';
 
+  // Responsável automático atribuído a novas tarefas criadas pelo usuário (utiliza e-mail operacional de líder caso seja a conta do Ruan)
+  const defaultCreatorEmail = userProfile?.email === 'ruan.dalsom@crexpresstransportessp.com.br'
+    ? 'ruan.dalsom@masterdeliveryexpress.com.br'
+    : (userProfile?.email || null);
+
   const canEditBoard = !isReadOnly;
 
   const canDeleteTask = (task: any) => {
@@ -695,7 +700,8 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
         title: 'Nova Tarefa', 
         board_id: boardId, 
         group_name: defaultGroup, 
-        position: position 
+        position: position,
+        assignee_email: defaultCreatorEmail
       }
     ]);
     if (error) {
@@ -914,7 +920,8 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                               title: taskTitle, 
                               board_id: boardId, 
                               group_name: title, 
-                              position: (groupTasks?.length || 0) + 1 
+                              position: (groupTasks?.length || 0) + 1,
+                              assignee_email: defaultCreatorEmail
                             }
                           ]);
                           if (error) {
@@ -1171,7 +1178,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                 const name = prompt('Nome do novo grupo:');
                 if (name) {
                   const { error } = await supabase.from('tasks').insert([
-                    { title: 'Nova Tarefa', board_id: boardId, group_name: name, position: 1 }
+                    { title: 'Nova Tarefa', board_id: boardId, group_name: name, position: 1, assignee_email: defaultCreatorEmail }
                   ]);
                   if (!error) queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
                 }

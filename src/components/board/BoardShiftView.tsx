@@ -1805,7 +1805,7 @@ export function BoardShiftView({
                     <th className="py-3 px-4">Funções / Tipos</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Observações / Tarefas</th>
-                    <th className="py-3 px-4 text-right">Ações</th>
+                    <th className="py-3 px-4 text-right w-[130px] min-w-[130px]">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1888,7 +1888,7 @@ export function BoardShiftView({
                           <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
                             {item.notes || '-'}
                           </td>
-                          <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <td className="py-3 px-4 text-right whitespace-nowrap w-[130px] min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 type="button"

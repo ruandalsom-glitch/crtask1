@@ -202,15 +202,6 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     selected_dates: [],
     due_time: ''
   });
-
-  useEffect(() => {
-    if (creatingTaskDate && newTaskData.selected_dates?.length === 0) {
-      const d = new Date(creatingTaskDate.getTime());
-      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-      const dateStr = d.toISOString().split('T')[0];
-      setNewTaskData((prev: any) => ({ ...prev, selected_dates: [dateStr] }));
-    }
-  }, [creatingTaskDate]);
   
   const [viewType, setViewType] = useState<'Mês' | 'Semana'>('Mês');
   const [viewDropdownOpen, setViewDropdownOpen] = useState(false);
@@ -329,6 +320,23 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     queryFn: () => getFastUser(),
     staleTime: 5 * 60 * 1000
   });
+
+  const defaultCreatorEmail = userProfile?.email === 'ruan.dalsom@crexpresstransportessp.com.br'
+    ? 'ruan.dalsom@masterdeliveryexpress.com.br'
+    : (userProfile?.email || '');
+
+  useEffect(() => {
+    if (creatingTaskDate) {
+      const d = new Date(creatingTaskDate.getTime());
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      const dateStr = d.toISOString().split('T')[0];
+      setNewTaskData((prev: any) => ({
+        ...prev,
+        assignee_email: prev.assignee_email || defaultCreatorEmail,
+        selected_dates: prev.selected_dates?.length ? prev.selected_dates : [dateStr]
+      }));
+    }
+  }, [creatingTaskDate, defaultCreatorEmail]);
 
   const { data: boardInfo } = useQuery({
     queryKey: ['board_info', boardId],
@@ -614,7 +622,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           start_date: d,
           task_type: 'Lembrete',
           priority: 'SLA',
-          assignee_email: dataToSave.assignee_email || null,
+          assignee_email: dataToSave.assignee_email || defaultCreatorEmail || null,
           position: (rawTasks?.length || 0) + 1 + index
         }));
 
@@ -654,7 +662,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           status: dataToSave.status || 'Pendente',
           due_date: dateStr,
           priority: dataToSave.priority || null,
-          assignee_email: dataToSave.assignee_email || null,
+          assignee_email: dataToSave.assignee_email || defaultCreatorEmail || null,
           position: (rawTasks?.length || 0) + 1,
           task_type: dataToSave.task_type || 'Tarefa'
         }
