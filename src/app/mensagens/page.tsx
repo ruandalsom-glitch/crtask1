@@ -8,7 +8,7 @@ import {
   Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
   ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
-  GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown,
+  GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown, ArrowUpDown,
   Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX, Monitor
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
@@ -164,11 +164,11 @@ function CargoCollaboratorSelect({
   return (
     <div className="relative w-full" ref={dropdownRef}>
       <div className="flex items-center justify-between mb-1.5">
-        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-          <CargoIcon className="w-3 h-3 text-slate-400" />
+        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+          <CargoIcon className="w-3 h-3 text-slate-400 dark:text-blue-400" />
           <span>{label}</span>
         </label>
-        <span className="text-[10px] font-semibold text-slate-400">
+        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-400">
           {cargo}
         </span>
       </div>
@@ -177,17 +177,19 @@ function CargoCollaboratorSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full text-left bg-white border rounded-xl px-3 py-2 text-xs transition-all flex items-center justify-between cursor-pointer shadow-2xs ${
-          isOpen ? 'border-[#0B2238] ring-1 ring-[#0B2238]/20 bg-slate-50/50' : 'border-slate-200 hover:border-slate-300'
+        className={`w-full text-left bg-white dark:bg-slate-900 border rounded-xl px-3 py-2 text-xs transition-all flex items-center justify-between cursor-pointer shadow-2xs ${
+          isOpen
+            ? 'border-blue-500 ring-1 ring-blue-500/20 bg-slate-50/50 dark:bg-slate-800'
+            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
         }`}
       >
         <div className="flex items-center gap-2 truncate">
           {value ? (
             <>
-              <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[9px] flex items-center justify-center shrink-0">
+              <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-emerald-400 font-bold text-[9px] flex items-center justify-center shrink-0">
                 {getInitials(value)}
               </span>
-              <span className="truncate font-semibold text-slate-900">
+              <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
                 {value}
               </span>
             </>
@@ -197,16 +199,16 @@ function CargoCollaboratorSelect({
             </span>
           )}
         </div>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ml-1 ${isOpen ? 'rotate-180 text-slate-700' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ml-1 ${isOpen ? 'rotate-180 text-slate-700 dark:text-slate-200' : ''}`} />
       </button>
 
       {/* Menu Suspenso Referenciado Estritamente ao Cargo */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 min-w-[230px]">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 min-w-[230px]">
           {/* Cabeçalho do Cargo */}
-          <div className="px-3 py-1 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+          <div className="px-3 py-1 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
             <span className="flex items-center gap-1.5">
-              <CargoIcon className="w-3.5 h-3.5 text-slate-500" />
+              <CargoIcon className="w-3.5 h-3.5 text-slate-500 dark:text-blue-400" />
               <span>{cargo}</span>
             </span>
             <span className="text-[10px] text-slate-400 font-normal">
@@ -215,27 +217,27 @@ function CargoCollaboratorSelect({
           </div>
 
           {/* Opção Nenhum (Disponível em todos os submenus) */}
-          <div className="pt-1 pb-0.5 border-b border-slate-100">
+          <div className="pt-1 pb-0.5 border-b border-slate-100 dark:border-slate-800">
             <button
               type="button"
               onClick={() => handleSelect('Nenhum')}
               className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                value === 'Nenhum' ? 'bg-slate-100 font-bold text-slate-800' : 'hover:bg-slate-50 text-slate-500'
+                value === 'Nenhum' ? 'bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400'
               }`}
             >
               <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-400 font-bold text-[9px] flex items-center justify-center shrink-0">
+                <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 font-bold text-[9px] flex items-center justify-center shrink-0">
                   -
                 </span>
                 <span className="italic font-medium">Nenhum</span>
               </div>
-              {value === 'Nenhum' && <Check className="w-3.5 h-3.5 text-slate-600 shrink-0" />}
+              {value === 'Nenhum' && <Check className="w-3.5 h-3.5 text-slate-600 dark:text-emerald-400 shrink-0" />}
             </button>
           </div>
 
           {/* Presets de Turno (se aplicável) */}
           {presets.length > 0 && (
-            <div className="px-2 pt-1.5 pb-1 border-b border-slate-100">
+            <div className="px-2 pt-1.5 pb-1 border-b border-slate-100 dark:border-slate-800">
               <div className="flex flex-wrap gap-1">
                 {presets.map(p => (
                   <button
@@ -244,8 +246,8 @@ function CargoCollaboratorSelect({
                     onClick={() => handleSelect(p)}
                     className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
                       value === p
-                        ? 'bg-[#0B2238] text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                     }`}
                   >
                     Turno {p}
@@ -265,16 +267,16 @@ function CargoCollaboratorSelect({
                   type="button"
                   onClick={() => handleSelect(member)}
                   className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                    isSelected ? 'bg-blue-50/80 font-bold text-blue-900' : 'hover:bg-slate-50 text-slate-800'
+                    isSelected ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[9px] flex items-center justify-center shrink-0">
+                    <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
                       {getInitials(member)}
                     </span>
                     <span>{member}</span>
                   </div>
-                  {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                  {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
                 </button>
               );
             })}
@@ -284,17 +286,17 @@ function CargoCollaboratorSelect({
               <button
                 type="button"
                 onClick={() => handleSelect(members.join(' / '))}
-                className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer border-t border-slate-50 ${
-                  value === members.join(' / ') ? 'bg-blue-50/80 font-bold text-blue-900' : 'hover:bg-slate-50 text-slate-800'
+                className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer border-t border-slate-50 dark:border-slate-800 ${
+                  value === members.join(' / ') ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[9px] flex items-center justify-center shrink-0">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
                     &
                   </span>
                   <span>{members.join(' / ')} (Ambos)</span>
                 </div>
-                {value === members.join(' / ') && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                {value === members.join(' / ') && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
               </button>
             )}
           </div>
@@ -391,9 +393,10 @@ export default function MensagensPage() {
   const [shareFeedbackMsg, setShareFeedbackMsg] = useState<string>('');
   const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
 
-  // Arraste e Reordenação de Mensagens (Drag & Drop)
+  // Arraste e Reordenação de Mensagens (Drag & Drop) + Ordenação por Horário
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [horarioSort, setHorarioSort] = useState<'none' | 'asc' | 'desc'>('none');
 
   // Modal de Detalhe e Envio do Comunicado (Imagem centralizada + Texto + Copiar)
   const [selectedItemForDetail, setSelectedItemForDetail] = useState<MensagemItem | null>(null);
@@ -495,8 +498,9 @@ export default function MensagensPage() {
     staleTime: 30 * 1000
   });
 
-  // Lista efetiva de mensagens (Personalizadas do Supabase ou Padrão do JSON, ordenadas pela ordem personalizada)
+  // Lista efetiva de mensagens (Personalizadas do Supabase ou Padrão do JSON, ordenadas pela ordem personalizada ou filtro de horário)
   const mensagensList: MensagemItem[] = useMemo(() => {
+    let baseList: MensagemItem[] = [];
     if (dbTemplates && dbTemplates.length > 0) {
       const list: MensagemItem[] = dbTemplates.map((row, idx) => {
         const orderNum = row.resp_tarde !== null && row.resp_tarde !== undefined && row.resp_tarde !== '' && !isNaN(Number(row.resp_tarde))
@@ -514,17 +518,40 @@ export default function MensagensPage() {
           ordem: orderNum
         };
       });
-      return list.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+      baseList = list.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+    } else {
+      const map = mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>;
+      const defaultList = map[selectedBase] || [];
+      baseList = defaultList.map((m, idx) => ({
+        ...m,
+        imagem_url: '',
+        texto_completo: m.mensagem,
+        ordem: idx
+      }));
     }
-    const map = mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>;
-    const defaultList = map[selectedBase] || [];
-    return defaultList.map((m, idx) => ({
-      ...m,
-      imagem_url: '',
-      texto_completo: m.mensagem,
-      ordem: idx
-    }));
-  }, [selectedBase, dbTemplates]);
+
+    if (horarioSort === 'none') {
+      return baseList;
+    }
+
+    const toMinutes = (raw?: string): number | null => {
+      const norm = normalizeTime(raw);
+      if (!norm) return null;
+      const [hh, mm] = norm.split(':').map(Number);
+      if (isNaN(hh) || isNaN(mm)) return null;
+      return hh * 60 + mm;
+    };
+
+    return [...baseList].sort((a, b) => {
+      const minA = toMinutes(a.horario);
+      const minB = toMinutes(b.horario);
+      if (minA === null && minB === null) return (a.ordem ?? 0) - (b.ordem ?? 0);
+      if (minA === null) return 1; // Sem horário válido fica sempre no final
+      if (minB === null) return -1;
+      if (minA === minB) return (a.ordem ?? 0) - (b.ordem ?? 0);
+      return horarioSort === 'asc' ? minA - minB : minB - minA;
+    });
+  }, [selectedBase, dbTemplates, horarioSort]);
 
   // Busca o estado do checklist no Supabase para a data e base atuais
   const { data: checklistRows, isLoading, refetch } = useQuery({
@@ -1165,6 +1192,7 @@ export default function MensagensPage() {
 
   // Reordenação de Mensagens (Drag & Drop e Botões de Subir/Descer)
   const saveReorderedList = async (newList: MensagemItem[]) => {
+    setHorarioSort('none');
     const payloads = newList.map((item, idx) => ({
       data: '1970-01-01',
       base: selectedBase,
@@ -1703,7 +1731,7 @@ export default function MensagensPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-y-auto">
+    <div className="flex-1 flex flex-col h-full bg-[#f8fafc] dark:bg-[#0b1120] overflow-y-auto">
       {/* Toast Feedback */}
       {shareFeedbackMsg && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -1713,7 +1741,7 @@ export default function MensagensPage() {
       )}
 
       {/* HEADER SUPERIOR VISUALMENTE REFORMULADO (COM LOGO CR) */}
-      <div className="bg-white border-b border-slate-200 px-6 py-5 shrink-0 shadow-xs">
+      <div className="bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 px-6 py-5 shrink-0 shadow-xs">
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           {/* Esquerda: Logo CR + Título do Sistema */}
           <div className="flex items-center gap-3.5">
@@ -1722,15 +1750,15 @@ export default function MensagensPage() {
             </div>
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                   CR Task • Envio de Mensagens
                 </h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   Tempo Real
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Programação e acompanhamento diário de comunicados nas bases operacionais
               </p>
             </div>
@@ -1739,7 +1767,7 @@ export default function MensagensPage() {
           {/* Direita: Seletor de Base (Pills), Data e Ações */}
           <div className="flex flex-wrap items-center gap-3">
             {/* Seletor de Bases como Pills Elegantes */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 shadow-inner">
+            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
               {bases.map(b => {
                 const isSelected = selectedBase === b;
                 return (
@@ -1750,7 +1778,7 @@ export default function MensagensPage() {
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
                     }`}
                   >
                     {b}
@@ -1760,13 +1788,13 @@ export default function MensagensPage() {
             </div>
 
             {/* Seletor de Data */}
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-xs">
+            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
               <Calendar className="w-4 h-4 text-slate-400" />
               <input
                 type="date"
                 value={selectedDate}
                 onChange={e => setSelectedDate(e.target.value)}
-                className="bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
               />
             </div>
 
@@ -1795,15 +1823,15 @@ export default function MensagensPage() {
             <button
               onClick={handleDownloadImage}
               disabled={isGeneratingImage}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
               title="Baixar imagem em formato PNG"
             >
-              <Download className="w-4 h-4 text-slate-500" />
+              <Download className="w-4 h-4 text-slate-500 dark:text-slate-300" />
               <span className="hidden sm:inline">Baixar PNG</span>
             </button>
 
             {/* Controle de Alarme Sonoro de Horário */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
               <button
                 type="button"
                 onClick={() => {
@@ -1815,7 +1843,7 @@ export default function MensagensPage() {
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   isAlarmSoundEnabled
                     ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60'
+                    : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700'
                 }`}
                 title={isAlarmSoundEnabled ? 'Alarme sonoro ativado (clique para mutar)' : 'Alarme sonoro mudo (clique para ativar)'}
               >
@@ -1831,10 +1859,10 @@ export default function MensagensPage() {
                   setShareFeedbackMsg('Toque de teste do alarme emitido!');
                   setTimeout(() => setShareFeedbackMsg(''), 2500);
                 }}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-all cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
                 title="Testar sinal sonoro de alarme"
               >
-                <Volume2 className="w-3.5 h-3.5 text-blue-600" />
+                <Volume2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span className="hidden sm:inline">Testar Som</span>
               </button>
             </div>
@@ -1843,7 +1871,7 @@ export default function MensagensPage() {
             <button
               type="button"
               onClick={() => setIsDesktopModalOpen(true)}
-              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
               title="Baixar Aplicativo CR Task para Windows (Fica na bandeja do sistema ^ igual ao Slack e toca alarme em 2º plano)"
             >
               <Monitor className="w-3.5 h-3.5 text-emerald-400" />
@@ -1854,10 +1882,10 @@ export default function MensagensPage() {
             <button
               type="button"
               onClick={() => setIsExtensionModalOpen(true)}
-              className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+              className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/80 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
               title="Baixar extensão do Chrome para colar Imagem + Texto juntos em 1 único Ctrl+V no WhatsApp Web"
             >
-              <Download className="w-3.5 h-3.5 text-indigo-600" />
+              <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               <span className="hidden sm:inline">Extensão WhatsApp</span>
             </button>
 
@@ -1867,7 +1895,7 @@ export default function MensagensPage() {
                 refetch();
                 refetchTemplates();
               }}
-              className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl transition-colors cursor-pointer"
               title="Atualizar dados da nuvem"
             >
               <RefreshCw className="w-4 h-4" />
@@ -1880,24 +1908,24 @@ export default function MensagensPage() {
       <div className="max-w-7xl mx-auto w-full p-6 space-y-6">
         
         {/* CARD DA EQUIPE RESPONSÁVEL COM SELEÇÃO DIRECIONADA POR CARGO */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 mb-5 gap-3">
+        <div className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-2xl p-6 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 dark:border-slate-700/80 pb-4 mb-5 gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+              <div className="p-2 bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 rounded-xl border border-transparent dark:border-blue-800/60">
                 <Users className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide">
                   Equipe Responsável da Base • {selectedBase}
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Equipe operacional compartilhada e sincronizada para todas as regiões ({bases.join(', ')})
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs">
               <span className="text-slate-400">Usuário conectado:</span>
-              <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+              <span className="font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
                 {currentUserName}
               </span>
             </div>
@@ -1907,7 +1935,7 @@ export default function MensagensPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             
             {/* 1. Supervisor */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Supervisor da Base"
                 cargo="Supervisão"
@@ -1918,7 +1946,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 2. Analistas */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Analistas"
                 cargo="Analistas"
@@ -1930,7 +1958,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 3. Assistente */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Assistente"
                 cargo="Assistentes"
@@ -1941,7 +1969,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 4. Resp. Manhã */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Responsável: Manhã"
                 cargo="Auxiliares"
@@ -1953,7 +1981,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 5. Intermédio */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Responsável: Intermédio"
                 cargo="Auxiliares"
@@ -1965,7 +1993,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 6. Resp. Tarde */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Responsável: Tarde"
                 cargo="Auxiliares"
@@ -1977,7 +2005,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 7. Apoio Manhã */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Apoio: Manhã"
                 cargo="Auxiliares"
@@ -1989,7 +2017,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 8. Apoio Intermédio */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Apoio: Intermédio"
                 cargo="Auxiliares"
@@ -2001,7 +2029,7 @@ export default function MensagensPage() {
             </div>
 
             {/* 9. Apoio Tarde */}
-            <div className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1 hover:border-slate-300 transition-colors">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 rounded-xl space-y-1 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <CargoCollaboratorSelect
                 label="Apoio: Tarde"
                 cargo="Auxiliares"
@@ -2014,24 +2042,68 @@ export default function MensagensPage() {
           </div>
         </div>
 
-        {/* BARRA DE PROGRESSO & GESTÃO DA BASE */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* BARRA DE PROGRESSO, FILTRO DE HORÁRIOS & GESTÃO DA BASE */}
+        <div className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-2xl p-4 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0 border border-blue-100">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/80 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 border border-blue-100 dark:border-blue-800/60">
               <Clock className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Progresso de Disparos • {selectedBase}
               </span>
-              <div className="text-sm font-black text-slate-900">
+              <div className="text-sm font-black text-slate-900 dark:text-white">
                 {checkedCount} de {totalMsgs} comunicados enviados ({progressPct}%)
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="w-52 bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Filtro / Classificação por Horário (Menor -> Maior e Maior -> Menor) */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                <span>Horário:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setHorarioSort(prev => prev === 'asc' ? 'none' : 'asc')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  horarioSort === 'asc'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700'
+                }`}
+                title="Ordenar horários do menor para o maior (06:00 → 23:00)"
+              >
+                <ArrowUp className="w-3 h-3" />
+                <span>Menor → Maior</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHorarioSort(prev => prev === 'desc' ? 'none' : 'desc')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  horarioSort === 'desc'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700'
+                }`}
+                title="Ordenar horários do maior para o menor (23:00 → 06:00)"
+              >
+                <ArrowDown className="w-3 h-3" />
+                <span>Maior → Menor</span>
+              </button>
+              {horarioSort !== 'none' && (
+                <button
+                  type="button"
+                  onClick={() => setHorarioSort('none')}
+                  className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                  title="Voltar para a ordem personalizada"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            <div className="w-40 sm:w-48 bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-200 dark:border-slate-700">
               <div
                 className="bg-emerald-500 h-3 rounded-full transition-all duration-500 shadow-xs"
                 style={{ width: `${progressPct}%` }}
@@ -2041,7 +2113,7 @@ export default function MensagensPage() {
             {/* Botão Zerar Checks de Hoje */}
             <button
               onClick={handleResetDayChecks}
-              className="text-xs text-slate-500 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-red-200 flex items-center gap-1.5 font-bold transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
+              className="text-xs text-slate-500 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 flex items-center gap-1.5 font-bold transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
               title="Zerar os checks de hoje desta base"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-500" />
@@ -2051,7 +2123,7 @@ export default function MensagensPage() {
         </div>
 
         {/* TABELA DE CHECKLIST OPERACIONAL */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <div className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -2062,13 +2134,32 @@ export default function MensagensPage() {
                   <th className="py-3.5 px-4 text-center w-[130px] border-r border-[#1E3A56]">Último Check</th>
                   <th className="py-3.5 px-4 text-center w-[130px] border-r border-[#1E3A56]">Tipo</th>
                   <th className="py-3.5 px-6 border-r border-[#1E3A56]">Mensagens (Clique para Anexo e Texto)</th>
-                  <th className="py-3.5 px-4 text-center w-[90px] border-r border-[#1E3A56]">Horário</th>
+                  <th
+                    onClick={() =>
+                      setHorarioSort(prev =>
+                        prev === 'none' ? 'asc' : prev === 'asc' ? 'desc' : 'none'
+                      )
+                    }
+                    className="py-3.5 px-4 text-center w-[125px] border-r border-[#1E3A56] cursor-pointer hover:bg-[#153454] transition-colors select-none"
+                    title="Clique para ordenar por horário (Menor → Maior / Maior → Menor / Padrão)"
+                  >
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>Horário</span>
+                      {horarioSort === 'asc' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : horarioSort === 'desc' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-400" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </div>
+                  </th>
                   <th className="py-3.5 px-4 text-center w-[70px] border-r border-[#1E3A56]">Check</th>
                   <th className="py-3.5 px-6 text-center w-[220px] border-r border-[#1E3A56]">Horário Check / Envio</th>
                   <th className="py-3.5 px-3 text-center w-[90px]">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 text-xs">
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/80 text-xs">
                 {isLoading ? (
                   <tr>
                     <td colSpan={8} className="text-center py-12 text-slate-400 font-medium">
@@ -2081,7 +2172,7 @@ export default function MensagensPage() {
                       <div>Nenhuma mensagem cadastrada para a base {selectedBase}.</div>
                       <button
                         onClick={openAddModal}
-                        className="text-blue-600 hover:underline font-bold text-xs cursor-pointer"
+                        className="text-blue-600 dark:text-blue-400 hover:underline font-bold text-xs cursor-pointer"
                       >
                         + Clique aqui para adicionar a primeira mensagem
                       </button>
@@ -2120,20 +2211,20 @@ export default function MensagensPage() {
                         }}
                         className={`transition-colors group ${
                           isBeingDragged 
-                            ? 'opacity-40 bg-blue-100/60' 
+                            ? 'opacity-40 bg-blue-100/60 dark:bg-blue-950/40' 
                             : isDragTarget 
-                            ? 'border-t-2 border-t-blue-600 bg-blue-50/80' 
-                            : index % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'
-                        } hover:bg-blue-50/40`}
+                            ? 'border-t-2 border-t-blue-600 bg-blue-50/80 dark:bg-blue-950/60' 
+                            : index % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-800/35' : 'bg-white dark:bg-slate-900/20'
+                        } hover:bg-blue-50/40 dark:hover:bg-slate-800/80`}
                       >
                         {/* Coluna de Reordenação (Arraste + Botões Subir/Descer) */}
                         <td 
-                          className="py-2 px-1 text-center border-r border-slate-100 select-none"
+                          className="py-2 px-1 text-center border-r border-slate-100 dark:border-slate-700/80 select-none"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center justify-center gap-0.5">
                             <div 
-                              className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                              className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
                               title="Arraste para cima ou para baixo para reordenar"
                             >
                               <GripVertical className="w-4 h-4" />
@@ -2143,7 +2234,7 @@ export default function MensagensPage() {
                                 type="button"
                                 disabled={index === 0}
                                 onClick={() => handleMoveItem(index, 'up')}
-                                className="p-0.5 text-slate-300 hover:text-slate-700 disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                                className="p-0.5 text-slate-300 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
                                 title="Mover para cima"
                               >
                                 <ArrowUp className="w-3 h-3" />
@@ -2152,7 +2243,7 @@ export default function MensagensPage() {
                                 type="button"
                                 disabled={index === mensagensList.length - 1}
                                 onClick={() => handleMoveItem(index, 'down')}
-                                className="p-0.5 text-slate-300 hover:text-slate-700 disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                                className="p-0.5 text-slate-300 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
                                 title="Mover para baixo"
                               >
                                 <ArrowDown className="w-3 h-3" />
@@ -2162,12 +2253,12 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Último Check */}
-                        <td className="py-3 px-4 text-center font-bold border-r border-slate-100 whitespace-nowrap">
+                        <td className="py-3 px-4 text-center font-bold border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
                           <span
                             className={
                               item.ultimo_check.includes('(')
-                                ? 'text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-md text-[11px]'
-                                : 'text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md'
+                                ? 'text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/70 border border-red-200 dark:border-red-800/70 px-2.5 py-1 rounded-md text-[11px]'
+                                : 'text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md'
                             }
                           >
                             {item.ultimo_check}
@@ -2175,12 +2266,12 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Tipo */}
-                        <td className="py-3 px-4 text-center border-r border-slate-100 whitespace-nowrap">
+                        <td className="py-3 px-4 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
                           <span
                             className={`px-2 py-1 rounded-md font-bold text-[10px] tracking-wider uppercase border ${
                               item.tipo.includes('STATUS')
-                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : 'bg-teal-50 text-teal-700 border-teal-200'
+                                ? 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/70'
+                                : 'bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/70'
                             }`}
                           >
                             {item.tipo}
@@ -2189,30 +2280,30 @@ export default function MensagensPage() {
 
                         {/* Mensagens (Clicável para abrir visualizador de anexo + texto + copiar) */}
                         <td 
-                          className="py-3 px-6 border-r border-slate-100 cursor-pointer group/cell hover:bg-blue-50/70 transition-colors"
+                          className="py-3 px-6 border-r border-slate-100 dark:border-slate-700/80 cursor-pointer group/cell hover:bg-blue-50/70 dark:hover:bg-slate-800/90 transition-colors"
                           onClick={() => openDetailModal(item)}
                           title="Clique para abrir o comunicado, ver imagem e copiar texto"
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2.5">
-                              <span className="font-bold text-slate-900 group-hover/cell:text-blue-600 transition-colors">
+                              <span className="font-bold text-slate-900 dark:text-slate-100 group-hover/cell:text-blue-600 dark:group-hover/cell:text-blue-400 transition-colors">
                                 {item.mensagem}
                               </span>
                               {item.imagem_url && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800/70">
                                   <ImageIcon className="w-3 h-3" />
                                   <span>Imagem</span>
                                 </span>
                               )}
                               {item.texto_completo && item.texto_completo !== item.mensagem && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800/70">
                                   <FileText className="w-3 h-3" />
                                   <span>Texto</span>
                                 </span>
                               )}
                             </div>
 
-                            <div className="opacity-0 group-hover/cell:opacity-100 transition-opacity flex items-center gap-1 text-[11px] font-semibold text-blue-600 bg-white px-2 py-1 rounded-lg border border-blue-200 shadow-2xs shrink-0">
+                            <div className="opacity-0 group-hover/cell:opacity-100 transition-opacity flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-300 bg-white dark:bg-slate-800 px-2 py-1 rounded-lg border border-blue-200 dark:border-blue-700 shadow-2xs shrink-0">
                               <Eye className="w-3.5 h-3.5" />
                               <span>Abrir</span>
                             </div>
@@ -2220,7 +2311,7 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Horário */}
-                        <td className="py-3 px-4 text-center text-slate-600 font-semibold border-r border-slate-100 whitespace-nowrap">
+                        <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-300 font-semibold border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             <Clock className="w-3.5 h-3.5 text-slate-400" />
                             <span>{item.horario}</span>
@@ -2228,14 +2319,14 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Checkbox Interativo */}
-                        <td className="py-3 px-4 text-center border-r border-slate-100">
+                        <td className="py-3 px-4 text-center border-r border-slate-100 dark:border-slate-700/80">
                           <button
                             type="button"
                             onClick={() => handleToggleCheck(item.id)}
                             className={`w-6 h-6 rounded-md border flex items-center justify-center mx-auto transition-all cursor-pointer ${
                               isChecked
                                 ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
-                                : 'bg-white border-slate-300 hover:border-blue-500'
+                                : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 hover:border-blue-500'
                             }`}
                           >
                             {isChecked && <Check className="w-4 h-4 stroke-[3]" />}
@@ -2243,15 +2334,15 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Horário Check / Envio (Exibe horário e quem marcou) */}
-                        <td className="py-3 px-6 text-center border-r border-slate-100 whitespace-nowrap">
+                        <td className="py-3 px-6 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
                           {isChecked ? (
-                            <span className="text-emerald-700 font-bold text-xs">
+                            <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xs">
                               ✓ {state.horario_envio} {state.enviado_por && `(${state.enviado_por})`}
                             </span>
                           ) : item.obs ? (
-                            <span className="text-red-500 font-semibold">{item.obs}</span>
+                            <span className="text-red-500 dark:text-red-400 font-semibold">{item.obs}</span>
                           ) : (
-                            <span className="text-slate-300">-</span>
+                            <span className="text-slate-300 dark:text-slate-600">-</span>
                           )}
                         </td>
 
@@ -2261,7 +2352,7 @@ export default function MensagensPage() {
                             {(item.imagem_url || item.texto_completo) && (
                               <button
                                 onClick={() => handleCopyAllToClipboard(item.imagem_url, item.texto_completo || item.mensagem)}
-                                className="p-1 hover:bg-emerald-100 text-emerald-600 rounded-lg transition-colors cursor-pointer"
+                                className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors cursor-pointer"
                                 title="Copiar Imagem + Texto juntos para colar no WhatsApp"
                               >
                                 <Copy className="w-3.5 h-3.5" />
@@ -2269,21 +2360,21 @@ export default function MensagensPage() {
                             )}
                             <button
                               onClick={() => openDetailModal(item)}
-                              className="p-1 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors cursor-pointer"
+                              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-950/70 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer"
                               title="Visualizar comunicado e copiar"
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => openEditModal(item)}
-                              className="p-1 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors cursor-pointer"
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
                               title="Editar Configurações da Mensagem"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleDeleteMessage(item)}
-                              className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
+                              className="p-1 hover:bg-red-100 dark:hover:bg-red-950/70 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors cursor-pointer"
                               title="Remover Mensagem"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -2930,34 +3021,34 @@ export default function MensagensPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-xs text-indigo-950 leading-relaxed">
-                Com esta extensão ativa no Chrome ou Edge, sempre que você clicar em <strong>Copiar</strong> no CR Task e apertar <kbd className="bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-mono font-bold">Ctrl+V</kbd> no WhatsApp Web, ela preenche a <strong>Imagem e o Texto da legenda juntos automaticamente</strong>.
+              <div className="bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4 text-xs text-indigo-950 dark:text-indigo-200 leading-relaxed">
+                Com esta extensão ativa no Chrome ou Edge, sempre que você clicar em <strong>Copiar</strong> no CR Task e apertar <kbd className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-700 font-mono font-bold">Ctrl+V</kbd> no WhatsApp Web, ela preenche a <strong>Imagem e o Texto da legenda juntos automaticamente</strong>.
               </div>
 
-              <div className="space-y-2.5 text-xs text-slate-700">
-                <p className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
+              <div className="space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
+                <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px]">
                   Passo a passo para ativar (leva 30 segundos):
                 </p>
-                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">1</span>
                   <span>Clique no botão abaixo para baixar o arquivo <strong>extensao-crtask-whatsapp.zip</strong> e extraia ele em uma pasta no PC.</span>
                 </div>
-                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">2</span>
                   <span>No navegador Chrome, digite <strong>chrome://extensions</strong> na barra de endereço e ative a chave <strong>"Modo do desenvolvedor"</strong> no topo direito.</span>
                 </div>
-                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">3</span>
-                  <span>Clique em <strong>"Carregar sem compactação"</strong>, selecione a pasta extraída e atualize a aba do WhatsApp Web (<kbd className="bg-white px-1 py-0.5 rounded border border-slate-300">F5</kbd>).</span>
+                  <span>Clique em <strong>"Carregar sem compactação"</strong>, selecione a pasta extraída e atualize a aba do WhatsApp Web (<kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600">F5</kbd>).</span>
                 </div>
               </div>
             </div>
 
-            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3">
+            <div className="bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => setIsExtensionModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs cursor-pointer"
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 font-bold text-xs cursor-pointer"
               >
                 Fechar
               </button>
@@ -2980,7 +3071,7 @@ export default function MensagensPage() {
           ========================================================================= */}
       {isDesktopModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-[#1e293b] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
             <div className="bg-[#0B2238] px-6 py-4 flex items-center justify-between text-white">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
@@ -3005,31 +3096,31 @@ export default function MensagensPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-950 leading-relaxed">
-                O <strong>CR Task Desktop (.exe)</strong> transforma o sistema em um aplicativo dedicado para o PC. Ao minimizar (<kbd className="bg-white px-1.5 py-0.5 rounded border border-emerald-200 font-mono font-bold">_</kbd>), ele vai direto para a <strong>setinha de ícones ocultos (<kbd className="bg-white px-1 py-0.5 rounded border border-emerald-200 font-mono font-bold">^</kbd>) perto do relógio</strong> (igual ao Slack) e continua rodando em 2º plano sem ocupar a barra de tarefas!
+              <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4 text-xs text-emerald-950 dark:text-emerald-200 leading-relaxed">
+                O <strong>CR Task Desktop (.exe)</strong> transforma o sistema em um aplicativo dedicado para o PC. Ao minimizar (<kbd className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 font-mono font-bold">_</kbd>), ele vai direto para a <strong>setinha de ícones ocultos (<kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 font-mono font-bold">^</kbd>) perto do relógio</strong> (igual ao Slack) e continua rodando em 2º plano sem ocupar a barra de tarefas!
               </div>
 
-              <div className="space-y-2.5 text-xs text-slate-700">
-                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
+                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
-                  <span><strong>Alarmes sempre ativos:</strong> Mesmo oculto na bandeja (<kbd className="bg-white px-1 py-0.5 rounded border border-slate-300">^</kbd>), quando dá o horário de uma mensagem o aplicativo toca a musiquinha, exibe notificação no Windows e abre a janela na tela automaticamente.</span>
+                  <span><strong>Alarmes sempre ativos:</strong> Mesmo oculto na bandeja (<kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600">^</kbd>), quando dá o horário de uma mensagem o aplicativo toca a musiquinha, exibe notificação no Windows e abre a janela na tela automaticamente.</span>
                 </div>
-                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
                   <span><strong>Atualização 100% Automática:</strong> Você instala apenas 1 única vez. Qualquer melhoria futura no sistema ou nas mensagens já abre atualizada na hora.</span>
                 </div>
-                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
                   <span><strong>Cria atalho sozinho:</strong> Ao abrir o arquivo baixado, ele já cria o atalho <strong>"CR Task"</strong> com a logo na sua Área de Trabalho e configura para iniciar junto com o Windows.</span>
                 </div>
               </div>
             </div>
 
-            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3">
+            <div className="bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => setIsDesktopModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs cursor-pointer"
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 font-bold text-xs cursor-pointer"
               >
                 Fechar
               </button>

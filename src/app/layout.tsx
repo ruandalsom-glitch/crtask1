@@ -7,8 +7,16 @@ import { AppLayout } from "@/components/layout/AppLayout";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "CR Admin Workspace",
-  description: "Painel de administração CR",
+  title: "CR Task • Gestão Operacional",
+  description: "Painel de administração e envio de mensagens CR Task",
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/logo.png', type: 'image/png' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({

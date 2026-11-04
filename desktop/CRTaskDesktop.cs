@@ -66,20 +66,35 @@ namespace CRTaskDesktop
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", EntryPoint = "SetClassLongPtr")]
+        private static extern IntPtr SetClassLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll", EntryPoint = "SetClassLong")]
+        private static extern uint SetClassLong32(IntPtr hWnd, int nIndex, uint dwNewLong);
+
         private const int SW_HIDE = 0;
         private const int SW_SHOWNORMAL = 1;
         private const int SW_RESTORE = 9;
         private const uint WM_CLOSE = 0x0010;
+        private const uint WM_SETICON = 0x0080;
+        private const int ICON_SMALL = 0;
+        private const int ICON_BIG = 1;
+        private const int GCLP_HICON = -14;
+        private const int GCLP_HICONSM = -34;
 
         private const string APP_URL = "https://crtask1.vercel.app/mensagens";
         private const string RUN_REGISTRY_KEY = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string RUN_VALUE_NAME = "CRTaskDesktop";
 
         private NotifyIcon trayIcon;
+        private Icon appIcon;
         private System.Windows.Forms.Timer monitorTimer;
         private EventWaitHandle showEvent;
         private IntPtr appHwnd = IntPtr.Zero;
-        private bool isHiddenToTray = false;
+        private IntPtr lastIconAppliedHwnd = IntPtr.Zero;
         private bool isExiting = false;
         private bool shownFirstMinimizeTip = false;
         private string lastAlarmTitle = "";
@@ -101,7 +116,7 @@ namespace CRTaskDesktop
 
             EnsureInstalledAndShortcut();
 
-            Icon appIcon = LoadEmbeddedIcon();
+            appIcon = LoadEmbeddedIcon();
 
             ContextMenuStrip menu = new ContextMenuStrip();
 
@@ -176,6 +191,29 @@ namespace CRTaskDesktop
             }
             catch { }
             return SystemIcons.Application;
+        }
+
+        private void ApplyWindowIcon(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero || appIcon == null) return;
+            try
+            {
+                IntPtr hIcon = appIcon.Handle;
+                SendMessage(hWnd, WM_SETICON, (IntPtr)ICON_BIG, hIcon);
+                SendMessage(hWnd, WM_SETICON, (IntPtr)ICON_SMALL, hIcon);
+                if (IntPtr.Size == 8)
+                {
+                    SetClassLongPtr64(hWnd, GCLP_HICON, hIcon);
+                    SetClassLongPtr64(hWnd, GCLP_HICONSM, hIcon);
+                }
+                else
+                {
+                    SetClassLong32(hWnd, GCLP_HICON, (uint)hIcon.ToInt32());
+                    SetClassLong32(hWnd, GCLP_HICONSM, (uint)hIcon.ToInt32());
+                }
+                lastIconAppliedHwnd = hWnd;
+            }
+            catch { }
         }
 
         private void EnsureInstalledAndShortcut()
@@ -383,7 +421,6 @@ namespace CRTaskDesktop
             if (appHwnd != IntPtr.Zero && IsWindow(appHwnd))
             {
                 ShowWindow(appHwnd, SW_HIDE);
-                isHiddenToTray = true;
 
                 if (showFirstTimeBalloon && !shownFirstMinimizeTip)
                 {
@@ -403,20 +440,20 @@ namespace CRTaskDesktop
             launchHiddenNext = false;
             if (appHwnd != IntPtr.Zero && IsWindow(appHwnd))
             {
+                ApplyWindowIcon(appHwnd);
                 ShowWindow(appHwnd, SW_RESTORE);
                 ShowWindow(appHwnd, SW_SHOWNORMAL);
                 SetForegroundWindow(appHwnd);
-                isHiddenToTray = false;
             }
             else
             {
                 appHwnd = FindCRTaskWindow();
                 if (appHwnd != IntPtr.Zero && IsWindow(appHwnd))
                 {
+                    ApplyWindowIcon(appHwnd);
                     ShowWindow(appHwnd, SW_RESTORE);
                     ShowWindow(appHwnd, SW_SHOWNORMAL);
                     SetForegroundWindow(appHwnd);
-                    isHiddenToTray = false;
                 }
                 else
                 {
@@ -439,14 +476,17 @@ namespace CRTaskDesktop
             {
                 appHwnd = FindCRTaskWindow();
 
-                if (appHwnd != IntPtr.Zero && launchHiddenNext)
+                if (appHwnd != IntPtr.Zero)
                 {
-                    launchHiddenNext = false;
-                    HideAppToTray(false);
+                    ApplyWindowIcon(appHwnd);
+                    if (launchHiddenNext)
+                    {
+                        launchHiddenNext = false;
+                        HideAppToTray(false);
+                    }
                 }
-                else if (appHwnd == IntPtr.Zero && (DateTime.Now - lastLaunchAttempt).TotalSeconds > 6)
+                else if ((DateTime.Now - lastLaunchAttempt).TotalSeconds > 6)
                 {
-                    // Respawn hidden in background if user clicked X so alarms never stop
                     launchHiddenNext = true;
                     LaunchBrowserApp();
                     if (!shownFirstMinimizeTip)
@@ -463,13 +503,20 @@ namespace CRTaskDesktop
                 return;
             }
 
-            // If user clicked Minimize (_), hide window from Taskbar into the System Tray (^)
+            if (lastIconAppliedHwnd != appHwnd)
+            {
+                ApplyWindowIcon(appHwnd);
+            }
+
+            // Re-apply window icon periodically in case browser page navigation resets it
+            SendMessage(appHwnd, WM_SETICON, (IntPtr)ICON_BIG, appIcon.Handle);
+            SendMessage(appHwnd, WM_SETICON, (IntPtr)ICON_SMALL, appIcon.Handle);
+
             if (IsIconic(appHwnd))
             {
                 HideAppToTray(true);
             }
 
-            // Monitor window title for "[ALARME]"
             string currentTitle = GetWindowTitle(appHwnd);
             if (currentTitle.IndexOf("[ALARME]", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -492,11 +539,9 @@ namespace CRTaskDesktop
                         ToolTipIcon.Warning
                     );
 
-                    // Restore and focus window automatically when alarm rings
                     ShowWindow(appHwnd, SW_RESTORE);
                     ShowWindow(appHwnd, SW_SHOWNORMAL);
                     SetForegroundWindow(appHwnd);
-                    isHiddenToTray = false;
                 }
             }
             else

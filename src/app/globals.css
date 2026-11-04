@@ -69,6 +69,12 @@ html.dark, html.dark body {
 }
 
 /* Override de backgrounds em Hexadecimal e Tailwind */
+html.dark .bg-\[\#f8fafc\],
+html.dark [class*="bg-[#f8fafc]"] {
+  background-color: #0b1120 !important;
+  color: #f8fafc !important;
+}
+
 html.dark .bg-white,
 html.dark .bg-\[\#f7f8f9\],
 html.dark .bg-\[\#f5f6f8\],
@@ -79,7 +85,9 @@ html.dark [class*="bg-[#f5f6f8]"] {
 }
 
 html.dark .bg-slate-50,
-html.dark .bg-slate-50\/50 {
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/80 {
   background-color: #0f172a !important;
 }
 
@@ -138,11 +146,20 @@ html.dark [class*="hover:bg-slate-100"]:hover {
 /* Entradas de Texto, Selects e Textareas */
 html.dark input[type="text"],
 html.dark input[type="search"],
+html.dark input[type="date"],
+html.dark input[type="time"],
+html.dark select,
+html.dark textarea {
+  color: #ffffff !important;
+  border-color: #475569 !important;
+  color-scheme: dark;
+}
+
+html.dark input[type="text"],
+html.dark input[type="search"],
 html.dark select,
 html.dark textarea {
   background-color: #1e293b !important;
-  color: #ffffff !important;
-  border-color: #475569 !important;
 }
 
 html.dark input::placeholder,
