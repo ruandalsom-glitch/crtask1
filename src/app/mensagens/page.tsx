@@ -1101,27 +1101,13 @@ export default function MensagensPage() {
     };
   }, [mensagensList, checksMap, selectedDate, selectedBase, dismissedAlarms, isAlarmSoundEnabled, activeAlarmItem]);
 
-  // Atualiza o título da janela (usado pelo App Desktop na Bandeja ^ para abrir e notificar no Windows)
+  // Atualiza o título da janela (usado pelo App Desktop na Bandeja ^ para abrir e notificar no Windows com a cor da região)
   useEffect(() => {
     if (typeof document === 'undefined') return;
     if (activeAlarmItem) {
       const msgTitle = activeAlarmItem.item.mensagem || 'Mensagem programada';
       const msgTime = activeAlarmItem.item.horario || '';
-      document.title = `🔔 [ALARME] ${msgTime ? msgTime + ' - ' : ''}${msgTitle} - CR Task`;
-
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        if (Notification.permission === 'granted') {
-          try {
-            const n = new Notification(`🔔 Hora de Enviar (${msgTime})`, {
-              body: `${msgTitle} • Base ${selectedBase}`,
-              icon: '/logo.png'
-            });
-            n.onclick = () => window.focus();
-          } catch {}
-        } else if (Notification.permission === 'default') {
-          Notification.requestPermission().catch(() => {});
-        }
-      }
+      document.title = `🔔 [ALARME] [BASE:${selectedBase.toUpperCase()}] ${msgTime ? msgTime + ' • ' : ''}${msgTitle} - CR Task`;
     } else {
       document.title = 'CR Task • Envio de Mensagens';
     }
@@ -1749,163 +1735,208 @@ export default function MensagensPage() {
         </div>
       )}
 
-      {/* HEADER SUPERIOR VISUALMENTE REFORMULADO (COM LOGO CR) */}
-      <div className="bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 px-6 py-5 shrink-0 shadow-xs">
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          {/* Esquerda: Logo CR + Título do Sistema */}
-          <div className="flex items-center gap-3.5">
-            <div className="w-13 h-13 bg-slate-950 rounded-2xl border border-slate-800 shadow-lg shadow-slate-900/10 p-1.5 flex items-center justify-center shrink-0 hover:scale-105 transition-transform">
-              <img src="/logo.png" alt="CR Task Logo" className="w-full h-full object-contain rounded-xl" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  CR Task • Envio de Mensagens
-                </h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Tempo Real
-                </span>
+      {/* HEADER SUPERIOR VISUALMENTE ORGANIZADO EM 2 LINHAS LIMPAS */}
+      <div className="bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 px-6 py-4 shrink-0 shadow-xs">
+        <div className="max-w-7xl mx-auto flex flex-col gap-3.5">
+          {/* LINHA 1: Identidade do Sistema (Esquerda) + Seletor de Região Colorido e Data (Direita) */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            {/* Esquerda: Logo CR + Título em Linha Única */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 bg-slate-950 rounded-2xl border border-slate-800 shadow-lg shadow-slate-900/10 p-1.5 flex items-center justify-center shrink-0">
+                <img src="/logo.png" alt="CR Task Logo" className="w-full h-full object-contain rounded-xl" />
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Programação e acompanhamento diário de comunicados nas bases operacionais
-              </p>
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                    CR Task • Envio de Mensagens
+                  </h1>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70 flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Tempo Real
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Programação e acompanhamento diário de comunicados nas bases operacionais
+                </p>
+              </div>
+            </div>
+
+            {/* Direita Linha 1: Seletor de Região com Cores Próprias + Data + Atualizar */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Seletor de Bases com Identidade de Cor por Região */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                {bases.map(b => {
+                  const isSelected = selectedBase === b;
+                  const activeColorClass =
+                    b === 'Sumarezinho'
+                      ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                      : b === 'Recreio'
+                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                      : 'bg-violet-600 text-white shadow-sm shadow-violet-600/30';
+                  const dotColorClass =
+                    b === 'Sumarezinho'
+                      ? isSelected ? 'bg-white' : 'bg-blue-500'
+                      : b === 'Recreio'
+                      ? isSelected ? 'bg-white' : 'bg-emerald-500'
+                      : isSelected ? 'bg-white' : 'bg-violet-500';
+
+                  return (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setSelectedBase(b)}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isSelected
+                          ? activeColorClass
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${dotColorClass}`}></span>
+                      <span>{b}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Seletor de Data */}
+              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={e => setSelectedDate(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                />
+              </div>
+
+              {/* Atualizar */}
+              <button
+                onClick={() => {
+                  refetch();
+                  refetchTemplates();
+                }}
+                className="p-2 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl transition-colors cursor-pointer"
+                title="Atualizar dados da nuvem"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
-          {/* Direita: Seletor de Base (Pills), Data e Ações */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Seletor de Bases como Pills Elegantes */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
-              {bases.map(b => {
-                const isSelected = selectedBase === b;
-                return (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => setSelectedBase(b)}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
-                    }`}
-                  >
-                    {b}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Seletor de Data */}
-            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={e => setSelectedDate(e.target.value)}
-                className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
-              />
-            </div>
-
-            {/* Botão Adicionar Nova Mensagem */}
-            <button
-              onClick={openAddModal}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition-all cursor-pointer hover:shadow-blue-500/20 active:scale-95"
-              title="Adicionar nova mensagem à programação desta base"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nova Mensagem</span>
-            </button>
-
-            {/* Botão Copiar Imagem WhatsApp */}
-            <button
-              onClick={handleCopyImage}
-              disabled={isGeneratingImage}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all cursor-pointer hover:shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
-              title="Gera imagem e copia para colar (Ctrl+V) no WhatsApp"
-            >
-              <Copy className="w-4 h-4" />
-              <span>{isGeneratingImage ? 'Gerando...' : 'Copiar Imagem (WhatsApp)'}</span>
-            </button>
-
-            {/* Botão Baixar PNG */}
-            <button
-              onClick={handleDownloadImage}
-              disabled={isGeneratingImage}
-              className="flex items-center gap-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-              title="Baixar imagem em formato PNG"
-            >
-              <Download className="w-4 h-4 text-slate-500 dark:text-slate-300" />
-              <span className="hidden sm:inline">Baixar PNG</span>
-            </button>
-
-            {/* Controle de Alarme Sonoro de Horário */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !isAlarmSoundEnabled;
-                  setIsAlarmSoundEnabled(next);
-                  if (!next) stopAlarmSound();
-                  else getAudioContext();
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  isAlarmSoundEnabled
-                    ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
-                    : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700'
+          {/* LINHA 2: Barra de Ferramentas Organizada (Destaque da Região + Alarme + App à esquerda | Ações à direita) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+            {/* Esquerda Linha 2: Badge da Região em Destaque + Alarme + App Desktop */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Destaque Visual da Região Selecionada */}
+              <div
+                className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 border shadow-2xs ${
+                  selectedBase === 'Sumarezinho'
+                    ? 'bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                    : selectedBase === 'Recreio'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-violet-50 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800'
                 }`}
-                title={isAlarmSoundEnabled ? 'Alarme sonoro ativado (clique para mutar)' : 'Alarme sonoro mudo (clique para ativar)'}
               >
-                {isAlarmSoundEnabled ? <BellRing className="w-3.5 h-3.5 animate-bounce" /> : <BellOff className="w-3.5 h-3.5" />}
-                <span>{isAlarmSoundEnabled ? 'Alarme Ativo' : 'Alarme Mudo'}</span>
-              </button>
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    selectedBase === 'Sumarezinho'
+                      ? 'bg-blue-600'
+                      : selectedBase === 'Recreio'
+                      ? 'bg-emerald-600'
+                      : 'bg-violet-600'
+                  }`}
+                ></span>
+                <span>REGIÃO: {selectedBase.toUpperCase()}</span>
+              </div>
 
+              {/* Controle de Alarme Sonoro de Horário */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isAlarmSoundEnabled;
+                    setIsAlarmSoundEnabled(next);
+                    if (!next) stopAlarmSound();
+                    else getAudioContext();
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    isAlarmSoundEnabled
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700'
+                  }`}
+                  title={isAlarmSoundEnabled ? 'Alarme sonoro ativado (clique para mutar)' : 'Alarme sonoro mudo (clique para ativar)'}
+                >
+                  {isAlarmSoundEnabled ? <BellRing className="w-3.5 h-3.5 animate-bounce" /> : <BellOff className="w-3.5 h-3.5" />}
+                  <span>{isAlarmSoundEnabled ? 'Alarme Ativo' : 'Alarme Mudo'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    getAudioContext();
+                    playAlarmTune();
+                    if (typeof document !== 'undefined') {
+                      document.title = `🔔 [ALARME] [BASE:${selectedBase.toUpperCase()}] 08:00 • Teste de Alarme (${selectedBase}) - CR Task`;
+                      setTimeout(() => {
+                        if (!activeAlarmItem) {
+                          document.title = 'CR Task • Envio de Mensagens';
+                        }
+                      }, 5000);
+                    }
+                    setShareFeedbackMsg(`Notificação de teste emitida para ${selectedBase}!`);
+                    setTimeout(() => setShareFeedbackMsg(''), 3000);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                  title="Testar sinal sonoro e card de notificação da região selecionada"
+                >
+                  <Volume2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>Testar Alarme</span>
+                </button>
+              </div>
+
+              {/* Botão App Desktop Windows (Bandeja do Sistema ^ + Auto-Legenda WhatsApp) */}
               <button
                 type="button"
-                onClick={async () => {
-                  getAudioContext();
-                  playAlarmTune();
-                  if (typeof document !== 'undefined') {
-                    document.title = `🔔 [ALARME] Teste de Alarme (${selectedBase}) - CR Task`;
-                    setTimeout(() => {
-                      if (!activeAlarmItem) {
-                        document.title = 'CR Task • Envio de Mensagens';
-                      }
-                    }, 5000);
-                  }
-                  setShareFeedbackMsg('Toque e notificação de teste emitidos!');
-                  setTimeout(() => setShareFeedbackMsg(''), 3000);
-                }}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
-                title="Testar sinal sonoro e notificação de alarme"
+                onClick={() => setIsDesktopModalOpen(true)}
+                className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+                title="Baixar Aplicativo CR Task para Windows (Fica na bandeja ^, toca alarme em 2º plano e já cola Imagem + Texto juntos no WhatsApp)"
               >
-                <Volume2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span className="hidden sm:inline">Testar Som</span>
+                <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+                <span>App Desktop (PC)</span>
               </button>
             </div>
 
-            {/* Botão App Desktop Windows (Bandeja do Sistema ^ + Auto-Legenda WhatsApp) */}
-            <button
-              type="button"
-              onClick={() => setIsDesktopModalOpen(true)}
-              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
-              title="Baixar Aplicativo CR Task para Windows (Fica na bandeja ^, toca alarme em 2º plano e já cola Imagem + Texto juntos no WhatsApp)"
-            >
-              <Monitor className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">App Desktop (PC)</span>
-            </button>
+            {/* Direita Linha 2: Ações Principais (Nova Mensagem + Copiar Tabela WhatsApp + Baixar PNG) */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={openAddModal}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition-all cursor-pointer hover:shadow-blue-500/20 active:scale-95"
+                title="Adicionar nova mensagem à programação desta base"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova Mensagem</span>
+              </button>
 
-            {/* Atualizar */}
-            <button
-              onClick={() => {
-                refetch();
-                refetchTemplates();
-              }}
-              className="p-2 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl transition-colors cursor-pointer"
-              title="Atualizar dados da nuvem"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
+              <button
+                onClick={handleCopyImage}
+                disabled={isGeneratingImage}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition-all cursor-pointer hover:shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
+                title="Gera imagem da tabela e copia para colar (Ctrl+V) no WhatsApp"
+              >
+                <Copy className="w-4 h-4" />
+                <span>{isGeneratingImage ? 'Gerando...' : 'Copiar Imagem (WhatsApp)'}</span>
+              </button>
+
+              <button
+                onClick={handleDownloadImage}
+                disabled={isGeneratingImage}
+                className="flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                title="Baixar imagem da tabela em formato PNG"
+              >
+                <Download className="w-4 h-4 text-slate-500 dark:text-slate-300" />
+                <span>Baixar PNG</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2850,27 +2881,43 @@ export default function MensagensPage() {
       )}
 
       {/* =========================================================================
-          POPUP DE ALARME DE HORÁRIO DE ENVIO DE MENSAGEM (COM SINAL SONORO E COPIAR)
+          POPUP DE ALARME DE HORÁRIO DE ENVIO DE MENSAGEM (COM COR POR REGIÃO)
           ========================================================================= */}
       {activeAlarmItem && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border-2 border-amber-500 animate-in zoom-in-95 duration-200">
-            {/* Top Banner de Alarme */}
-            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-6 py-4 flex items-center justify-between text-white">
+          <div
+            className={`bg-white dark:bg-[#1e293b] rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border-2 animate-in zoom-in-95 duration-200 ${
+              selectedBase === 'Sumarezinho'
+                ? 'border-blue-500'
+                : selectedBase === 'Recreio'
+                ? 'border-emerald-500'
+                : 'border-violet-500'
+            }`}
+          >
+            {/* Top Banner de Alarme Colorido por Região */}
+            <div
+              className={`px-6 py-4 flex items-center justify-between text-white ${
+                selectedBase === 'Sumarezinho'
+                  ? 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800'
+                  : selectedBase === 'Recreio'
+                  ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-800'
+                  : 'bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-900'
+              }`}
+            >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center border border-white/30 animate-bounce">
+                <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center border border-white/30 animate-bounce shrink-0">
                   <BellRing className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest bg-black/25 px-2 py-0.5 rounded-full">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-black uppercase tracking-wider bg-white text-slate-900 px-2.5 py-0.5 rounded-full shadow-xs">
+                      📍 REGIÃO: {selectedBase.toUpperCase()}
+                    </span>
+                    <span className="text-[10px] font-black uppercase tracking-widest bg-black/30 px-2 py-0.5 rounded-full">
                       Alarme de Envio
                     </span>
-                    <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">
-                      {selectedBase}
-                    </span>
                   </div>
-                  <h3 className="text-lg font-black tracking-tight text-white mt-0.5">
+                  <h3 className="text-lg font-black tracking-tight text-white mt-1">
                     Está na Hora de Enviar!
                   </h3>
                 </div>

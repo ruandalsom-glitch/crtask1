@@ -22,7 +22,6 @@ namespace CRTaskDesktop
             string installedExePath = Path.Combine(appDataFolder, "CR-Task-Desktop.exe");
             string currentExe = Application.ExecutablePath;
 
-            // If running from Downloads/Project (not the installed path), stop any older running instance so we upgrade cleanly
             if (!string.Equals(Path.GetFullPath(currentExe), Path.GetFullPath(installedExePath), StringComparison.OrdinalIgnoreCase))
             {
                 try
@@ -231,7 +230,7 @@ namespace CRTaskDesktop
             shortcutItem.Click += (s, e) =>
             {
                 CreateDesktopShortcut();
-                ShowNativeAlarmCard("Atalho 'CR Task' criado na Área de Trabalho com sucesso!", "ATALHO CRIADO • CR TASK");
+                ShowNativeAlarmCard("Atalho 'CR Task' criado na Área de Trabalho com sucesso!", "SUMAREZINHO");
             };
             menu.Items.Add(shortcutItem);
 
@@ -260,7 +259,6 @@ namespace CRTaskDesktop
 
             showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "CRTaskDesktopShowEvent_v2");
 
-            // Initialize Clipboard Listener & Keyboard Hook for WhatsApp Auto-Caption
             clipboardForm = new ClipboardWatcherForm(OnClipboardChanged);
             keyboardProcDelegate = HookCallback;
             using (Process curProcess = Process.GetCurrentProcess())
@@ -487,13 +485,51 @@ namespace CRTaskDesktop
             catch { }
         }
 
-        private void ShowNativeAlarmCard(string messageText, string headerTitle = "🔔 ALARME DE MENSAGEM • CR TASK")
+        private void ShowNativeAlarmCard(string messageText, string baseRegionName = "")
         {
             try
             {
                 if (activeAlarmToast != null && !activeAlarmToast.IsDisposed)
                 {
                     activeAlarmToast.Close();
+                }
+
+                // Determina a cor exclusiva por Região (Sumarezinho = Azul, Recreio = Esmeralda, Aldeota = Roxo/Violeta)
+                string normRegion = (baseRegionName ?? "").ToUpperInvariant();
+                if (string.IsNullOrEmpty(normRegion))
+                {
+                    if (messageText.IndexOf("Recreio", StringComparison.OrdinalIgnoreCase) >= 0) normRegion = "RECREIO";
+                    else if (messageText.IndexOf("Aldeota", StringComparison.OrdinalIgnoreCase) >= 0) normRegion = "ALDEOTA";
+                    else if (messageText.IndexOf("Sumarezinho", StringComparison.OrdinalIgnoreCase) >= 0) normRegion = "SUMAREZINHO";
+                }
+
+                Color regionPrimaryColor;
+                Color regionBadgeBg;
+                string regionDisplayLabel;
+
+                if (normRegion.Contains("RECREIO"))
+                {
+                    regionPrimaryColor = Color.FromArgb(5, 150, 105);   // Emerald 600
+                    regionBadgeBg = Color.FromArgb(16, 185, 129);       // Emerald 500
+                    regionDisplayLabel = "REGIÃO: RECREIO";
+                }
+                else if (normRegion.Contains("ALDEOTA"))
+                {
+                    regionPrimaryColor = Color.FromArgb(124, 58, 237);  // Violet 600
+                    regionBadgeBg = Color.FromArgb(139, 92, 246);       // Violet 500
+                    regionDisplayLabel = "REGIÃO: ALDEOTA";
+                }
+                else if (normRegion.Contains("SUMAREZINHO"))
+                {
+                    regionPrimaryColor = Color.FromArgb(37, 99, 235);   // Blue 600
+                    regionBadgeBg = Color.FromArgb(59, 130, 246);       // Blue 500
+                    regionDisplayLabel = "REGIÃO: SUMAREZINHO";
+                }
+                else
+                {
+                    regionPrimaryColor = Color.FromArgb(245, 158, 11);  // Amber 500
+                    regionBadgeBg = Color.FromArgb(217, 119, 6);
+                    regionDisplayLabel = "ALARME CR TASK";
                 }
 
                 Form toast = new Form
@@ -503,31 +539,41 @@ namespace CRTaskDesktop
                     ShowInTaskbar = false,
                     TopMost = true,
                     BackColor = Color.FromArgb(15, 23, 42),
-                    Size = new Size(380, 118)
+                    Size = new Size(410, 138)
                 };
 
                 try
                 {
-                    toast.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, toast.Width, toast.Height, 16, 16));
+                    toast.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, toast.Width, toast.Height, 18, 18));
                 }
                 catch { }
 
                 Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
                 toast.Location = new Point(workArea.Right - toast.Width - 18, workArea.Bottom - toast.Height - 18);
 
+                // Barra superior grossa na cor exata da Região
                 Panel topAccent = new Panel
                 {
                     Dock = DockStyle.Top,
-                    Height = 5,
-                    BackColor = Color.FromArgb(245, 158, 11)
+                    Height = 6,
+                    BackColor = regionPrimaryColor
                 };
                 toast.Controls.Add(topAccent);
 
-                // Crisp high-res PNG Logo renderer (fixes GDI+ Icon.ToBitmap noise bug)
+                // Barra lateral esquerda na cor da Região para reforço visual imediato
+                Panel leftAccent = new Panel
+                {
+                    Dock = DockStyle.Left,
+                    Width = 5,
+                    BackColor = regionPrimaryColor
+                };
+                toast.Controls.Add(leftAccent);
+
+                // Logo da CR Task em alta definição
                 Panel logoPanel = new Panel
                 {
-                    Location = new Point(16, 22),
-                    Size = new Size(46, 46),
+                    Location = new Point(18, 22),
+                    Size = new Size(52, 52),
                     BackColor = Color.FromArgb(5, 19, 34)
                 };
                 logoPanel.Paint += (s, pe) =>
@@ -536,41 +582,51 @@ namespace CRTaskDesktop
                     pe.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     if (logoPngImage != null)
                     {
-                        pe.Graphics.DrawImage(logoPngImage, new Rectangle(3, 3, 40, 40));
+                        pe.Graphics.DrawImage(logoPngImage, new Rectangle(4, 4, 44, 44));
+                    }
+                    using (Pen borderPen = new Pen(regionPrimaryColor, 1.5f))
+                    {
+                        pe.Graphics.DrawRectangle(borderPen, 0, 0, logoPanel.Width - 1, logoPanel.Height - 1);
                     }
                 };
                 toast.Controls.Add(logoPanel);
 
-                Label lblHeader = new Label
+                // Badge de Destaque da Região (Grande e Colorido para não confundir nunca)
+                Label lblRegionBadge = new Label
                 {
-                    Text = headerTitle,
-                    ForeColor = Color.FromArgb(251, 191, 36),
-                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-                    Location = new Point(74, 16),
-                    AutoSize = true
+                    Text = "  📍 " + regionDisplayLabel + "  ",
+                    BackColor = regionBadgeBg,
+                    ForeColor = Color.White,
+                    Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+                    Location = new Point(82, 16),
+                    AutoSize = true,
+                    Padding = new Padding(4, 3, 4, 3)
                 };
-                toast.Controls.Add(lblHeader);
+                toast.Controls.Add(lblRegionBadge);
 
+                // Texto da Mensagem e Horário
                 Label lblBody = new Label
                 {
-                    Text = messageText,
+                    Text = "🔔 " + messageText,
                     ForeColor = Color.White,
-                    Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-                    Location = new Point(74, 36),
-                    Size = new Size(290, 38),
+                    Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                    Location = new Point(82, 46),
+                    Size = new Size(312, 40),
                     AutoEllipsis = true
                 };
                 toast.Controls.Add(lblBody);
 
+                // Botão Principal na cor da Região
+                string btnOpenLabel = normRegion.Length > 0 ? "Abrir Base " + normRegion.Substring(0, 1) + normRegion.Substring(1).ToLowerInvariant() : "Abrir CR Task Agora";
                 Button btnOpen = new Button
                 {
-                    Text = "Abrir CR Task Agora",
-                    BackColor = Color.FromArgb(16, 185, 129),
+                    Text = btnOpenLabel,
+                    BackColor = regionPrimaryColor,
                     ForeColor = Color.White,
                     FlatStyle = FlatStyle.Flat,
                     Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-                    Location = new Point(74, 78),
-                    Size = new Size(155, 28),
+                    Location = new Point(82, 92),
+                    Size = new Size(195, 30),
                     Cursor = Cursors.Hand
                 };
                 btnOpen.FlatAppearance.BorderSize = 0;
@@ -585,11 +641,11 @@ namespace CRTaskDesktop
                 {
                     Text = "Fechar",
                     BackColor = Color.FromArgb(30, 41, 59),
-                    ForeColor = Color.FromArgb(148, 163, 184),
+                    ForeColor = Color.FromArgb(203, 213, 225),
                     FlatStyle = FlatStyle.Flat,
-                    Font = new Font("Segoe UI", 8f, FontStyle.Regular),
-                    Location = new Point(238, 78),
-                    Size = new Size(80, 28),
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
+                    Location = new Point(286, 92),
+                    Size = new Size(96, 30),
                     Cursor = Cursors.Hand
                 };
                 btnDismiss.FlatAppearance.BorderSize = 0;
@@ -602,7 +658,7 @@ namespace CRTaskDesktop
                     toast.Close();
                 };
 
-                System.Windows.Forms.Timer closeTimer = new System.Windows.Forms.Timer { Interval = 12000 };
+                System.Windows.Forms.Timer closeTimer = new System.Windows.Forms.Timer { Interval = 14000 };
                 closeTimer.Tick += (s, e) =>
                 {
                     closeTimer.Stop();
@@ -892,20 +948,37 @@ namespace CRTaskDesktop
                 if (currentTitle != lastAlarmTitle)
                 {
                     lastAlarmTitle = currentTitle;
+
+                    // Extrai [BASE:REGIAO] se presente
+                    string baseRegion = "";
+                    int baseStart = currentTitle.IndexOf("[BASE:", StringComparison.OrdinalIgnoreCase);
+                    if (baseStart >= 0)
+                    {
+                        int baseEnd = currentTitle.IndexOf("]", baseStart);
+                        if (baseEnd > baseStart + 6)
+                        {
+                            baseRegion = currentTitle.Substring(baseStart + 6, baseEnd - (baseStart + 6)).Trim();
+                        }
+                    }
+
                     string cleanMsg = currentTitle
                         .Replace("🔔", "")
                         .Replace("[ALARME]", "")
+                        .Replace("[BASE:" + baseRegion + "]", "")
+                        .Replace("[BASE:SUMAREZINHO]", "")
+                        .Replace("[BASE:RECREIO]", "")
+                        .Replace("[BASE:ALDEOTA]", "")
                         .Replace("- CR Task", "")
                         .Replace("• Gestão Operacional", "")
                         .Replace("- CR Admin Workspace", "")
                         .Trim();
+
                     if (string.IsNullOrEmpty(cleanMsg))
                         cleanMsg = "Hora de enviar uma mensagem programada no WhatsApp!";
 
                     try { SystemSounds.Exclamation.Play(); } catch { }
 
-                    // Exibe apenas o Card próprio do aplicativo (sem duplicar com a notificação do Windows)
-                    ShowNativeAlarmCard(cleanMsg);
+                    ShowNativeAlarmCard(cleanMsg, baseRegion);
                     BringWindowToFront(appHwnd);
                 }
             }
@@ -986,7 +1059,7 @@ namespace CRTaskDesktop
 
             protected override void WndProc(ref Message m)
             {
-                if (m.Msg == 0x031D) // WM_CLIPBOARDUPDATE
+                if (m.Msg == 0x031D)
                 {
                     if (onUpdate != null) onUpdate();
                 }
