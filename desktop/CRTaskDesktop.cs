@@ -105,12 +105,6 @@ namespace CRTaskDesktop
         [DllImport("user32.dll", EntryPoint = "SetClassLong")]
         private static extern uint SetClassLong32(IntPtr hWnd, int nIndex, uint dwNewLong);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool AddClipboardFormatListener(IntPtr hwnd);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
-
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
 
@@ -130,12 +124,14 @@ namespace CRTaskDesktop
         [DllImport("user32.dll")]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int cx, int cy);
+
         private const int SW_HIDE = 0;
         private const int SW_SHOWNORMAL = 1;
         private const int SW_RESTORE = 9;
         private const uint WM_CLOSE = 0x0010;
         private const uint WM_SETICON = 0x0080;
-        private const int WM_CLIPBOARDUPDATE = 0x031D;
         private const int ICON_SMALL = 0;
         private const int ICON_BIG = 1;
         private const int GCLP_HICON = -14;
@@ -159,6 +155,7 @@ namespace CRTaskDesktop
 
         private NotifyIcon trayIcon;
         private Icon appIcon;
+        private Image logoPngImage;
         private System.Windows.Forms.Timer monitorTimer;
         private System.Windows.Forms.Timer pasteCaptionTimer;
         private System.Windows.Forms.Timer restoreClipboardTimer;
@@ -166,7 +163,6 @@ namespace CRTaskDesktop
         private IntPtr appHwnd = IntPtr.Zero;
         private IntPtr lastIconAppliedHwnd = IntPtr.Zero;
         private bool isExiting = false;
-        private bool shownFirstMinimizeTip = false;
         private string lastAlarmTitle = "";
         private DateTime lastLaunchAttempt = DateTime.MinValue;
         private bool launchHiddenNext = false;
@@ -202,6 +198,7 @@ namespace CRTaskDesktop
             EnsureInstalledAndShortcut();
 
             appIcon = LoadEmbeddedIcon();
+            logoPngImage = LoadEmbeddedLogoPng();
 
             ContextMenuStrip menu = new ContextMenuStrip();
 
@@ -211,7 +208,7 @@ namespace CRTaskDesktop
             menu.Items.Add(openItem);
 
             ToolStripMenuItem hideItem = new ToolStripMenuItem("Minimizar para a Bandeja (^)");
-            hideItem.Click += (s, e) => HideAppToTray(false);
+            hideItem.Click += (s, e) => HideAppToTray();
             menu.Items.Add(hideItem);
 
             menu.Items.Add(new ToolStripSeparator());
@@ -234,7 +231,7 @@ namespace CRTaskDesktop
             shortcutItem.Click += (s, e) =>
             {
                 CreateDesktopShortcut();
-                trayIcon.ShowBalloonTip(3000, "CR Task Desktop", "Atalho criado na Área de Trabalho com sucesso!", ToolTipIcon.Info);
+                ShowNativeAlarmCard("Atalho 'CR Task' criado na Área de Trabalho com sucesso!", "ATALHO CRIADO • CR TASK");
             };
             menu.Items.Add(shortcutItem);
 
@@ -260,7 +257,6 @@ namespace CRTaskDesktop
                 }
             };
             trayIcon.DoubleClick += (s, e) => RestoreOrLaunchApp();
-            trayIcon.BalloonTipClicked += (s, e) => RestoreOrLaunchApp();
 
             showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "CRTaskDesktopShowEvent_v2");
 
@@ -327,7 +323,6 @@ namespace CRTaskDesktop
                         }
                     }
 
-                    // If we captured a caption from CR Task just milliseconds ago (or together with the image), arm the WhatsApp combo!
                     if (!string.IsNullOrEmpty(pendingCaption) && (DateTime.Now - pendingCaptionTime).TotalSeconds < 10)
                     {
                         pendingImage = Clipboard.GetImage();
@@ -336,7 +331,6 @@ namespace CRTaskDesktop
                     }
                     else if (!isFromCRTask)
                     {
-                        // User copied a regular screenshot outside CR Task
                         hasPendingImageAndCaption = false;
                     }
                 }
@@ -360,7 +354,6 @@ namespace CRTaskDesktop
                             string fgTitle = GetWindowTitle(fg);
                             if (fgTitle.IndexOf("WhatsApp", StringComparison.OrdinalIgnoreCase) >= 0)
                             {
-                                // User just pressed Ctrl+V in WhatsApp! Let the image paste now, and schedule caption paste in 750ms
                                 pasteCaptionTimer.Stop();
                                 pasteCaptionTimer.Start();
                             }
@@ -386,7 +379,6 @@ namespace CRTaskDesktop
                     pendingImage = Clipboard.GetImage();
                 }
 
-                // Set caption text onto clipboard and simulate Ctrl+V inside WhatsApp's focused caption box
                 Clipboard.SetText(pendingCaption);
 
                 keybd_event((byte)VK_CONTROL, 0, 0, UIntPtr.Zero);
@@ -443,6 +435,21 @@ namespace CRTaskDesktop
             return SystemIcons.Application;
         }
 
+        private Image LoadEmbeddedLogoPng()
+        {
+            try
+            {
+                Assembly asm = Assembly.GetExecutingAssembly();
+                Stream s = asm.GetManifestResourceStream("CRTaskLogo.png");
+                if (s != null)
+                {
+                    return Image.FromStream(s);
+                }
+            }
+            catch { }
+            return null;
+        }
+
         private void ApplyWindowIcon(IntPtr hWnd)
         {
             if (hWnd == IntPtr.Zero || appIcon == null) return;
@@ -480,7 +487,7 @@ namespace CRTaskDesktop
             catch { }
         }
 
-        private void ShowNativeAlarmCard(string messageText)
+        private void ShowNativeAlarmCard(string messageText, string headerTitle = "🔔 ALARME DE MENSAGEM • CR TASK")
         {
             try
             {
@@ -496,8 +503,14 @@ namespace CRTaskDesktop
                     ShowInTaskbar = false,
                     TopMost = true,
                     BackColor = Color.FromArgb(15, 23, 42),
-                    Size = new Size(370, 115)
+                    Size = new Size(380, 118)
                 };
+
+                try
+                {
+                    toast.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, toast.Width, toast.Height, 16, 16));
+                }
+                catch { }
 
                 Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
                 toast.Location = new Point(workArea.Right - toast.Width - 18, workArea.Bottom - toast.Height - 18);
@@ -510,21 +523,30 @@ namespace CRTaskDesktop
                 };
                 toast.Controls.Add(topAccent);
 
-                PictureBox pic = new PictureBox
+                // Crisp high-res PNG Logo renderer (fixes GDI+ Icon.ToBitmap noise bug)
+                Panel logoPanel = new Panel
                 {
-                    Image = appIcon.ToBitmap(),
-                    SizeMode = PictureBoxSizeMode.Zoom,
-                    Location = new Point(16, 20),
-                    Size = new Size(42, 42)
+                    Location = new Point(16, 22),
+                    Size = new Size(46, 46),
+                    BackColor = Color.FromArgb(5, 19, 34)
                 };
-                toast.Controls.Add(pic);
+                logoPanel.Paint += (s, pe) =>
+                {
+                    pe.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    pe.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    if (logoPngImage != null)
+                    {
+                        pe.Graphics.DrawImage(logoPngImage, new Rectangle(3, 3, 40, 40));
+                    }
+                };
+                toast.Controls.Add(logoPanel);
 
                 Label lblHeader = new Label
                 {
-                    Text = "🔔 ALARME DE MENSAGEM • CR TASK",
+                    Text = headerTitle,
                     ForeColor = Color.FromArgb(251, 191, 36),
                     Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-                    Location = new Point(70, 16),
+                    Location = new Point(74, 16),
                     AutoSize = true
                 };
                 toast.Controls.Add(lblHeader);
@@ -534,8 +556,8 @@ namespace CRTaskDesktop
                     Text = messageText,
                     ForeColor = Color.White,
                     Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-                    Location = new Point(70, 36),
-                    Size = new Size(280, 38),
+                    Location = new Point(74, 36),
+                    Size = new Size(290, 38),
                     AutoEllipsis = true
                 };
                 toast.Controls.Add(lblBody);
@@ -547,7 +569,7 @@ namespace CRTaskDesktop
                     ForeColor = Color.White,
                     FlatStyle = FlatStyle.Flat,
                     Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-                    Location = new Point(70, 76),
+                    Location = new Point(74, 78),
                     Size = new Size(155, 28),
                     Cursor = Cursors.Hand
                 };
@@ -566,7 +588,7 @@ namespace CRTaskDesktop
                     ForeColor = Color.FromArgb(148, 163, 184),
                     FlatStyle = FlatStyle.Flat,
                     Font = new Font("Segoe UI", 8f, FontStyle.Regular),
-                    Location = new Point(235, 76),
+                    Location = new Point(238, 78),
                     Size = new Size(80, 28),
                     Cursor = Cursors.Hand
                 };
@@ -789,22 +811,11 @@ namespace CRTaskDesktop
             return sb.ToString();
         }
 
-        private void HideAppToTray(bool showFirstTimeBalloon)
+        private void HideAppToTray()
         {
             if (appHwnd != IntPtr.Zero && IsWindow(appHwnd))
             {
                 ShowWindow(appHwnd, SW_HIDE);
-
-                if (showFirstTimeBalloon && !shownFirstMinimizeTip)
-                {
-                    shownFirstMinimizeTip = true;
-                    trayIcon.ShowBalloonTip(
-                        4000,
-                        "CR Task em 2º Plano",
-                        "O CR Task foi minimizado para a bandeja do sistema (^). Os alarmes e a Auto-Legenda do WhatsApp seguem ativos!",
-                        ToolTipIcon.Info
-                    );
-                }
             }
         }
 
@@ -851,23 +862,13 @@ namespace CRTaskDesktop
                     if (launchHiddenNext)
                     {
                         launchHiddenNext = false;
-                        HideAppToTray(false);
+                        HideAppToTray();
                     }
                 }
                 else if ((DateTime.Now - lastLaunchAttempt).TotalSeconds > 6)
                 {
                     launchHiddenNext = true;
                     LaunchBrowserApp();
-                    if (!shownFirstMinimizeTip)
-                    {
-                        shownFirstMinimizeTip = true;
-                        trayIcon.ShowBalloonTip(
-                            4000,
-                            "CR Task continua na Bandeja (^)",
-                            "A janela foi fechada, mas o CR Task segue ativo na bandeja para tocar os alarmes. Para fechar tudo, clique com o botão direito no ícone -> Sair.",
-                            ToolTipIcon.Info
-                        );
-                    }
                 }
                 return;
             }
@@ -882,7 +883,7 @@ namespace CRTaskDesktop
 
             if (IsIconic(appHwnd))
             {
-                HideAppToTray(true);
+                HideAppToTray();
             }
 
             string currentTitle = GetWindowTitle(appHwnd);
@@ -903,13 +904,7 @@ namespace CRTaskDesktop
 
                     try { SystemSounds.Exclamation.Play(); } catch { }
 
-                    trayIcon.ShowBalloonTip(
-                        10000,
-                        "🔔 Alarme de Mensagem — CR Task",
-                        cleanMsg,
-                        ToolTipIcon.Warning
-                    );
-
+                    // Exibe apenas o Card próprio do aplicativo (sem duplicar com a notificação do Windows)
                     ShowNativeAlarmCard(cleanMsg);
                     BringWindowToFront(appHwnd);
                 }

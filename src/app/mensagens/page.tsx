@@ -1873,22 +1873,6 @@ export default function MensagensPage() {
                       }
                     }, 5000);
                   }
-                  if (typeof window !== 'undefined' && 'Notification' in window) {
-                    if (Notification.permission === 'default') {
-                      try {
-                        await Notification.requestPermission();
-                      } catch {}
-                    }
-                    if (Notification.permission === 'granted') {
-                      try {
-                        const n = new Notification(`🔔 Teste de Alarme (${selectedBase})`, {
-                          body: 'O som e as notificações do CR Task estão funcionando perfeitamente!',
-                          icon: '/logo.png'
-                        });
-                        n.onclick = () => window.focus();
-                      } catch {}
-                    }
-                  }
                   setShareFeedbackMsg('Toque e notificação de teste emitidos!');
                   setTimeout(() => setShareFeedbackMsg(''), 3000);
                 }}
