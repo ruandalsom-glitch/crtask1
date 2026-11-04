@@ -174,11 +174,19 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         profiles
       });
 
-      const creatorProfile = (profiles || []).find((p: any) =>
-        p.id === board.created_by ||
-        (board.created_by && p.email === board.created_by) ||
-        (board.name && p.email && p.email.toLowerCase().startsWith(board.name.toLowerCase()))
-      ) || null;
+      // Perfis operacionais (exclui o email administrativo ruan.dalsom@crexpresstransportessp.com.br
+      // para priorizar sempre a conta operacional/líder ruan.dalsom@masterdeliveryexpress.com.br)
+      const operationalProfiles = (profiles || []).filter((p: any) =>
+        p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
+      );
+
+      const creatorProfile =
+        operationalProfiles.find((p: any) => p.id === board.created_by || p.email === board.created_by) ||
+        (board.name ? operationalProfiles.find((p: any) =>
+          p.email && p.email.toLowerCase().startsWith(board.name.toLowerCase())
+        ) : null) ||
+        (profiles || []).find((p: any) => p.id === board.created_by || p.email === board.created_by) ||
+        null;
 
       if (allowed) {
         const isOwnBoard = isBoardOwnedByUser(

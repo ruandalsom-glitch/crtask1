@@ -19,6 +19,13 @@ export function isBoardOwnedByUser(
   // 2. Verificação baseada em e-mail / nome / apelidos
   if (user.email) {
     const userEmail = user.email;
+
+    // A conta de administração pura (ruan.dalsom@crexpresstransportessp.com.br)
+    // não deve herdar o quadro operacional "Ruan" por nome, pois ele pertence ao email operacional de líder (ruan.dalsom@masterdeliveryexpress.com.br)
+    if (userEmail === 'ruan.dalsom@crexpresstransportessp.com.br') {
+      return false;
+    }
+
     const normUserFirstName = normalizeStr(userEmail.split('@')[0]?.split('.')[0]);
     const normUserEmail = normalizeStr(userEmail);
     const normBoardName = normalizeStr(board.name);

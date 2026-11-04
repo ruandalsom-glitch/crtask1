@@ -150,7 +150,10 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
       const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardInfo.workspace_id);
       const memberUserIds = new Set(members?.map(m => m.user_id) || []);
 
-      return profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
+      return profiles.filter((p: any) =>
+        (p.role === 'admin' || memberUserIds.has(p.id)) &&
+        p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
+      );
     },
     enabled: !!allProfiles && boardInfo !== undefined,
     staleTime: 5 * 60 * 1000

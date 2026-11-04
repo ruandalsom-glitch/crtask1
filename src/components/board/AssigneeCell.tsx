@@ -102,6 +102,10 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
       filteredProfiles = profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
     }
 
+    // Exclui a conta de administração pura do Ruan para tarefas operacionais,
+    // garantindo que as atribuições sejam direcionadas à conta de líder (ruan.dalsom@masterdeliveryexpress.com.br)
+    filteredProfiles = filteredProfiles.filter((p: any) => p.email !== 'ruan.dalsom@crexpresstransportessp.com.br');
+
     if (search.trim()) {
       return filteredProfiles.filter((u: any) => u.email.toLowerCase().includes(search.toLowerCase()));
     }

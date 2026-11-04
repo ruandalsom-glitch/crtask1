@@ -77,7 +77,7 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
     queryKey: ['all_profiles'],
     queryFn: async () => {
       const { data: profiles } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
-      return profiles || [];
+      return (profiles || []).filter((p: any) => p.email !== 'ruan.dalsom@crexpresstransportessp.com.br');
     },
     staleTime: 5 * 60 * 1000
   });

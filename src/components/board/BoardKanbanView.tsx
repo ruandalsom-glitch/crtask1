@@ -77,7 +77,10 @@ export function BoardKanbanView({ boardId, isReadOnly }: { boardId: string; isRe
       const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', board.workspace_id);
       const memberUserIds = new Set(members?.map(m => m.user_id) || []);
 
-      return (profiles || []).filter(p => p.role === 'admin' || memberUserIds.has(p.id));
+      return (profiles || []).filter(p =>
+        (p.role === 'admin' || memberUserIds.has(p.id)) &&
+        p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
+      );
     },
     staleTime: 5 * 60 * 1000
   });

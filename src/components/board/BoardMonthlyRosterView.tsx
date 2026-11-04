@@ -321,7 +321,10 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       const { data: members } = await supabase.from('workspace_members').select('user_id').eq('workspace_id', boardData.workspace_id);
       const memberUserIds = new Set((members || []).map((m: any) => m.user_id));
 
-      return profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
+      return profiles.filter((p: any) =>
+        (p.role === 'admin' || memberUserIds.has(p.id)) &&
+        p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
+      );
     },
     enabled: !!allProfiles && boardData !== undefined,
     staleTime: 5 * 60 * 1000
