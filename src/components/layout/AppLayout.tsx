@@ -111,7 +111,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden w-full bg-[#0b0e17]">
+    <div className="flex h-screen overflow-hidden w-full bg-slate-50 dark:bg-[#0b0e17] text-slate-900 dark:text-slate-100">
       {/* Sidebar Única e Integrada (ClickUp/Monday Modern Style) */}
       <UnifiedSidebar
         isCollapsed={isSidebarCollapsed}
@@ -119,7 +119,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       />
 
       {/* Main App Content View Container */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-[#0b0e17] z-10 relative">
+      <main className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-[#0b0e17] z-10 relative">
         {children}
       </main>
     </div>

@@ -738,12 +738,12 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
               cursor: pointer;
             }
           `}} />
-          <div className="bg-white relative rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+          <div className="bg-white dark:bg-[#131929] relative rounded-xl border border-slate-200 dark:border-white/[0.08] shadow-xs overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 text-[#676879] text-[13px] bg-slate-50/50">
+                <tr className="border-b border-slate-200 dark:border-white/[0.06] text-[#676879] dark:text-slate-400 text-[13px] bg-slate-50/70 dark:bg-white/[0.02]">
                   <th className="w-2 p-0"></th>
-                  <th className="w-10 text-center p-0 border-r border-slate-200 relative">
+                  <th className="w-10 text-center p-0 border-r border-slate-200 dark:border-white/[0.06] relative">
                     <input 
                       type="checkbox" 
                       checked={groupTasks && groupTasks.length > 0 && groupTasks.every((t: any) => selectedTasks.includes(t.id))}
@@ -752,24 +752,24 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                       title={groupTasks && groupTasks.length > 0 && groupTasks.every((t: any) => selectedTasks.includes(t.id)) ? "Desmarcar todas do grupo" : "Selecionar todas do grupo"}
                     />
                   </th>
-                  <th className="font-semibold px-4 py-2 border-r border-slate-200 text-left min-w-[380px]">Item / Tarefa</th>
-                  <th className="w-12 text-center p-0 border-r border-slate-200"></th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-36 text-center">Responsável</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-36 text-center">Status</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-40 text-center">Timeline</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-32 text-center">Prazo</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-32 text-center">Prioridade</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-32 text-center">Esforço</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 w-24 text-center">Arquivos</th>
+                  <th className="font-semibold px-4 py-2 border-r border-slate-200 dark:border-white/[0.06] text-left min-w-[380px]">Item / Tarefa</th>
+                  <th className="w-12 text-center p-0 border-r border-slate-200 dark:border-white/[0.06]"></th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-36 text-center">Responsável</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-36 text-center">Status</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-40 text-center">Timeline</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-32 text-center">Prazo</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-32 text-center">Prioridade</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-32 text-center">Esforço</th>
+                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-24 text-center">Arquivos</th>
                   <th className="w-10 text-center p-0"></th>
                 </tr>
               </thead>
               <tbody className="text-[14px]">
                 {groupTasks && groupTasks.length > 0 ? (
                   groupTasks.map((task) => (
-                    <tr key={task.id} className={`group/row border-b border-slate-200 transition-colors h-[42px] ${selectedTasks.includes(task.id) ? 'bg-blue-50/50' : 'hover:bg-[#f5f6f8]'}`}>
+                    <tr key={task.id} className={`group/row border-b border-slate-200 transition-colors h-[42px] ${selectedTasks.includes(task.id) ? 'bg-blue-50/50' : 'hover:bg-[#f5f6f8] dark:hover:bg-white/[0.02]'}`}>
                       <td className="w-2 p-0" style={{ backgroundColor: colors.bg }}></td>
-                      <td className="w-10 text-center p-0 border-r border-slate-200 relative bg-transparent">
+                      <td className="w-10 text-center p-0 border-r border-slate-200 dark:border-white/[0.06] relative bg-transparent">
                         <input 
                           type="checkbox" 
                           checked={selectedTasks.includes(task.id)}
@@ -777,7 +777,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                           className="w-4 h-4 rounded border-slate-300 opacity-0 group-hover/row:opacity-100 transition-opacity absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer checked:opacity-100 accent-blue-600" 
                         />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 relative group/title min-w-[380px]">
+                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06] relative group/title min-w-[380px]">
                         <div className="flex items-center justify-between w-full h-full">
                           <div className="flex items-center gap-2 flex-1 min-w-0 pr-6">
                             {task.is_external && (
@@ -794,7 +794,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                                   updateTask.mutate({ id: task.id, updates: { title: e.target.value } });
                                 }
                               }}
-                              className="text-[#323338] font-medium text-[14px] hover:text-blue-600 bg-transparent outline-none w-full cursor-text truncate flex-1 focus:bg-white focus:px-2 focus:py-1 focus:ring-1 focus:ring-blue-400 rounded transition-all"
+                              className="text-[#323338] dark:text-slate-100 font-medium text-[14px] hover:text-blue-600 dark:hover:text-indigo-400 bg-transparent outline-none w-full cursor-text truncate flex-1 focus:bg-white dark:focus:bg-[#0f172a] focus:px-2 focus:py-1 focus:ring-1 focus:ring-blue-400 dark:focus:ring-indigo-400 rounded transition-all"
                             />
                           </div>
                           <div className="flex items-center gap-1 bg-transparent px-2 opacity-0 group-hover/title:opacity-100 transition-opacity absolute right-0 top-0 h-full">
@@ -810,7 +810,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                           </div>
                         </div>
                       </td>
-                      <td className="border-r border-slate-200 text-center relative hover:bg-slate-50 transition-colors">
+                      <td className="border-r border-slate-200 dark:border-white/[0.06] text-center relative hover:bg-slate-50 transition-colors">
                         <div className="absolute inset-0 flex items-center justify-center cursor-pointer group/chat" onClick={() => setTaskDetailsOpen(task)}>
                           <div className="relative">
                             <MessageCirclePlus className="w-5 h-5 text-slate-300 group-hover/chat:text-blue-500 stroke-[1.5] transition-colors" />
@@ -823,19 +823,19 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 text-center relative group/assignee">
+                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06] text-center relative group/assignee">
                         <AssigneeCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="p-0 border-r border-slate-200 relative z-10">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] relative z-10">
                         <StatusCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200">
+                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06]">
                         <TimelineBar 
                           progress={task.status === 'Feito' ? 100 : task.status === 'Trabalhando' ? 60 : 30} 
                           color={task.status === 'Feito' ? 'bg-[#00c875]' : task.status === 'Trabalhando' ? 'bg-[#fdab3d]' : 'bg-[#579bfc]'} 
                         />
                       </td>
-                      <td className="p-0 border-r border-slate-200 text-center relative group/date h-full">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center relative group/date h-full">
                         <div className="flex items-center justify-center gap-2 h-[42px] w-full group-hover/date:bg-slate-100 transition-colors relative cursor-pointer">
                            {getDueStatus(task.due_date, task.status) === 'overdue' && task.status !== 'Feito' && (
                              <AlertCircle className="w-4 h-4 text-red-500 fill-red-50 stroke-red-500" />
@@ -856,13 +856,13 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                            )}
                         </div>
                       </td>
-                      <td className="p-0 border-r border-slate-200 text-center">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center">
                         <PriorityCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="p-0 border-r border-slate-200 text-center">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center">
                         <EffortCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 text-center hover:bg-slate-50 cursor-pointer group/file relative h-full">
+                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06] text-center hover:bg-slate-50 cursor-pointer group/file relative h-full">
                         <label className="flex items-center justify-center h-[42px] w-full cursor-pointer">
                           <div className="flex items-center gap-1 text-slate-400 group-hover/file:bg-slate-200 px-2 py-1 rounded transition-colors relative">
                             <span className="text-lg leading-none opacity-0 group-hover/file:opacity-100 absolute -left-2">+</span>
@@ -894,14 +894,14 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                 
                 {/* Linha de Adicionar Item */}
                 {canEditBoard && (
-                <tr className="hover:bg-[#f5f6f8] transition-colors h-[42px]">
+                <tr className="hover:bg-[#f5f6f8] dark:hover:bg-white/[0.02] transition-colors h-[42px]">
                   <td className="w-2 p-0 bg-transparent border-l-[3px] border-transparent group-hover:border-l-slate-300"></td>
-                  <td className="w-10 border-r border-slate-200 bg-transparent"></td>
+                  <td className="w-10 border-r border-slate-200 dark:border-white/[0.06] bg-transparent"></td>
                   <td colSpan={9} className="px-4 py-0">
                     <input 
                       type="text" 
                       placeholder="+ Adicionar Item" 
-                      className="w-full bg-transparent text-[#323338] placeholder-slate-400 outline-none text-[14px]"
+                      className="w-full bg-transparent text-[#323338] dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none text-[14px]"
                       onKeyDown={async (e) => {
                         if (e.key === 'Enter' && e.currentTarget.value.trim() !== '') {
                           const taskTitle = e.currentTarget.value.trim();
@@ -937,7 +937,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
   return (
     <div className="w-full h-full relative flex flex-col">
       {/* Toolbar */}
-      <div className="px-8 py-4 flex items-center gap-4 border-b border-slate-200 bg-white shrink-0">
+      <div className="px-8 py-3.5 flex items-center gap-4 border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0e1322] shrink-0">
         {canEditBoard && (
         <button 
           onClick={handleCreateItem}
@@ -956,7 +956,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
             placeholder="Pesquisar..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-4 py-1.5 rounded-full border border-slate-200 bg-white text-[14px] focus:outline-none focus:border-blue-400 transition-colors w-64 shadow-sm"
+            className="pl-9 pr-4 py-1.5 rounded-full border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] text-slate-800 dark:text-slate-100 placeholder:text-slate-400 text-[14px] focus:outline-none focus:border-blue-400 dark:focus:border-indigo-400 transition-colors w-64 shadow-xs"
           />
         </div>
 
@@ -965,7 +965,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[14px] transition-colors shadow-sm cursor-pointer ${
             filteredTasks && filteredTasks.length > 0 && filteredTasks.every((t: any) => selectedTasks.includes(t.id))
               ? 'bg-blue-600 border-blue-600 text-white font-medium'
-              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.08]'
           }`}
           title="Selecionar ou desmarcar todas as tarefas"
         >
@@ -980,7 +980,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
         <div className="relative">
           <button 
             onClick={() => { setStatusFilterOpen(!statusFilterOpen); setPriorityFilterOpen(false); setDateFilterOpen(false); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[14px] transition-colors shadow-sm ${filterStatus ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[14px] transition-colors shadow-sm ${filterStatus ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.08]'}`}
           >
             Status {filterStatus && `: ${filterStatus}`}
           </button>
