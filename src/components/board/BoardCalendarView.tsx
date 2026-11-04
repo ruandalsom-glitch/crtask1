@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle, Headset, ShieldCheck } from 'lucide-react';
@@ -2407,11 +2408,12 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
       )}
 
       {/* SLA Feedback Toast */}
-      {slaFeedbackMsg && (
-        <div className="fixed bottom-6 right-6 z-[80] bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
+      {slaFeedbackMsg && typeof document !== 'undefined' && createPortal(
+        <div className="fixed bottom-6 right-6 z-[999999] bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 pointer-events-auto">
           <CheckCircle2 className="w-5 h-5 shrink-0" />
           <span className="text-sm font-semibold">{slaFeedbackMsg}</span>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Painel Administrativo de Gestão da Escala SLA */}

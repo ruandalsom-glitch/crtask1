@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { 
@@ -2920,14 +2921,15 @@ export function BoardShiftView({
       )}
 
       {/* Toast Feedback de Notificação / Envio de Escala */}
-      {sendFeedbackMsg && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-3 duration-200">
+      {sendFeedbackMsg && typeof document !== 'undefined' && createPortal(
+        <div className="fixed bottom-6 right-6 z-[999999] bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span className="text-xs font-semibold">{sendFeedbackMsg}</span>
           <button onClick={() => setSendFeedbackMsg(null)} className="ml-2 text-slate-400 hover:text-white cursor-pointer">
             <X className="w-4 h-4" />
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

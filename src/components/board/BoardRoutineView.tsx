@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { AssigneeCell } from './AssigneeCell';
@@ -1454,13 +1455,14 @@ export function BoardRoutineView({ boardId, isReadOnly }: { boardId: string; isR
       )}
 
       {/* Toast Notification Moderno */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-[200] bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl border border-slate-800 flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-300">
+      {toastMessage && typeof document !== 'undefined' && createPortal(
+        <div className="fixed bottom-6 right-6 z-[999999] bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl border border-slate-800 flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-300 pointer-events-auto">
           <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
             <Check className="w-4 h-4" />
           </div>
           <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

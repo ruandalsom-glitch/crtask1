@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
@@ -1729,12 +1730,13 @@ export default function MensagensPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#f8fafc] dark:bg-[#0b1120] overflow-y-auto">
-      {/* Toast Feedback */}
-      {shareFeedbackMsg && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      {/* Toast Feedback - Renderizado via Portal diretamente no body com z-index máximo para sempre ficar em primeiro plano */}
+      {shareFeedbackMsg && typeof document !== 'undefined' && createPortal(
+        <div className="fixed bottom-6 right-6 z-[999999] bg-slate-900 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300 pointer-events-auto">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span className="text-sm font-semibold">{shareFeedbackMsg}</span>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* HEADER SUPERIOR VISUALMENTE ORGANIZADO EM 2 LINHAS LIMPAS */}
