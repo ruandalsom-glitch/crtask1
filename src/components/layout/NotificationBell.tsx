@@ -1,14 +1,20 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Check } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Bell, CheckCheck, X, Headphones, Calendar, CheckSquare } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
-import { isBoardOwnedByUser, canUserAccessBoard } from '@/lib/privacy';
+import { isBoardOwnedByUser } from '@/lib/privacy';
 import { useRouter } from 'next/navigation';
 
-export function NotificationBell() {
+interface NotificationBellProps {
+  isCollapsed?: boolean;
+}
+
+export function NotificationBell({ isCollapsed }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
@@ -20,69 +26,6 @@ export function NotificationBell() {
     staleTime: 5 * 60 * 1000
   });
 
-  const { data: workspaceUsers } = useQuery({
-    queryKey: ['all_profiles'],
-    queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('id, email, avatar_url, role, receive_emails').order('email');
-      return data || [];
-    },
-    enabled: !!userProfile?.id,
-    staleTime: 5 * 60 * 1000
-  });
-
-  const navigateToUserScaleBoard = async () => {
-    if (!userProfile) return;
-    const activeWs = typeof window !== 'undefined' ? localStorage.getItem('monday_active_workspace') : null;
-
-    const [boardsRes, workspacesRes] = await Promise.all([
-      supabase.from('boards').select('id, name, created_by, workspace_id'),
-      supabase.from('workspaces').select('id, visibility_mode')
-    ]);
-
-    const allBoards = boardsRes.data || [];
-    if (allBoards.length === 0) return;
-
-    const profiles = workspaceUsers || [];
-    const currentProf = profiles.find((p: any) => p.id === userProfile.id || p.email === userProfile.email);
-    const userRole = currentProf?.role || 'user';
-    const wsMap = new Map((workspacesRes.data || []).map((w: any) => [w.id, w.visibility_mode || 'own_only']));
-
-    const orderedBoards = activeWs
-      ? [
-          ...allBoards.filter((b: any) => b.workspace_id === activeWs),
-          ...allBoards.filter((b: any) => b.workspace_id !== activeWs)
-        ]
-      : allBoards;
-
-    const ownBoard = orderedBoards.find((b: any) =>
-      isBoardOwnedByUser(
-        { name: b.name, created_by: b.created_by },
-        { id: userProfile.id, email: userProfile.email || '' }
-      )
-    );
-
-    if (ownBoard) {
-      setIsOpen(false);
-      router.push(`/boards/${ownBoard.id}?tab=turnos`);
-      return;
-    }
-
-    const accessibleBoard = orderedBoards.find((b: any) =>
-      canUserAccessBoard({
-        board: { name: b.name, created_by: b.created_by },
-        user: { id: userProfile.id, email: userProfile.email || '' },
-        userRole,
-        visibilityMode: wsMap.get(b.workspace_id) || 'own_only',
-        profiles
-      })
-    );
-
-    if (accessibleBoard) {
-      setIsOpen(false);
-      router.push(`/boards/${accessibleBoard.id}?tab=turnos`);
-    }
-  };
-
   const { data: notifications } = useQuery({
     queryKey: ['notifications', userProfile?.email],
     queryFn: async () => {
@@ -92,13 +35,13 @@ export function NotificationBell() {
         .select('*')
         .eq('user_email', userProfile.email)
         .order('created_at', { ascending: false })
-        .limit(20);
-      
+        .limit(25);
+
       if (error) {
-        console.error("Erro ao buscar notificações:", error);
+        console.error('Erro ao buscar notificações:', error);
         return [];
       }
-      return data;
+      return data || [];
     },
     enabled: !!userProfile?.email,
     refetchInterval: 30000,
@@ -120,214 +63,345 @@ export function NotificationBell() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] })
   });
 
+  // Calcula a posição do popover flutuante via Portal
+  const toggleOpen = () => {
+    if (!isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const popoverWidth = 380;
+      const popoverHeight = 440;
+
+      let left = isCollapsed ? rect.right + 12 : rect.right + 12;
+      if (left + popoverWidth > window.innerWidth - 16) {
+        left = Math.max(16, window.innerWidth - popoverWidth - 16);
+      }
+
+      let top = Math.max(16, rect.top - 10);
+      if (top + popoverHeight > window.innerHeight - 16) {
+        top = Math.max(16, window.innerHeight - popoverHeight - 16);
+      }
+
+      setPos({ top, left });
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+    }
+  };
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
-          buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     }
+    const handleResize = () => setIsOpen(false);
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   const unreadCount = notifications?.filter(n => !n.read).length || 0;
 
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
-      Notification.requestPermission();
-    }
-  }, []);
+  // Resolve o ID do quadro de destino prioritário para o usuário
+  const resolveTargetBoardId = async (): Promise<string | null> => {
+    if (!userProfile?.id) return null;
 
-  const notifiedSet = useRef<Set<string>>(new Set());
-  const initialLoadDone = useRef(false);
+    const activeWs = typeof window !== 'undefined' ? localStorage.getItem('monday_active_workspace') : null;
 
-  useEffect(() => {
-    if (!notifications) return;
+    const { data: allBoards } = await supabase
+      .from('boards')
+      .select('id, name, created_by, workspace_id')
+      .order('created_at');
 
-    if (!initialLoadDone.current) {
-      notifications.forEach((notif: any) => notifiedSet.current.add(notif.id));
-      initialLoadDone.current = true;
-      return;
-    }
+    if (!allBoards || allBoards.length === 0) return null;
 
-    notifications.forEach((notif: any) => {
-      if (!notif.read && !notifiedSet.current.has(notif.id)) {
-        notifiedSet.current.add(notif.id);
+    const orderedBoards = activeWs
+      ? [
+          ...allBoards.filter((b: any) => b.workspace_id === activeWs),
+          ...allBoards.filter((b: any) => b.workspace_id !== activeWs)
+        ]
+      : allBoards;
 
-        if ('Notification' in window && Notification.permission === 'granted') {
-          let actualMessage = notif.message;
-          let authorEmail = '';
-          
-          if (notif.message.includes('||')) {
-            const parts = notif.message.split('||');
-            authorEmail = parts[0];
-            actualMessage = parts[1];
+    // 1. Procura o próprio quadro do usuário
+    const ownBoard = orderedBoards.find((b: any) =>
+      isBoardOwnedByUser(
+        { name: b.name, created_by: b.created_by },
+        { id: userProfile.id, email: userProfile.email || '' }
+      )
+    );
+
+    if (ownBoard) return ownBoard.id;
+
+    // 2. Fallback para o primeiro quadro disponível
+    return orderedBoards[0]?.id || null;
+  };
+
+  // Clique na notificação com redirecionamento preciso
+  const handleNotificationClick = async (notif: any) => {
+    try {
+      if (!notif.read) {
+        markAsRead.mutate(notif.id);
+      }
+      setIsOpen(false);
+
+      const msg = (notif.message || '').toLowerCase();
+      const isSla = msg.includes('sla') || msg.includes('plantao') || msg.includes('plantão');
+      const isEscala = msg.includes('escala') || msg.includes('turno') || msg.includes('roster');
+
+      // 1. Notificação com task_id (redireciona para o quadro da tarefa)
+      if (notif.task_id) {
+        const { data: task } = await supabase
+          .from('tasks')
+          .select('id, board_id, task_type')
+          .eq('id', notif.task_id)
+          .maybeSingle();
+
+        if (task?.board_id) {
+          const targetTab = task.task_type === 'Lembrete' || isSla ? 'calendario' : 'tabela';
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: targetTab } }));
           }
-
-          const authorMatch = actualMessage.split(' ')[0];
-          const isScheduleNotif = actualMessage.toLowerCase().includes('escala');
-          
-          const getFirstName = (str: string) => {
-            const clean = str.split('@')[0] || str;
-            const name = clean.split('.')[0];
-            return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-          };
-          
-          const firstName = authorEmail ? getFirstName(authorEmail) : getFirstName(authorMatch);
-          const fallbackSeed = authorEmail || authorMatch;
-          let iconUrl = isScheduleNotif ? '/logo.png' : `https://api.dicebear.com/7.x/notionists/svg?seed=${fallbackSeed}`;
-          let title = isScheduleNotif ? `📅 Escala Mensal • CR Task` : `Notificação de ${firstName}`;
-          let bodyText = isScheduleNotif ? actualMessage : actualMessage.replace(authorMatch, firstName);
-
-          if (!isScheduleNotif && workspaceUsers && authorEmail) {
-             const matchedUser = workspaceUsers.find((u: any) => u.email === authorEmail);
-             if (matchedUser?.avatar_url) {
-                iconUrl = matchedUser.avatar_url;
-             }
-          }
-
-          const n = new Notification(title, {
-            body: bodyText,
-            icon: iconUrl,
-          });
-
-          n.onclick = async () => {
-            window.focus();
-            if (!notif.read) markAsRead.mutate(notif.id);
-            if (notif.task_id) {
-              const { data } = await supabase.from('tasks').select('board_id').eq('id', notif.task_id).single();
-              if (data?.board_id) {
-                window.location.href = `/boards/${data.board_id}?taskId=${notif.task_id}`;
-              }
-            } else if (notif.message?.toLowerCase().includes('escala')) {
-              await navigateToUserScaleBoard();
-            }
-          };
+          router.push(`/boards/${task.board_id}?tab=${targetTab}&taskId=${task.id}`);
+          return;
         }
       }
-    });
-  }, [notifications]);
+
+      // 2. Notificação de Plantão SLA (vai para a aba Calendário)
+      if (isSla) {
+        const targetBoardId = await resolveTargetBoardId();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: 'calendario' } }));
+        }
+        if (targetBoardId) {
+          router.push(`/boards/${targetBoardId}?tab=calendario`);
+        }
+        return;
+      }
+
+      // 3. Notificação de Escala ou Turnos (vai para a aba Quadro de Turnos)
+      if (isEscala) {
+        const targetBoardId = await resolveTargetBoardId();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: 'turnos' } }));
+        }
+        if (targetBoardId) {
+          router.push(`/boards/${targetBoardId}?tab=turnos`);
+        }
+        return;
+      }
+
+      // 4. Padrão: vai para o quadro principal do usuário
+      const targetBoardId = await resolveTargetBoardId();
+      if (targetBoardId) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: 'tabela' } }));
+        }
+        router.push(`/boards/${targetBoardId}?tab=tabela`);
+      } else {
+        router.push('/my-work');
+      }
+    } catch (err) {
+      console.error('Erro ao redirecionar notificação:', err);
+    }
+  };
+
+  const formatTimestamp = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const isToday = d.toDateString() === now.toDateString();
+      if (isToday) {
+        return `Hoje às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+      }
+      return d.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
 
   return (
-    <div className="relative flex justify-center w-full">
-      <button 
-        ref={buttonRef}
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all relative group cursor-pointer border ${
-          isOpen
-            ? 'bg-blue-600/20 text-blue-400 border-blue-500/40'
-            : 'text-slate-400 hover:text-white hover:bg-slate-800/70 border-transparent'
-        }`}
-        title="Notificações"
-      >
-        <div className="relative">
-          <Bell strokeWidth={2.1} className="w-5 h-5 group-hover:scale-110 transition-transform" />
+    <>
+      {/* Botão de Disparo na Sidebar (Uniforme com os outros itens do menu) */}
+      {!isCollapsed ? (
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleOpen}
+          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-all cursor-pointer ${
+            isOpen
+              ? 'bg-blue-50 dark:bg-indigo-600/20 text-blue-700 dark:text-indigo-300 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+          }`}
+          title="Notificações"
+        >
+          <div className="flex items-center gap-3">
+            <div className="relative shrink-0 flex items-center justify-center">
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 px-1 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white ring-2 ring-white dark:ring-[#0e121e]">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs">Notificações</span>
+          </div>
+
           {unreadCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-[#0b1120]">
-              {unreadCount > 9 ? '9+' : unreadCount}
+            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-red-100 dark:bg-red-950/80 text-red-600 dark:text-red-400">
+              {unreadCount}
             </span>
           )}
-        </div>
-        {!isOpen && (
-          <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-700">
-            Notificações {unreadCount > 0 ? `(${unreadCount})` : ''}
-          </div>
-        )}
-      </button>
-
-      {isOpen && (
-        <div 
-          ref={dropdownRef}
-          className="absolute left-16 top-0 w-80 sm:w-96 bg-white dark:bg-[#1e293b] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden flex flex-col animate-in slide-in-from-left-2"
+        </button>
+      ) : (
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleOpen}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all cursor-pointer relative ${
+            isOpen
+              ? 'bg-blue-50 dark:bg-indigo-600/20 text-blue-700 dark:text-indigo-300'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+          }`}
+          title={`Notificações ${unreadCount > 0 ? `(${unreadCount})` : ''}`}
         >
-          <div className="p-4 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between bg-slate-50 dark:bg-[#0f172a]">
+          <div className="relative flex items-center justify-center">
+            <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 px-1 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white ring-2 ring-white dark:ring-[#0e121e]">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
+        </button>
+      )}
+
+      {/* Popover de Notificações via Portal (Imune a overflow da sidebar e sem causar scrollbar horizontal) */}
+      {isOpen && pos && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={dropdownRef}
+          className="fixed z-[99999] w-[370px] max-w-[calc(100vw-32px)] bg-white dark:bg-[#141a2b] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/[0.1] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-100"
+          style={{
+            top: `${pos.top}px`,
+            left: `${pos.left}px`
+          }}
+        >
+          {/* Header do Popover */}
+          <div className="p-3.5 border-b border-slate-100 dark:border-white/[0.08] flex items-center justify-between bg-slate-50 dark:bg-[#101626]">
             <div className="flex items-center gap-2">
-              <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-100">Notificações</h3>
+              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">Notificações</h3>
               {unreadCount > 0 && (
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 dark:bg-indigo-900/60 text-blue-700 dark:text-indigo-300">
                   {unreadCount} nova{unreadCount > 1 ? 's' : ''}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3">
-              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default' && (
-                <button 
-                  onClick={() => Notification.requestPermission().then(() => window.location.reload())}
-                  className="text-xs bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-200 font-semibold transition-colors cursor-pointer"
-                >
-                  Ativar pop-ups
-                </button>
-              )}
-              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied' && (
-                <span className="text-[10px] text-red-500 font-medium" title="Para receber pop-ups, clique no ícone de cadeado na barra de endereços e permita as notificações.">
-                  Pop-ups Bloqueados 🔒
-                </span>
-              )}
+            <div className="flex items-center gap-2">
               {unreadCount > 0 && (
-                <button 
+                <button
+                  type="button"
                   onClick={() => markAllAsRead.mutate()}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-blue-600 dark:text-indigo-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
                 >
-                  <Check className="w-3.5 h-3.5" /> Marcar lidas
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span>Marcar lidas</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/[0.08] transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
-          
-          <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/80">
+
+          {/* Lista de Notificações */}
+          <div className="max-h-[400px] overflow-y-auto divide-y divide-slate-100 dark:divide-white/[0.06] scrollbar-thin">
             {!notifications || notifications.length === 0 ? (
               <div className="p-8 text-center text-slate-400 flex flex-col items-center">
-                <Bell className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2.5" />
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Você não tem notificações no momento</p>
+                <Bell className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2.5 opacity-60" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Você não tem notificações no momento
+                </p>
               </div>
             ) : (
               <div className="flex flex-col">
-                {notifications.map((notif: any) => (
-                  <div 
-                    key={notif.id} 
-                    onClick={async () => {
-                      if (!notif.read) markAsRead.mutate(notif.id);
-                      if (notif.task_id) {
-                         const { data } = await supabase.from('tasks').select('board_id').eq('id', notif.task_id).single();
-                         if (data?.board_id) {
-                            window.location.href = `/boards/${data.board_id}?taskId=${notif.task_id}`;
-                         }
-                      } else if (notif.message?.toLowerCase().includes('escala')) {
-                         await navigateToUserScaleBoard();
-                      }
-                    }}
-                    className={`p-3.5 border-b border-slate-100 dark:border-slate-700/60 cursor-pointer transition-colors ${
-                      notif.read
-                        ? 'bg-white dark:bg-[#1e293b] opacity-65 hover:opacity-100'
-                        : 'bg-blue-50/50 dark:bg-blue-950/30 hover:bg-blue-50 dark:hover:bg-blue-950/50'
-                    }`}
-                  >
-                    <div className="flex gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 mt-0.5 border border-blue-200/60 dark:border-blue-800/60">
-                        <Bell className="w-4 h-4" />
+                {notifications.map((notif: any) => {
+                  const rawMsg = notif.message || '';
+                  const cleanMessage = rawMsg.includes('||') ? rawMsg.split('||')[1] : rawMsg;
+                  const isSla = rawMsg.toLowerCase().includes('sla') || rawMsg.toLowerCase().includes('plantao') || rawMsg.toLowerCase().includes('plantão');
+                  const isEscala = rawMsg.toLowerCase().includes('escala') || rawMsg.toLowerCase().includes('turno') || rawMsg.toLowerCase().includes('roster');
+
+                  return (
+                    <div
+                      key={notif.id}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`p-3.5 border-b border-slate-100 dark:border-white/[0.06] cursor-pointer transition-colors flex gap-3 ${
+                        notif.read
+                          ? 'bg-white dark:bg-[#141a2b] opacity-75 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/[0.03]'
+                          : 'bg-blue-50/60 dark:bg-indigo-950/30 hover:bg-blue-50 dark:hover:bg-indigo-950/50'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                        isSla
+                          ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60'
+                          : isEscala
+                          ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60'
+                          : 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60'
+                      }`}>
+                        {isSla ? (
+                          <Headphones className="w-4 h-4" />
+                        ) : isEscala ? (
+                          <Calendar className="w-4 h-4" />
+                        ) : (
+                          <Bell className="w-4 h-4" />
+                        )}
                       </div>
+
                       <div className="flex-1 min-w-0">
-                        <p className={`text-xs leading-relaxed ${
+                        <p className={`text-xs leading-snug break-words ${
                           notif.read
-                            ? 'text-slate-600 dark:text-slate-300'
+                            ? 'text-slate-700 dark:text-slate-300 font-medium'
                             : 'text-slate-900 dark:text-white font-bold'
                         }`}>
-                          {notif.message.includes('||') ? notif.message.split('||')[1] : notif.message}
+                          {cleanMessage}
                         </p>
-                        <span className="text-[10px] text-slate-400 mt-1 block">
-                          {new Date(notif.created_at).toLocaleString('pt-BR')}
-                        </span>
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                            {formatTimestamp(notif.created_at)}
+                          </span>
+                          <span className="text-[10px] font-semibold text-blue-600 dark:text-indigo-400 hover:underline">
+                            Abrir →
+                          </span>
+                        </div>
                       </div>
-                      {!notif.read && <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 shrink-0"></div>}
+
+                      {!notif.read && (
+                        <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-indigo-400 mt-1 shrink-0"></span>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }

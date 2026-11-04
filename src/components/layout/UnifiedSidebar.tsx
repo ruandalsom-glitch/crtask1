@@ -374,8 +374,8 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
         )}
       </div>
 
-      {/* 2. CORPO ROLÁVEL DA SIDEBAR */}
-      <div className={`flex-1 overflow-y-auto space-y-5 scrollbar-thin ${isCollapsed ? 'px-2 py-3' : 'px-3 py-4'}`}>
+      {/* 2. CORPO ROLÁVEL DA SIDEBAR (overflow-x-hidden para eliminar 100% qualquer scrollbar horizontal) */}
+      <div className={`flex-1 overflow-y-auto overflow-x-hidden space-y-5 scrollbar-thin ${isCollapsed ? 'px-2 py-3' : 'px-3 py-4'}`}>
         {/* SEÇÃO 1: NAVEGAÇÃO RÁPIDA PRINCIPAL */}
         <div className="space-y-1">
           {/* Início */}
@@ -455,21 +455,8 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
             </Link>
           )}
 
-          {/* Notificações */}
-          <div className="w-full flex justify-center">
-            {!isCollapsed ? (
-              <div className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-all">
-                <div className="flex items-center gap-3">
-                  <NotificationBell />
-                  <span className="text-xs">Notificações</span>
-                </div>
-              </div>
-            ) : (
-              <div className="w-10 h-10 flex items-center justify-center">
-                <NotificationBell />
-              </div>
-            )}
-          </div>
+          {/* Notificações (Sino com popover via Portal e redimensionamento limpo) */}
+          <NotificationBell isCollapsed={isCollapsed} />
         </div>
 
         {/* SEÇÃO 2: "MEU SETOR" COM ÁRVORE DE MÓDULOS */}

@@ -482,6 +482,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
 
         await supabase.from('notifications').insert([{
           user_email: slaCollaboratorEmail,
+          task_id: createdTasks[0]?.id || null,
           message: `${authorEmail}||🎧 Você foi escalado para o SLA - ATENDIMENTO (${slaTitle}) em ${datesSummary}! Horário: ${slaTime || 'Integral'}.`,
           read: false
         }]);
@@ -609,6 +610,7 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           const authorEmail = userProfile?.email || 'lider@crtransportes.com.br';
           await supabase.from('notifications').insert([{
             user_email: dataToSave.assignee_email,
+            task_id: taskData[0]?.id || null,
             message: `${authorEmail}||🎧 Você foi escalado para o SLA - ATENDIMENTO (${dataToSave.title || 'SLA'}) em ${targetDates.join(', ')}! Horário: ${dataToSave.due_time || '08:00 - 17:00'}.`,
             read: false
           }]);
