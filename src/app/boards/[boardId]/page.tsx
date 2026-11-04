@@ -7,17 +7,34 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
-import { LayoutGrid, Table2, Columns3, CalendarDays, ListChecks, Users, Grid3x3 } from 'lucide-react';
+import {
+  Sparkles,
+  Table2,
+  Columns3,
+  CalendarDays,
+  ListChecks,
+  Users,
+  Grid3x3,
+  Search,
+  Lock,
+  Globe2,
+  Bell,
+  HelpCircle
+} from 'lucide-react';
 
 const TabLoadingSkeleton = () => (
-  <div className="flex h-full w-full items-center justify-center bg-slate-50/60 p-8">
+  <div className="flex h-full w-full items-center justify-center bg-[#0b0e17] p-8">
     <div className="flex flex-col items-center">
-      <div className="w-7 h-7 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-2.5"></div>
-      <p className="text-slate-500 text-xs font-medium">Carregando visualização...</p>
+      <div className="w-8 h-8 border-3 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
+      <p className="text-slate-400 text-xs font-medium">Carregando visualização...</p>
     </div>
   </div>
 );
 
+const SectorOverviewDashboard = dynamic(
+  () => import('@/components/board/SectorOverviewDashboard').then(m => m.SectorOverviewDashboard),
+  { loading: () => <TabLoadingSkeleton /> }
+);
 const BoardKanbanView = dynamic(
   () => import('@/components/board/BoardKanbanView').then(m => m.BoardKanbanView),
   { loading: () => <TabLoadingSkeleton /> }
@@ -39,7 +56,7 @@ const BoardMonthlyRosterView = dynamic(
   { loading: () => <TabLoadingSkeleton /> }
 );
 
-type TabType = 'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos';
+type TabType = 'visao_geral' | 'tabela' | 'kanban' | 'calendario' | 'rotina' | 'escala' | 'turnos';
 
 export default function BoardPage({ params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = use(params);
@@ -48,20 +65,32 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     if (typeof window !== 'undefined') {
       const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam === 'visao-geral' || tabParam === 'visao_geral') return 'visao_geral';
       if (tabParam === 'turnos' || tabParam === 'minha-escala') return 'turnos';
       if (tabParam === 'escala') return 'escala';
+      if (tabParam === 'rotina') return 'rotina';
+      if (tabParam === 'calendario') return 'calendario';
+      if (tabParam === 'kanban') return 'kanban';
     }
-    return 'tabela';
+    return 'visao_geral';
   });
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
       const tabParam = searchParams.get('tab');
-      if (tabParam === 'turnos' || tabParam === 'minha-escala') {
+      if (tabParam === 'visao-geral' || tabParam === 'visao_geral') {
+        setActiveTab('visao_geral');
+      } else if (tabParam === 'turnos' || tabParam === 'minha-escala') {
         setActiveTab('turnos');
       } else if (tabParam === 'escala') {
         setActiveTab('escala');
+      } else if (tabParam === 'rotina') {
+        setActiveTab('rotina');
+      } else if (tabParam === 'calendario') {
+        setActiveTab('calendario');
+      } else if (tabParam === 'kanban') {
+        setActiveTab('kanban');
       }
     }
   }, []);
@@ -72,7 +101,6 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const user = await getFastUser();
       if (!user) return { allowed: false, reason: 'unauthenticated', userRole: 'user' };
 
-      // Executa todas as consultas em um único round-trip paralelo (sem cascata sequencial)
       const [boardRes, profiles, workspacesRes] = await Promise.all([
         supabase.from('boards').select('id, name, workspace_id, created_by').eq('id', boardId).single(),
         queryClient.fetchQuery({
@@ -96,7 +124,6 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const board = boardRes.data;
       if (!board) return { allowed: false, reason: 'not_found', userRole: 'user' };
 
-      // Semeia o cache individual do quadro para evitar que as views busquem 'boards' novamente
       queryClient.setQueryData(['board_info', boardId], { name: board.name, workspace_id: board.workspace_id });
       queryClient.setQueryData(['board_workspace_roster', boardId], { workspace_id: board.workspace_id, name: board.name });
       queryClient.setQueryData(['board_workspace_shift', boardId], { workspace_id: board.workspace_id, name: board.name });
@@ -106,22 +133,16 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const profile = (profiles || []).find((p: any) => p.id === user.id || p.email === user.email);
       const userRole = profile?.role || 'user';
 
-      let visibleTabs: string[] = ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
+      let visibleTabs: string[] = ['visao_geral', 'tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
       if (workspace?.visible_tabs) {
         if (Array.isArray(workspace.visible_tabs) && workspace.visible_tabs.length > 0) {
-          visibleTabs = workspace.visible_tabs;
+          visibleTabs = ['visao_geral', ...workspace.visible_tabs.filter((t: string) => t !== 'visao_geral')];
         } else if (typeof workspace.visible_tabs === 'string') {
           try {
             const parsed = JSON.parse(workspace.visible_tabs);
-            if (Array.isArray(parsed) && parsed.length > 0) visibleTabs = parsed;
-          } catch {}
-        }
-      } else if (typeof window !== 'undefined' && workspace?.id) {
-        const local = localStorage.getItem(`crtask_workspace_tabs_${workspace.id}`);
-        if (local) {
-          try {
-            const parsed = JSON.parse(local);
-            if (Array.isArray(parsed) && parsed.length > 0) visibleTabs = parsed;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              visibleTabs = ['visao_geral', ...parsed.filter((t: string) => t !== 'visao_geral')];
+            }
           } catch {}
         }
       }
@@ -141,10 +162,9 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         );
         const canEdit = userRole === 'admin' || userRole === 'leader' || isOwnBoard;
 
-        return { allowed: true, canEdit, board, userRole, visibleTabs, redirectBoardId: null };
+        return { allowed: true, canEdit, board, workspace, userRole, visibleTabs, redirectBoardId: null };
       }
 
-      // Se caiu em um quadro restrito de outro colega (ex: via notificação de escala), busca o próprio quadro do colaborador no setor
       const { data: sectorBoards } = await supabase
         .from('boards')
         .select('id, name, created_by, workspace_id');
@@ -166,6 +186,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
         canEdit: false,
         reason: 'private_board',
         board,
+        workspace,
         userRole,
         redirectBoardId: ownBoard?.id || null
       };
@@ -186,22 +207,17 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
     }
   }, [accessCheck, boardId, router]);
 
-  const boardName = accessCheck?.board?.name || 'Panorama do projeto';
+  const boardName = accessCheck?.board?.name || 'Operação';
+  const workspaceName = accessCheck?.workspace?.name || 'Workspace Operacional';
   const isReadOnly = accessCheck?.canEdit === false;
-  const visibleTabs: string[] = accessCheck?.visibleTabs || ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
-
-  useEffect(() => {
-    if (visibleTabs && visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
-      setActiveTab(visibleTabs[0] as TabType);
-    }
-  }, [visibleTabs, activeTab]);
+  const visibleTabs: string[] = accessCheck?.visibleTabs || ['visao_geral', 'tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
 
   if (isLoading || (accessCheck?.allowed === false && accessCheck?.redirectBoardId && accessCheck.redirectBoardId !== boardId)) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-slate-50">
+      <div className="flex h-full w-full items-center justify-center bg-[#0b0e17]">
         <div className="flex flex-col items-center">
-          <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-3"></div>
-          <p className="text-slate-500 text-sm font-medium">Abrindo seu quadro no setor...</p>
+          <div className="w-8 h-8 border-3 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
+          <p className="text-slate-400 text-sm font-medium">Abrindo seu quadro...</p>
         </div>
       </div>
     );
@@ -209,18 +225,18 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
 
   if (accessCheck?.allowed === false) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-slate-50 p-6">
-        <div className="p-8 bg-white rounded-xl shadow-lg border border-slate-200 max-w-md text-center">
-          <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4 font-bold text-xl">
-            ⛔
+      <div className="flex h-full w-full items-center justify-center bg-[#0b0e17] p-6">
+        <div className="p-8 bg-[#131929] rounded-2xl shadow-2xl border border-white/[0.08] max-w-md text-center">
+          <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mx-auto mb-4 font-bold text-xl">
+            🔒
           </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Acesso Restrito ao Setor</h2>
-          <p className="text-slate-600 text-sm leading-relaxed mb-6">
+          <h2 className="text-xl font-bold text-white mb-2">Acesso Restrito ao Setor</h2>
+          <p className="text-slate-400 text-sm leading-relaxed mb-6">
             Você não possui permissão para visualizar este quadro conforme a política de privacidade configurada no seu setor. Redirecionando...
           </p>
           <button 
             onClick={() => router.push('/')}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors shadow-sm cursor-pointer"
+            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl transition-colors shadow-lg shadow-indigo-600/30 cursor-pointer"
           >
             Ir para Meu Setor
           </button>
@@ -230,58 +246,93 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-white dark:bg-[#0f172a]">
+    <div className="flex flex-col h-full w-full bg-[#0b0e17] overflow-hidden">
       {/* Banner de Modo de Leitura */}
       {isReadOnly && (
-        <div className="bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/30 px-8 py-2.5 flex items-center justify-between text-xs font-semibold text-amber-800 shrink-0">
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-8 py-2 flex items-center justify-between text-xs font-semibold text-amber-300 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="p-1 bg-amber-200/60 rounded text-amber-900">👁️</span>
-            <span><strong>Modo de Leitura:</strong> Você está visualizando o quadro de um colega do setor. A criação e alteração de tarefas são restritas ao proprietário do quadro e líderes.</span>
+            <span>👁️</span>
+            <span><strong>Modo de Leitura:</strong> Visualizando o quadro de um colega. Alterações restritas a líderes e ao proprietário.</span>
           </div>
-          <span className="px-2.5 py-1 bg-amber-100 border border-amber-300 rounded-full text-[10px] font-bold uppercase tracking-wider text-amber-900">
-            Apenas Visualização
+          <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/30 rounded-full text-[10px] font-bold uppercase tracking-wider text-amber-300">
+            Apenas Leitura
           </span>
         </div>
       )}
 
-      {/* Header do Quadro */}
-      <div className="flex flex-col border-b border-slate-200 dark:border-slate-800 px-6 md:px-8 pt-6 pb-0 gap-5 bg-white dark:bg-[#0f172a] z-20 shrink-0">
-        <div className="flex justify-between items-center gap-4">
+      {/* HEADER MODERNO DO SETOR / QUADRO (CLICKUP/MONDAY STYLE) */}
+      <div className="flex flex-col border-b border-white/[0.06] px-6 md:px-8 pt-6 pb-0 gap-5 bg-[#0e1322] z-20 shrink-0 relative overflow-hidden">
+        {/* Glow sutil no topo direito */}
+        <div className="absolute top-0 right-1/4 w-96 h-28 bg-gradient-to-r from-purple-600/10 via-indigo-600/10 to-transparent blur-3xl pointer-events-none"></div>
+
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Esquerda: Ícone Gradiente + Título + Badge de Privacidade + Subtítulo */}
           <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-600/25 shrink-0">
-              <LayoutGrid className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 text-white flex items-center justify-center shadow-lg shadow-purple-600/25 shrink-0">
+              <Sparkles className="w-6 h-6 stroke-[2.2]" />
             </div>
+
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight truncate">{boardName}</h1>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight truncate">
+                  {boardName}
+                </h1>
+
+                {/* Badge de Privacidade */}
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/[0.06] text-slate-300 border border-white/[0.1] shrink-0">
+                  <Lock className="w-3 h-3 text-slate-400" />
+                  <span>Acesso restrito ao setor</span>
+                </span>
+
                 {isReadOnly && (
-                  <span className="text-[10px] uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700">
+                  <span className="text-[10px] uppercase tracking-wider bg-slate-800 text-slate-300 font-bold px-2 py-0.5 rounded-full border border-slate-700 shrink-0">
                     Apenas Leitura
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                Gerencie tarefas, rotinas e escalas do seu quadro
+
+              <p className="text-xs text-slate-400 font-medium mt-1 truncate">
+                Gestão de tarefas, comunicação, escalas e rotinas operacionais
               </p>
             </div>
           </div>
 
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shrink-0">
-            <span className="relative flex w-2 h-2">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
-              <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500"></span>
+          {/* Direita: Campo de Busca Integrado (Ctrl + K) + Ações */}
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Barra de Pesquisa Integrada */}
+            <div
+              onClick={() => {
+                const term = prompt('Pesquisar no setor:');
+                if (term) router.push(`/?search=${encodeURIComponent(term)}`);
+              }}
+              className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] text-slate-400 hover:text-white transition-all cursor-pointer shadow-sm text-xs font-medium"
+            >
+              <Search className="w-4 h-4 text-slate-400" />
+              <span className="hidden sm:inline">Buscar no setor {boardName}...</span>
+              <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono font-bold bg-white/[0.06] border border-white/[0.1] rounded text-slate-400">
+                Ctrl + K
+              </kbd>
+            </div>
+
+            {/* Indicador de Tempo Real */}
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shrink-0">
+              <span className="relative flex w-2 h-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
+                <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500"></span>
+              </span>
+              Tempo Real
             </span>
-            Tempo Real
-          </span>
+          </div>
         </div>
 
-        {/* Abas Interativas */}
-        <div className="flex gap-1 overflow-x-auto -mb-px scrollbar-none">
+        {/* ABAS MODERNAS (CLICKUP/MONDAY PILL & UNDERLINE STYLE) */}
+        <div className="flex gap-1 overflow-x-auto -mb-px scrollbar-none pt-2">
           {([
-            { id: 'tabela', label: 'Quadro principal', icon: Table2 },
+            { id: 'visao_geral', label: 'Visão Geral', icon: Sparkles },
+            { id: 'tabela', label: 'Quadro de Tarefas', icon: Table2 },
             { id: 'kanban', label: 'Kanban', icon: Columns3 },
             { id: 'calendario', label: 'Calendário', icon: CalendarDays },
-            { id: 'rotina', label: 'Rotinas Diárias', icon: ListChecks },
+            { id: 'rotina', label: 'Rotinas', icon: ListChecks },
             {
               id: 'escala',
               label: accessCheck?.userRole === 'admin' || accessCheck?.userRole === 'leader' ? 'Escala' : 'Minha Escala',
@@ -297,31 +348,34 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`group relative px-3.5 pt-2 pb-3 text-[13px] whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors border-b-2 ${
+                  className={`group relative px-4 pt-2.5 pb-3 text-xs whitespace-nowrap flex items-center gap-2 cursor-pointer transition-all border-b-2 ${
                     isActive
-                      ? 'border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 font-bold'
-                      : 'border-transparent text-slate-500 dark:text-slate-400 font-semibold hover:text-slate-900 dark:hover:text-white'
+                      ? 'border-indigo-500 text-white font-bold bg-indigo-500/10 rounded-t-xl'
+                      : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.02] font-semibold'
                   }`}
                 >
-                  <span
-                    className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'
+                  <Icon
+                    className={`w-3.5 h-3.5 transition-colors ${
+                      isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'
                     }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                  </span>
-                  {tab.label}
+                  />
+                  <span>{tab.label}</span>
                 </button>
               );
             })}
         </div>
       </div>
 
-      {/* Renderização Condicional do Conteúdo */}
-      <div className="flex-1 overflow-auto">
-        {activeTab === 'tabela' ? (
+      {/* RENDERIZAÇÃO CONDICIONAL DO CONTEÚDO */}
+      <div className="flex-1 overflow-auto bg-[#0b0e17]">
+        {activeTab === 'visao_geral' ? (
+          <SectorOverviewDashboard
+            boardId={boardId}
+            boardName={boardName}
+            isReadOnly={isReadOnly}
+            onSwitchTab={(tab) => setActiveTab(tab as TabType)}
+          />
+        ) : activeTab === 'tabela' ? (
           <BoardTableView boardId={boardId} isReadOnly={isReadOnly} />
         ) : activeTab === 'kanban' ? (
           <BoardKanbanView boardId={boardId} isReadOnly={isReadOnly} />

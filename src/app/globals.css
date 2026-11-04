@@ -35,17 +35,17 @@ html:not(.dark), body:not(.dark) {
    TEMA ESCURO (DARK MODE - SISTEMA COMPLETO E UNIFICADO)
    ========================================================================== */
 html.dark, :root.dark {
-  --background: #0b1120;
+  --background: #0b0e17;
   --foreground: #f8fafc;
   
-  --card-bg: #1e293b;
-  --card-border: #334155;
-  --card-hover-border: #475569;
+  --card-bg: #131929;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-hover-border: rgba(255, 255, 255, 0.16);
   color-scheme: dark;
 }
 
 html.dark, html.dark body {
-  background-color: #0b1120 !important;
+  background-color: #0b0e17 !important;
   color: #f8fafc !important;
   color-scheme: dark;
 }
@@ -55,7 +55,7 @@ html.dark .bg-\[\#f8fafc\],
 html.dark .bg-\[\#f5f6f8\],
 html.dark [class^="bg-[#f8fafc]"], html.dark [class*=" bg-[#f8fafc]"],
 html.dark [class^="bg-[#f5f6f8]"] , html.dark [class*=" bg-[#f5f6f8]"] {
-  background-color: #0b1120 !important;
+  background-color: #0b0e17 !important;
   color: #f8fafc !important;
 }
 
@@ -536,12 +536,13 @@ body {
   background: #94a3b8;
 }
 
-html.dark ::-webkit-scrollbar-thumb:not([class*="dark:bg-"]) {
-  background: #334155;
+html.dark ::-webkit-scrollbar-thumb {
+  background: #252e42;
+  border-radius: 9999px;
 }
 
-html.dark ::-webkit-scrollbar-thumb:not([class*="dark:bg-"]):hover {
-  background: #475569;
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #374361;
 }
 
 /* Skeleton Loading Pulse */
