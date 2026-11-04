@@ -287,6 +287,8 @@
 
       if (!hasImage) return;
 
+      const directText = (cb.getData('text/plain') || '').trim();
+
       const existingEditors = new Set(
         document.querySelectorAll('div[contenteditable="true"]')
       );
@@ -294,7 +296,6 @@
       window.postMessage({ source: 'CRTASK_EXT_MAIN', type: 'REQUEST_SYNC' }, '*');
 
       setTimeout(() => {
-        const directText = (cb.getData('text/plain') || '').trim();
         const textToUse = directText || getSavedCaption();
 
         if (textToUse) {

@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
-import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare, ShieldCheck, MessageSquare } from 'lucide-react';
+import { LayoutTemplate, Grid, ChevronLeft, ChevronDown, CheckSquare, ShieldCheck, MessageSquare, Monitor } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
@@ -284,6 +284,24 @@ export function Sidebar() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Rodapé: Download do Aplicativo Desktop Windows */}
+        <div className="p-3 border-t border-slate-200 bg-slate-100/60 shrink-0">
+          <a
+            href="/CR-Task-Desktop.exe"
+            download="CR-Task-Desktop.exe"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-900 text-slate-800 hover:text-white border border-slate-200 hover:border-slate-900 shadow-2xs transition-all group cursor-pointer"
+            title="Baixar Aplicativo CR Task para Windows (Fica na bandeja do sistema ^ igual ao Slack)"
+          >
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 flex items-center justify-center shrink-0">
+              <Monitor className="w-4 h-4 text-emerald-600 group-hover:text-emerald-400" />
+            </div>
+            <div className="flex flex-col overflow-hidden">
+              <span className="text-xs font-bold leading-tight truncate">App Desktop (PC)</span>
+              <span className="text-[10px] text-slate-400 group-hover:text-slate-300 truncate">Roda em 2º plano na bandeja ^</span>
+            </div>
+          </a>
         </div>
       </div>
     </div>

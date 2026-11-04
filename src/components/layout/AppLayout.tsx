@@ -55,7 +55,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (pathname === '/login') return;
 
     const checkReminders = async () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0];
       const hours = String(today.getHours()).padStart(2, '0');
@@ -80,6 +79,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           
           if (!alreadyNotified) {
             localStorage.setItem(notifId, 'true');
+            const prevTitle = document.title;
+            document.title = `🔔 [ALARME] Lembrete: ${lembrete.title} - CR Task`;
+            setTimeout(() => {
+              if (document.title.includes(lembrete.title)) {
+                document.title = prevTitle || 'CR Admin Workspace';
+              }
+            }, 12000);
             if ('Notification' in window && Notification.permission === 'granted') {
               const n = new Notification('🔔 Lembrete do Calendário', {
                 body: `Está na hora: ${lembrete.title}`,

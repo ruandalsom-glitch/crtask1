@@ -9,7 +9,7 @@ import {
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
   ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
   GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown,
-  Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX
+  Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX, Monitor
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
 
@@ -405,6 +405,7 @@ export default function MensagensPage() {
   const [isCopiedImage, setIsCopiedImage] = useState<boolean>(false);
   const [isCopiedAll, setIsCopiedAll] = useState<boolean>(false);
   const [isExtensionModalOpen, setIsExtensionModalOpen] = useState<boolean>(false);
+  const [isDesktopModalOpen, setIsDesktopModalOpen] = useState<boolean>(false);
 
   // Sistema de Alarme no Horário de Envio
   const [activeAlarmItem, setActiveAlarmItem] = useState<{
@@ -1063,6 +1064,32 @@ export default function MensagensPage() {
       clearInterval(interval);
     };
   }, [mensagensList, checksMap, selectedDate, selectedBase, dismissedAlarms, isAlarmSoundEnabled, activeAlarmItem]);
+
+  // Atualiza o título da janela (usado pelo App Desktop na Bandeja ^ para abrir e notificar no Windows)
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (activeAlarmItem) {
+      const msgTitle = activeAlarmItem.item.mensagem || 'Mensagem programada';
+      const msgTime = activeAlarmItem.item.horario || '';
+      document.title = `🔔 [ALARME] ${msgTime ? msgTime + ' - ' : ''}${msgTitle} - CR Task`;
+
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          try {
+            const n = new Notification(`🔔 Hora de Enviar (${msgTime})`, {
+              body: `${msgTitle} • Base ${selectedBase}`,
+              icon: '/logo.png'
+            });
+            n.onclick = () => window.focus();
+          } catch {}
+        } else if (Notification.permission === 'default') {
+          Notification.requestPermission().catch(() => {});
+        }
+      }
+    } else {
+      document.title = 'CR Task • Envio de Mensagens';
+    }
+  }, [activeAlarmItem, selectedBase]);
 
   // Interrompe qualquer som se o componente for desmontado
   useEffect(() => {
@@ -1811,6 +1838,17 @@ export default function MensagensPage() {
                 <span className="hidden sm:inline">Testar Som</span>
               </button>
             </div>
+
+            {/* Botão App Desktop Windows (Bandeja do Sistema ^) */}
+            <button
+              type="button"
+              onClick={() => setIsDesktopModalOpen(true)}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+              title="Baixar Aplicativo CR Task para Windows (Fica na bandeja do sistema ^ igual ao Slack e toca alarme em 2º plano)"
+            >
+              <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">App Desktop (PC)</span>
+            </button>
 
             {/* Botão Extensão WhatsApp Auto-Legenda */}
             <button
@@ -2931,6 +2969,78 @@ export default function MensagensPage() {
               >
                 <Download className="w-4 h-4" />
                 <span>Baixar Extensão (.ZIP)</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL DE DOWNLOAD DO APLICATIVO DESKTOP WINDOWS (BANDEJA DO SISTEMA ^)
+          ========================================================================= */}
+      {isDesktopModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+            <div className="bg-[#0B2238] px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
+                  <Monitor className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black tracking-wide uppercase">
+                    CR Task • Aplicativo Desktop (Windows)
+                  </h3>
+                  <p className="text-[11px] text-slate-300">
+                    Fica na bandeja do sistema (^) igual ao Slack e atualiza sozinho
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDesktopModalOpen(false)}
+                className="text-slate-300 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-950 leading-relaxed">
+                O <strong>CR Task Desktop (.exe)</strong> transforma o sistema em um aplicativo dedicado para o PC. Ao minimizar (<kbd className="bg-white px-1.5 py-0.5 rounded border border-emerald-200 font-mono font-bold">_</kbd>), ele vai direto para a <strong>setinha de ícones ocultos (<kbd className="bg-white px-1 py-0.5 rounded border border-emerald-200 font-mono font-bold">^</kbd>) perto do relógio</strong> (igual ao Slack) e continua rodando em 2º plano sem ocupar a barra de tarefas!
+              </div>
+
+              <div className="space-y-2.5 text-xs text-slate-700">
+                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
+                  <span><strong>Alarmes sempre ativos:</strong> Mesmo oculto na bandeja (<kbd className="bg-white px-1 py-0.5 rounded border border-slate-300">^</kbd>), quando dá o horário de uma mensagem o aplicativo toca a musiquinha, exibe notificação no Windows e abre a janela na tela automaticamente.</span>
+                </div>
+                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
+                  <span><strong>Atualização 100% Automática:</strong> Você instala apenas 1 única vez. Qualquer melhoria futura no sistema ou nas mensagens já abre atualizada na hora.</span>
+                </div>
+                <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
+                  <span><strong>Cria atalho sozinho:</strong> Ao abrir o arquivo baixado, ele já cria o atalho <strong>"CR Task"</strong> com a logo na sua Área de Trabalho e configura para iniciar junto com o Windows.</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setIsDesktopModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs cursor-pointer"
+              >
+                Fechar
+              </button>
+
+              <a
+                href="/CR-Task-Desktop.exe"
+                download="CR-Task-Desktop.exe"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Baixar Aplicativo (.EXE)</span>
               </a>
             </div>
           </div>
