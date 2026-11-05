@@ -1839,8 +1839,8 @@ export default function MensagensPage() {
       )}
 
       {/* HEADER SUPERIOR VISUALMENTE ORGANIZADO EM 2 LINHAS LIMPAS */}
-      <div className="bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 px-6 py-4 shrink-0 shadow-xs">
-        <div className="max-w-7xl mx-auto flex flex-col gap-3.5">
+      <div className="bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 shrink-0 shadow-xs">
+        <div className="w-full max-w-[1600px] mx-auto flex flex-col gap-3.5">
           {/* LINHA 1: Identidade do Sistema (Esquerda) + Seletor de Região Colorido e Data (Direita) */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             {/* Esquerda: Logo CR + Título em Linha Única */}
@@ -2047,7 +2047,7 @@ export default function MensagensPage() {
       </div>
 
       {/* CONTEÚDO PRINCIPAL */}
-      <div className="max-w-7xl mx-auto w-full p-6 space-y-6">
+      <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 space-y-6">
         
         {/* CARD DA EQUIPE RESPONSÁVEL COM SELEÇÃO DIRECIONADA POR CARGO */}
         <div className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-2xl p-6 shadow-xs">
@@ -2267,38 +2267,38 @@ export default function MensagensPage() {
         {/* TABELA DE CHECKLIST OPERACIONAL */}
         <div className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1020px] text-left border-collapse">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-[#0B2238] text-white text-[12px] font-bold tracking-wider uppercase">
-                  <th className="py-3.5 px-2 text-center w-[54px] border-r border-[#1E3A56]" title="Arraste para reordenar as mensagens">
+                <tr className="bg-[#0B2238] text-white text-[11px] font-bold tracking-wider uppercase">
+                  <th className="py-3 px-1 text-center w-[44px] min-w-[44px] border-r border-[#1E3A56]" title="Arraste para reordenar as mensagens">
                     <MoveVertical className="w-3.5 h-3.5 mx-auto text-slate-300" />
                   </th>
-                  <th className="py-3.5 px-4 text-center w-[130px] border-r border-[#1E3A56]">Último Check</th>
-                  <th className="py-3.5 px-4 text-center w-[130px] border-r border-[#1E3A56]">Tipo</th>
-                  <th className="py-3.5 px-6 border-r border-[#1E3A56]">Mensagens (Clique para Anexo e Texto)</th>
+                  <th className="py-3 px-2 text-center w-[115px] min-w-[115px] border-r border-[#1E3A56]">Último Check</th>
+                  <th className="py-3 px-2 text-center w-[95px] min-w-[95px] border-r border-[#1E3A56]">Tipo</th>
+                  <th className="py-3 px-3 border-r border-[#1E3A56] min-w-[180px]">Mensagens (Clique para Anexo e Texto)</th>
                   <th
                     onClick={() =>
                       setHorarioSort(prev =>
                         prev === 'none' ? 'asc' : prev === 'asc' ? 'desc' : 'none'
                       )
                     }
-                    className="py-3.5 px-4 text-center w-[125px] border-r border-[#1E3A56] cursor-pointer hover:bg-[#153454] transition-colors select-none"
+                    className="py-3 px-2 text-center w-[85px] min-w-[85px] border-r border-[#1E3A56] cursor-pointer hover:bg-[#153454] transition-colors select-none"
                     title="Clique para ordenar por horário (Menor → Maior / Maior → Menor / Padrão)"
                   >
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex items-center justify-center gap-1">
                       <span>Horário</span>
                       {horarioSort === 'asc' ? (
-                        <ArrowUp className="w-3.5 h-3.5 text-emerald-400" />
+                        <ArrowUp className="w-3 h-3 text-emerald-400" />
                       ) : horarioSort === 'desc' ? (
-                        <ArrowDown className="w-3.5 h-3.5 text-amber-400" />
+                        <ArrowDown className="w-3 h-3 text-amber-400" />
                       ) : (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
                       )}
                     </div>
                   </th>
-                  <th className="py-3.5 px-4 text-center w-[70px] border-r border-[#1E3A56]">Check</th>
-                  <th className="py-3.5 px-6 text-center w-[220px] border-r border-[#1E3A56]">Horário Check / Envio</th>
-                  <th className="py-3.5 px-3 text-center w-[145px] min-w-[145px]">Ações</th>
+                  <th className="py-3 px-1 text-center w-[52px] min-w-[52px] border-r border-[#1E3A56]">Check</th>
+                  <th className="py-3 px-2 text-center w-[160px] min-w-[150px] border-r border-[#1E3A56]">Horário Check / Envio</th>
+                  <th className="py-3 px-1 text-center w-[125px] min-w-[125px]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700/80 text-xs">
@@ -2361,15 +2361,15 @@ export default function MensagensPage() {
                       >
                         {/* Coluna de Reordenação (Arraste + Botões Subir/Descer) */}
                         <td 
-                          className="py-2 px-1 text-center border-r border-slate-100 dark:border-slate-700/80 select-none"
+                          className="py-2 px-1 text-center border-r border-slate-100 dark:border-slate-700/80 select-none w-[44px] min-w-[44px]"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center justify-center gap-0.5">
                             <div 
-                              className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                              className="cursor-grab active:cursor-grabbing p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
                               title="Arraste para cima ou para baixo para reordenar"
                             >
-                              <GripVertical className="w-4 h-4" />
+                              <GripVertical className="w-3.5 h-3.5" />
                             </div>
                             <div className="flex flex-col -space-y-1">
                               <button
@@ -2395,12 +2395,12 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Último Check */}
-                        <td className="py-3 px-4 text-center font-bold border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-center font-bold border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap w-[115px] min-w-[115px]">
                           <span
                             className={
                               item.ultimo_check.includes('(')
-                                ? 'text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/70 border border-red-200 dark:border-red-800/70 px-2.5 py-1 rounded-md text-[11px]'
-                                : 'text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md'
+                                ? 'text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/70 border border-red-200 dark:border-red-800/70 px-2 py-0.5 rounded-md text-[10px] font-bold'
+                                : 'text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-[10px] font-bold'
                             }
                           >
                             {item.ultimo_check}
@@ -2408,9 +2408,9 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Tipo */}
-                        <td className="py-3 px-4 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap w-[95px] min-w-[95px]">
                           <span
-                            className={`px-2 py-1 rounded-md font-bold text-[10px] tracking-wider uppercase border ${
+                            className={`px-2 py-0.5 rounded-md font-bold text-[10px] tracking-wider uppercase border ${
                               item.tipo.includes('STATUS')
                                 ? 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/70'
                                 : 'bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/70'
@@ -2422,38 +2422,38 @@ export default function MensagensPage() {
 
                         {/* Mensagens (Clicável para abrir visualizador de anexo + texto + copiar) */}
                         <td 
-                          className="py-3 px-6 border-r border-slate-100 dark:border-slate-700/80 cursor-pointer group/cell hover:bg-blue-50/70 dark:hover:bg-slate-800/90 transition-colors"
+                          className="py-2.5 px-3 border-r border-slate-100 dark:border-slate-700/80 cursor-pointer group/cell hover:bg-blue-50/70 dark:hover:bg-slate-800/90 transition-colors min-w-[180px]"
                           onClick={() => openDetailModal(item)}
                           title="Clique para abrir o comunicado, ver imagem e copiar texto"
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5">
-                              <span className="font-bold text-slate-900 dark:text-slate-100 group-hover/cell:text-blue-600 dark:group-hover/cell:text-blue-400 transition-colors">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 dark:text-slate-100 group-hover/cell:text-blue-600 dark:group-hover/cell:text-blue-400 transition-colors text-xs">
                                 {item.mensagem}
                               </span>
                               {item.imagem_url && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800/70">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800/70 shrink-0">
                                   <ImageIcon className="w-3 h-3" />
                                   <span>Imagem</span>
                                 </span>
                               )}
                               {item.texto_completo && item.texto_completo !== item.mensagem && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800/70">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800/70 shrink-0">
                                   <FileText className="w-3 h-3" />
                                   <span>Texto</span>
                                 </span>
                               )}
                             </div>
 
-                            <div className="opacity-0 group-hover/cell:opacity-100 transition-opacity flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-300 bg-white dark:bg-slate-800 px-2 py-1 rounded-lg border border-blue-200 dark:border-blue-700 shadow-2xs shrink-0">
-                              <Eye className="w-3.5 h-3.5" />
+                            <div className="opacity-0 group-hover/cell:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-semibold text-blue-600 dark:text-blue-300 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-700 shadow-2xs shrink-0">
+                              <Eye className="w-3 h-3" />
                               <span>Abrir</span>
                             </div>
                           </div>
                         </td>
 
                         {/* Horário */}
-                        <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-300 font-semibold border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-center text-slate-600 dark:text-slate-300 font-semibold border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap w-[85px] min-w-[85px]">
                           <div className="flex items-center justify-center gap-1">
                             <Clock className="w-3.5 h-3.5 text-slate-400" />
                             <span>{item.horario}</span>
@@ -2461,7 +2461,7 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Checkbox Interativo */}
-                        <td className="py-3 px-4 text-center border-r border-slate-100 dark:border-slate-700/80">
+                        <td className="py-2.5 px-1 text-center border-r border-slate-100 dark:border-slate-700/80 w-[52px] min-w-[52px]">
                           <button
                             type="button"
                             onClick={() => handleToggleCheck(item.id)}
@@ -2476,7 +2476,7 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Horário Check / Envio (Exibe horário e quem marcou) */}
-                        <td className="py-3 px-6 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap w-[160px] min-w-[150px]">
                           {isChecked ? (
                             <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xs">
                               ✓ {state.horario_envio} {state.enviado_por && `(${state.enviado_por})`}
@@ -2489,8 +2489,8 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Ações: Visualizar/Copiar, Editar e Excluir */}
-                        <td className="py-2 px-3 text-center whitespace-nowrap w-[145px] min-w-[145px]">
-                          <div className="flex items-center justify-center gap-1.5">
+                        <td className="py-2 px-1 text-center whitespace-nowrap w-[125px] min-w-[125px]">
+                          <div className="flex items-center justify-center gap-1">
                             {(item.imagem_url || item.texto_completo) && (
                               <button
                                 onClick={() => {
