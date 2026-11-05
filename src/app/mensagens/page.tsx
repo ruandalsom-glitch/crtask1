@@ -11,7 +11,8 @@ import {
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
   ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
   GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown, ArrowUpDown,
-  Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX, Monitor
+  Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX, Monitor,
+  Search, AtSign, User
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
 
@@ -43,10 +44,83 @@ export const CARGOS_COLABORADORES: Record<string, string[]> = {
 // Helper para obter as iniciais de um colaborador (substituindo emotes por avatares profissionais)
 function getInitials(name: string): string {
   if (!name || name === 'Nenhum') return '-';
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const clean = name.replace(/\(@?[^)]+\)/g, '').trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// Helper para normalizar strings (remove acentos e caixa alta)
+function normalizeName(str?: string | null): string {
+  if (!str) return '';
+  return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+// Mapeamento de correspondência entre nomes padrão de teste e contas de email reais no sistema
+const KNOWN_COLLABORATOR_MAP: Record<string, string[]> = {
+  'kelly bezerra': ['kelly.cbezerra', 'kelly'],
+  'aris junior': ['aris.iorondi', 'aris'],
+  'raquel nunes': ['raquel.aguiar', 'raquel'],
+  'fabiano de jesus': ['fabiano.jsilva', 'fabiano'],
+  'athalya shatner': ['athalya.ferreira', 'athalya'],
+  'gabriel santos': ['gabriel.santos.op', 'gabriel'],
+  'matheus santos': ['matheus.santos', 'matheus'],
+  'carolyni carvalho': ['carolyni.carvalho', 'carolyni'],
+  'fabiola pereira': ['fabiola.pereira', 'fabiola'],
+  'arieli cruz': ['arieli.cruz', 'arieli'],
+  'wallisson sousa': ['wallisson.sousa', 'wallisson'],
+  'leticia rocha': ['leticia.rocha', 'leticia'],
+  'estefany delogo': ['estefany.delogo', 'estefany', 'teffy'],
+  'felipe orlando': ['felipe.orlando', 'felipe'],
+  'davis marques': ['davis.lmarques', 'davis'],
+  'ruan dalsom': ['ruan.dalsom', 'ruan']
+};
+
+// Verifica com alta precisão se o colaborador conectado está escalado na equipe da base
+export function isUserInEquipe(
+  user: { id?: string; email?: string } | null | undefined,
+  equipe: Record<string, string>
+): boolean {
+  if (!user || !user.email) return false;
+
+  const userEmail = normalizeName(user.email);
+  const userHandle = userEmail.split('@')[0];
+  const userParts = userHandle.split(/[._-]/).filter(p => p.length >= 2);
+
+  const rawValues = Object.values(equipe);
+
+  for (const rawVal of rawValues) {
+    if (!rawVal || rawVal === 'Nenhum') continue;
+    const val = normalizeName(rawVal);
+
+    // 1. Verificação direta de email completo ou @handle (ex: "@raquel.aguiar" ou "raquel.aguiar")
+    if (val.includes(userEmail) || val.includes(`@${userHandle}`) || val.includes(userHandle)) {
+      return true;
+    }
+
+    // 2. Se for o Ruan, aceita em ambas as contas (masterdelivery e crexpress)
+    if (userEmail.includes('ruan.dalsom') && (val.includes('ruan') || val.includes('dalsom'))) {
+      return true;
+    }
+
+    // 3. Mapeamento de nomes padrão de teste para e-mails conhecidos
+    for (const [collabName, handles] of Object.entries(KNOWN_COLLABORATOR_MAP)) {
+      if (val.includes(collabName)) {
+        if (handles.some(h => userEmail.includes(h) || userHandle.includes(h))) {
+          return true;
+        }
+      }
+    }
+
+    // 4. Se o nome cadastrado bate com as partes do nome do usuário
+    if (userParts.length >= 2) {
+      const matchAll = userParts.every(part => val.includes(part));
+      if (matchAll) return true;
+    }
+  }
+
+  return false;
 }
 
 // Chaves de Armazenamento Local para Persistência Confiável de Alarmes
@@ -127,6 +201,7 @@ interface CargoCollaboratorSelectProps {
   presets?: string[];
   placeholder?: string;
   allowCombination?: boolean;
+  profiles?: any[];
 }
 
 function CargoCollaboratorSelect({
@@ -136,9 +211,11 @@ function CargoCollaboratorSelect({
   cargo,
   presets = [],
   placeholder = 'Selecionar...',
-  allowCombination = false
+  allowCombination = false,
+  profiles = []
 }: CargoCollaboratorSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const [isTypingCustom, setIsTypingCustom] = useState(false);
   const [customValue, setCustomValue] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -148,6 +225,7 @@ function CargoCollaboratorSelect({
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
         setIsTypingCustom(false);
+        setSearch('');
       }
     }
     if (isOpen) {
@@ -166,7 +244,85 @@ function CargoCollaboratorSelect({
     setIsOpen(false);
     setIsTypingCustom(false);
     setCustomValue('');
+    setSearch('');
   };
+
+  // Formata os colaboradores cadastrados no Supabase com @handle e nome
+  const systemCollaborators = useMemo(() => {
+    return (profiles || []).map(p => {
+      const email = p.email || '';
+      const handle = email ? email.split('@')[0] : '';
+      const nameParts = handle.split(/[._-]/).filter(Boolean);
+      const formattedName = nameParts.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+      const avatarSrc = p.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${email}`;
+      return {
+        id: p.id,
+        email,
+        handle: `@${handle}`,
+        cleanHandle: handle,
+        name: formattedName,
+        avatarSrc,
+        role: p.role || 'user'
+      };
+    });
+  }, [profiles]);
+
+  // Filtra por termo de busca
+  const filteredSystemCollabs = useMemo(() => {
+    if (!search.trim()) return systemCollaborators;
+    const term = normalizeName(search);
+    return systemCollaborators.filter(c => 
+      normalizeName(c.name).includes(term) || 
+      normalizeName(c.handle).includes(term) ||
+      normalizeName(c.email).includes(term)
+    );
+  }, [systemCollaborators, search]);
+
+  const filteredStandardMembers = useMemo(() => {
+    if (!search.trim()) return members;
+    const term = normalizeName(search);
+    return members.filter(m => normalizeName(m).includes(term));
+  }, [members, search]);
+
+  // Informações de exibição do valor selecionado no botão
+  const displayInfo = useMemo(() => {
+    if (!value || value === 'Nenhum') {
+      return { name: value || '', handle: '', avatarSrc: null, isNone: true };
+    }
+
+    // Tenta encontrar perfil correspondente para avatar e @
+    const matchedProfile = systemCollaborators.find(c => 
+      value.toLowerCase().includes(c.cleanHandle.toLowerCase()) ||
+      normalizeName(value).includes(normalizeName(c.name))
+    );
+
+    // Extrai padrão "Nome (@handle)"
+    const match = value.match(/^(.*?)\s*\((@?[^)]+)\)$/);
+    if (match) {
+      return {
+        name: match[1].trim(),
+        handle: match[2].trim(),
+        avatarSrc: matchedProfile?.avatarSrc || null,
+        isNone: false
+      };
+    }
+
+    if (value.startsWith('@')) {
+      return {
+        name: matchedProfile?.name || value,
+        handle: value,
+        avatarSrc: matchedProfile?.avatarSrc || null,
+        isNone: false
+      };
+    }
+
+    return {
+      name: value,
+      handle: matchedProfile ? matchedProfile.handle : '',
+      avatarSrc: matchedProfile?.avatarSrc || null,
+      isNone: false
+    };
+  }, [value, systemCollaborators]);
 
   return (
     <div className="relative w-full" ref={dropdownRef}>
@@ -190,15 +346,24 @@ function CargoCollaboratorSelect({
             : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
         }`}
       >
-        <div className="flex items-center gap-2 truncate">
-          {value ? (
+        <div className="flex items-center gap-2 truncate min-w-0">
+          {!displayInfo.isNone && displayInfo.name ? (
             <>
-              <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-emerald-400 font-bold text-[9px] flex items-center justify-center shrink-0">
-                {getInitials(value)}
+              {displayInfo.avatarSrc ? (
+                <img src={displayInfo.avatarSrc} alt={displayInfo.name} className="w-5 h-5 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+              ) : (
+                <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-emerald-400 font-bold text-[9px] flex items-center justify-center shrink-0">
+                  {getInitials(displayInfo.name)}
+                </span>
+              )}
+              <span className="truncate font-bold text-slate-900 dark:text-slate-100">
+                {displayInfo.name}
               </span>
-              <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
-                {value}
-              </span>
+              {displayInfo.handle && (
+                <span className="px-1.5 py-0.2 rounded-md bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-mono font-bold shrink-0">
+                  {displayInfo.handle.startsWith('@') ? displayInfo.handle : `@${displayInfo.handle}`}
+                </span>
+              )}
             </>
           ) : (
             <span className="text-slate-400 font-normal truncate">
@@ -209,107 +374,168 @@ function CargoCollaboratorSelect({
         <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ml-1 ${isOpen ? 'rotate-180 text-slate-700 dark:text-slate-200' : ''}`} />
       </button>
 
-      {/* Menu Suspenso Referenciado Estritamente ao Cargo */}
+      {/* Menu Suspenso Aprimorado: Colaboradores com @ + Nomes Padrão de Teste */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 min-w-[230px]">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 min-w-[280px] max-h-[380px] flex flex-col">
           {/* Cabeçalho do Cargo */}
-          <div className="px-3 py-1 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+          <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider shrink-0">
             <span className="flex items-center gap-1.5">
               <CargoIcon className="w-3.5 h-3.5 text-slate-500 dark:text-blue-400" />
               <span>{cargo}</span>
             </span>
             <span className="text-[10px] text-slate-400 font-normal">
-              {members.length} {members.length === 1 ? 'colaborador' : 'colaboradores'}
+              {systemCollaborators.length} no sistema
             </span>
           </div>
 
-          {/* Opção Nenhum (Disponível em todos os submenus) */}
-          <div className="pt-1 pb-0.5 border-b border-slate-100 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={() => handleSelect('Nenhum')}
-              className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                value === 'Nenhum' ? 'bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 font-bold text-[9px] flex items-center justify-center shrink-0">
-                  -
-                </span>
-                <span className="italic font-medium">Nenhum</span>
-              </div>
-              {value === 'Nenhum' && <Check className="w-3.5 h-3.5 text-slate-600 dark:text-emerald-400 shrink-0" />}
-            </button>
+          {/* Campo de Busca Rápida de Colaborador */}
+          <div className="p-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                autoFocus
+                placeholder="Buscar por nome ou @..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onClick={e => e.stopPropagation()}
+                className="w-full pl-8 pr-2 py-1 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 placeholder:text-slate-400"
+              />
+            </div>
           </div>
 
-          {/* Presets de Turno (se aplicável) */}
-          {presets.length > 0 && (
-            <div className="px-2 pt-1.5 pb-1 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex flex-wrap gap-1">
-                {presets.map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => handleSelect(p)}
-                    className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
-                      value === p
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    Turno {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Lista de Colaboradores do Cargo */}
-          <div className="py-1">
-            {members.map(member => {
-              const isSelected = value === member;
-              return (
-                <button
-                  key={member}
-                  type="button"
-                  onClick={() => handleSelect(member)}
-                  className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                    isSelected ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
-                      {getInitials(member)}
-                    </span>
-                    <span>{member}</span>
-                  </div>
-                  {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
-                </button>
-              );
-            })}
-
-            {/* Opção combinada para Analistas */}
-            {allowCombination && members.length > 1 && (
+          {/* Área com Scroll Interno Fluido */}
+          <div className="flex-1 overflow-y-auto overscroll-contain">
+            {/* Opção Nenhum */}
+            <div className="py-0.5 border-b border-slate-100 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => handleSelect(members.join(' / '))}
-                className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer border-t border-slate-50 dark:border-slate-800 ${
-                  value === members.join(' / ') ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
+                onClick={() => handleSelect('Nenhum')}
+                className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                  value === 'Nenhum' ? 'bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
-                    &
+                  <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 font-bold text-[9px] flex items-center justify-center shrink-0">
+                    -
                   </span>
-                  <span>{members.join(' / ')} (Ambos)</span>
+                  <span className="italic font-medium">Nenhum</span>
                 </div>
-                {value === members.join(' / ') && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                {value === 'Nenhum' && <Check className="w-3.5 h-3.5 text-slate-600 dark:text-emerald-400 shrink-0" />}
               </button>
+            </div>
+
+            {/* Presets de Turno (se aplicável) */}
+            {presets.length > 0 && (
+              <div className="px-2 pt-1.5 pb-1 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex flex-wrap gap-1">
+                  {presets.map(p => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => handleSelect(p)}
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                        value === p
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Turno {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SEÇÃO 1: Colaboradores do Sistema (com @ e avatar) */}
+            {filteredSystemCollabs.length > 0 && (
+              <div className="py-1">
+                <div className="px-3 py-1 bg-slate-50 dark:bg-slate-800/50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <AtSign className="w-3 h-3 text-blue-500" />
+                    <span>Colaboradores com @</span>
+                  </span>
+                  <span>{filteredSystemCollabs.length}</span>
+                </div>
+                {filteredSystemCollabs.map(collab => {
+                  const isSelected = value.toLowerCase().includes(collab.cleanHandle.toLowerCase());
+                  return (
+                    <button
+                      key={collab.id}
+                      type="button"
+                      onClick={() => handleSelect(`${collab.name} (${collab.handle})`)}
+                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                        isSelected ? 'bg-blue-50 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <img src={collab.avatarSrc} alt={collab.name} className="w-5 h-5 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+                        <span className="truncate font-semibold">{collab.name}</span>
+                        <span className="text-[10px] text-blue-600 dark:text-blue-400 font-mono font-bold shrink-0">{collab.handle}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* SEÇÃO 2: Nomes Padrão de Teste (Fase de Teste) */}
+            {filteredStandardMembers.length > 0 && (
+              <div className="py-1 border-t border-slate-100 dark:border-slate-800">
+                <div className="px-3 py-1 bg-slate-50 dark:bg-slate-800/50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Users className="w-3 h-3 text-emerald-500" />
+                    <span>Nomes Padrão (Fase de Teste)</span>
+                  </span>
+                  <span>{filteredStandardMembers.length}</span>
+                </div>
+                {filteredStandardMembers.map(member => {
+                  const isSelected = value === member;
+                  return (
+                    <button
+                      key={member}
+                      type="button"
+                      onClick={() => handleSelect(member)}
+                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                        isSelected ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
+                          {getInitials(member)}
+                        </span>
+                        <span>{member}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+
+                {/* Opção combinada para Analistas */}
+                {allowCombination && members.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(members.join(' / '))}
+                    className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer border-t border-slate-50 dark:border-slate-800 ${
+                      value === members.join(' / ') ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
+                        &
+                      </span>
+                      <span>{members.join(' / ')} (Ambos)</span>
+                    </div>
+                    {value === members.join(' / ') && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
           {/* Opção Manual / Digitar Outro */}
-          <div className="pt-1 border-t border-slate-100 px-2 pb-0.5">
+          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 px-2 pb-0.5 shrink-0 bg-slate-50/50 dark:bg-slate-900">
             {isTypingCustom ? (
               <form
                 onSubmit={e => {
@@ -318,28 +544,28 @@ function CargoCollaboratorSelect({
                     handleSelect(customValue.trim());
                   }
                 }}
-                className="flex items-center gap-1 mt-1"
+                className="flex items-center gap-1 my-0.5"
               >
                 <input
                   type="text"
                   autoFocus
-                  placeholder="Nome do colaborador..."
+                  placeholder="Ex: @usuario ou Nome..."
                   value={customValue}
                   onChange={e => setCustomValue(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white"
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500"
                 />
                 <button
                   type="submit"
-                  className="px-2 py-1 bg-[#0B2238] text-white rounded-lg text-xs font-semibold hover:bg-slate-800 cursor-pointer"
+                  className="px-2.5 py-1 bg-[#0B2238] text-white rounded-lg text-xs font-semibold hover:bg-slate-800 cursor-pointer shrink-0"
                 >
                   OK
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsTypingCustom(false)}
-                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer shrink-0"
                 >
-                  <X className="w-3 h-3" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </form>
             ) : (
@@ -347,10 +573,10 @@ function CargoCollaboratorSelect({
                 <button
                   type="button"
                   onClick={() => setIsTypingCustom(true)}
-                  className="text-[11px] font-semibold text-slate-500 hover:text-blue-600 flex items-center gap-1 py-1 cursor-pointer"
+                  className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 py-1 cursor-pointer"
                 >
                   <Edit2 className="w-3 h-3" />
-                  <span>Digitar outro nome...</span>
+                  <span>Digitar outro nome ou @...</span>
                 </button>
                 {value && (
                   <button
@@ -682,10 +908,32 @@ export default function MensagensPage() {
     staleTime: 10 * 1000
   });
 
-  // Dados da Equipe da Base (sincronizados entre todas as bases/regiões)
+  // Busca lista de perfis do sistema para associação com @ nos cards de equipe e verificação de alarmes
+  const { data: allProfiles = [] } = useQuery({
+    queryKey: ['all_profiles_mensagens'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, avatar_url, role')
+        .order('email');
+      if (error) return [];
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000
+  });
+
+  // Dados da Equipe da Base (com suporte a equipe individual por região e fallback diário)
   const equipeData = useMemo(() => {
-    const equipeRow = checklistRows?.find(r => r.msg_id === '__equipe__') 
+    // 1. Tenta pegar a equipe específica da base selecionada
+    const baseSpecificRow = checklistRows?.find(r => r.msg_id === '__equipe__' && r.base === selectedBase) 
+      || allBasesEquipeRows?.find(r => r.msg_id === '__equipe__' && r.base === selectedBase);
+    
+    // 2. Se a base ainda não foi configurada individualmente, pega qualquer configuração de equipe do dia
+    const fallbackRow = checklistRows?.find(r => r.msg_id === '__equipe__') 
       || allBasesEquipeRows?.find(r => r.msg_id === '__equipe__');
+
+    const equipeRow = baseSpecificRow || fallbackRow;
+
     return {
       supervisor: equipeRow?.supervisor || 'Kelly Bezerra',
       analista: equipeRow?.analista || 'Raquel Nunes',
@@ -697,7 +945,12 @@ export default function MensagensPage() {
       apoio_inter: equipeRow?.apoio_inter || 'Carolyni Carvalho',
       apoio_tarde: equipeRow?.apoio_tarde || 'Fabiola Pereira',
     };
-  }, [checklistRows, allBasesEquipeRows]);
+  }, [checklistRows, allBasesEquipeRows, selectedBase]);
+
+  // Verifica com precisão se o colaborador conectado está de fato escalado na equipe da região selecionada
+  const isCurrentUserInEquipe = useMemo(() => {
+    return isUserInEquipe(currentUser, equipeData);
+  }, [currentUser, equipeData]);
 
   // Alterna o status do Checkbox (Registra o usuário conectado que está marcando)
   const handleToggleCheck = async (msgId: string) => {
@@ -746,17 +999,16 @@ export default function MensagensPage() {
     }
   };
 
-  // Salva alteração de um campo da Equipe (replica para TODAS as regiões/bases)
+  // Salva alteração de um campo da Equipe para a região/base selecionada
   const handleEquipeChange = async (field: string, value: string) => {
     const newEquipe = {
       ...equipeData,
       [field]: value
     };
 
-    // Cria os payloads para TODAS as bases para que a equipe seja idêntica em todas as regiões
-    const payloads = bases.map(b => ({
+    const payload = {
       data: selectedDate,
-      base: b,
+      base: selectedBase,
       msg_id: '__equipe__',
       checked: false,
       supervisor: newEquipe.supervisor,
@@ -769,9 +1021,48 @@ export default function MensagensPage() {
       apoio_inter: newEquipe.apoio_inter,
       apoio_tarde: newEquipe.apoio_tarde,
       updated_at: new Date().toISOString()
+    };
+
+    // Atualização otimista para a base selecionada no React Query
+    queryClient.setQueryData(['mensagens_checklist', selectedDate, selectedBase], (old: any[] = []) => {
+      const filtered = old.filter(r => r.msg_id !== '__equipe__');
+      return [...filtered, payload];
+    });
+
+    queryClient.setQueryData(['mensagens_equipe_global', selectedDate], (old: any[] = []) => {
+      const filtered = old.filter(r => !(r.msg_id === '__equipe__' && r.base === selectedBase));
+      return [...filtered, payload];
+    });
+
+    const { error } = await supabase
+      .from('mensagens_checklist')
+      .upsert([payload], { onConflict: 'data,base,msg_id' });
+
+    if (error) {
+      console.error('[Mensagens] Erro ao atualizar equipe:', error);
+      refetch();
+    }
+  };
+
+  // Replicar a equipe atual da base para todas as outras regiões (Sumarezinho, Recreio, Aldeota)
+  const handleReplicateEquipeToAllBases = async () => {
+    const payloads = bases.map(b => ({
+      data: selectedDate,
+      base: b,
+      msg_id: '__equipe__',
+      checked: false,
+      supervisor: equipeData.supervisor,
+      analista: equipeData.analista,
+      assistente: equipeData.assistente,
+      resp_manha: equipeData.resp_manha,
+      resp_inter: equipeData.resp_inter,
+      resp_tarde: equipeData.resp_tarde,
+      apoio_manha: equipeData.apoio_manha,
+      apoio_inter: equipeData.apoio_inter,
+      apoio_tarde: equipeData.apoio_tarde,
+      updated_at: new Date().toISOString()
     }));
 
-    // Atualização otimista para todas as bases no React Query
     bases.forEach(b => {
       queryClient.setQueryData(['mensagens_checklist', selectedDate, b], (old: any[] = []) => {
         const filtered = old.filter(r => r.msg_id !== '__equipe__');
@@ -780,7 +1071,6 @@ export default function MensagensPage() {
       });
     });
 
-    // Atualiza também o cache global da equipe
     queryClient.setQueryData(['mensagens_equipe_global', selectedDate], payloads);
 
     const { error } = await supabase
@@ -788,8 +1078,10 @@ export default function MensagensPage() {
       .upsert(payloads, { onConflict: 'data,base,msg_id' });
 
     if (error) {
-      console.error('[Mensagens] Erro ao atualizar equipe:', error);
-      refetch();
+      alert('Erro ao replicar equipe: ' + error.message);
+    } else {
+      setShareFeedbackMsg(`Equipe de ${selectedBase} replicada com sucesso para todas as bases!`);
+      setTimeout(() => setShareFeedbackMsg(''), 4000);
     }
   };
 
@@ -1143,6 +1435,12 @@ export default function MensagensPage() {
   // Monitoramento contínuo dos horários das mensagens para disparar o alarme
   useEffect(() => {
     const checkSchedule = () => {
+      // Regra de Negócio: Se o colaborador conectado NÃO faz parte da equipe escalada nesta base,
+      // NENHUM alarme sonoro nem popup modal é acionado (silêncio total para outras bases/equipes)
+      if (!isCurrentUserInEquipe) {
+        return;
+      }
+
       const now = new Date();
       const currentHours = String(now.getHours()).padStart(2, '0');
       const currentMinutes = String(now.getMinutes()).padStart(2, '0');
@@ -1194,19 +1492,28 @@ export default function MensagensPage() {
     return () => {
       clearInterval(interval);
     };
-  }, [mensagensList, checksMap, selectedDate, selectedBase, dismissedAlarms, isAlarmSoundEnabled, activeAlarmItem]);
+  }, [mensagensList, checksMap, selectedDate, selectedBase, dismissedAlarms, isAlarmSoundEnabled, activeAlarmItem, isCurrentUserInEquipe]);
+
+  // Se o usuário não estiver na equipe escalada desta base, garante que o alarme sonoro pare e o popup feche
+  useEffect(() => {
+    if (!isCurrentUserInEquipe && activeAlarmItem) {
+      stopAlarmSound();
+      setActiveAlarmItem(null);
+    }
+  }, [isCurrentUserInEquipe, activeAlarmItem]);
 
   // Atualiza o título da janela (usado pelo App Desktop na Bandeja ^ para abrir e notificar no Windows com a cor da região)
+  // Notifica no tray do desktop APENAS se o usuário conectado estiver de fato escalado nesta base
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    if (activeAlarmItem) {
+    if (activeAlarmItem && isCurrentUserInEquipe) {
       const msgTitle = activeAlarmItem.item.mensagem || 'Mensagem programada';
       const msgTime = activeAlarmItem.item.horario || '';
       document.title = `🔔 [ALARME] [BASE:${selectedBase.toUpperCase()}] ${msgTime ? msgTime + ' • ' : ''}${msgTitle} - CR Task`;
     } else {
       document.title = 'CR Task • Envio de Mensagens';
     }
-  }, [activeAlarmItem, selectedBase]);
+  }, [activeAlarmItem, selectedBase, isCurrentUserInEquipe]);
 
   // Interrompe qualquer som se o componente for desmontado
   useEffect(() => {
@@ -2057,19 +2364,45 @@ export default function MensagensPage() {
                 <Users className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide">
-                  Equipe Responsável da Base • {selectedBase}
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Equipe operacional compartilhada e sincronizada para todas as regiões ({bases.join(', ')})
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide">
+                    Equipe Responsável da Base • {selectedBase}
+                  </h2>
+                  {isCurrentUserInEquipe ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                      <BellRing className="w-3 h-3 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+                      Você está escalado (Alarme Ativo)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                      <BellOff className="w-3 h-3 text-slate-400" />
+                      Não escalado nesta base (Silencioso)
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Escala operacional individual por base com suporte a @ dos colaboradores do sistema e nomes padrão. Os alarmes tocam apenas para quem está escalado.
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-400">Usuário conectado:</span>
-              <span className="font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
-                {currentUserName}
-              </span>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleReplicateEquipeToAllBases}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs cursor-pointer active:scale-95"
+                title="Replicar a equipe definida nesta base para Sumarezinho, Recreio e Aldeota"
+              >
+                <Copy className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                <span>Replicar para todas as regiões</span>
+              </button>
+
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Usuário:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                  {currentUserName}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -2084,6 +2417,7 @@ export default function MensagensPage() {
                 value={equipeData.supervisor}
                 onChange={val => handleEquipeChange('supervisor', val)}
                 placeholder="Selecione o supervisor..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2096,6 +2430,7 @@ export default function MensagensPage() {
                 value={equipeData.analista}
                 onChange={val => handleEquipeChange('analista', val)}
                 placeholder="Selecione os analistas..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2107,6 +2442,7 @@ export default function MensagensPage() {
                 value={equipeData.assistente}
                 onChange={val => handleEquipeChange('assistente', val)}
                 placeholder="Selecione o assistente..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2119,6 +2455,7 @@ export default function MensagensPage() {
                 presets={['Manhã']}
                 onChange={val => handleEquipeChange('resp_manha', val)}
                 placeholder="Colaborador da manhã..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2131,6 +2468,7 @@ export default function MensagensPage() {
                 presets={['Intermédio']}
                 onChange={val => handleEquipeChange('resp_inter', val)}
                 placeholder="Colaborador intermédio..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2143,6 +2481,7 @@ export default function MensagensPage() {
                 presets={['Tarde']}
                 onChange={val => handleEquipeChange('resp_tarde', val)}
                 placeholder="Colaborador da tarde..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2155,6 +2494,7 @@ export default function MensagensPage() {
                 presets={['Manhã']}
                 onChange={val => handleEquipeChange('apoio_manha', val)}
                 placeholder="Apoio da manhã..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2167,6 +2507,7 @@ export default function MensagensPage() {
                 presets={['Intermédio']}
                 onChange={val => handleEquipeChange('apoio_inter', val)}
                 placeholder="Apoio intermédio..."
+                profiles={allProfiles}
               />
             </div>
 
@@ -2179,6 +2520,7 @@ export default function MensagensPage() {
                 presets={['Tarde']}
                 onChange={val => handleEquipeChange('apoio_tarde', val)}
                 placeholder="Apoio da tarde..."
+                profiles={allProfiles}
               />
             </div>
           </div>
