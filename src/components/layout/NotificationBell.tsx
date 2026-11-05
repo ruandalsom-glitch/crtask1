@@ -159,15 +159,27 @@ export function NotificationBell({ isCollapsed }: NotificationBellProps) {
       if (notif.task_id) {
         const { data: task } = await supabase
           .from('tasks')
-          .select('id, board_id, task_type')
+          .select('*, task_updates(*)')
           .eq('id', notif.task_id)
           .maybeSingle();
 
         if (task?.board_id) {
-          const targetTab = task.task_type === 'Lembrete' || isSla ? 'calendario' : 'tabela';
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: targetTab } }));
+          let targetTab = 'tabela';
+          if (task.task_type === 'Lembrete' || isSla) {
+            targetTab = 'calendario';
+          } else if (typeof window !== 'undefined') {
+            const currentTab = new URLSearchParams(window.location.search).get('tab');
+            if (currentTab === 'calendario' || currentTab === 'kanban') {
+              targetTab = currentTab;
+            }
           }
+
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('crtask_pending_open_task', JSON.stringify(task));
+            window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: targetTab } }));
+            window.dispatchEvent(new CustomEvent('crtask_open_task', { detail: { task, taskId: task.id } }));
+          }
+
           router.push(`/boards/${task.board_id}?tab=${targetTab}&taskId=${task.id}`);
           return;
         }

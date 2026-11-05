@@ -548,20 +548,94 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Lê taskId da URL se houver para abrir a gaveta (igual ao Kanban/Tabela)
+  // Abertura imediata de tarefa via evento global crtask_open_task, sessionStorage ou URL
   useEffect(() => {
-    if (rawTasks && !taskDetailsOpen) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const taskIdUrl = urlParams.get('taskId');
-      if (taskIdUrl) {
-        const t = rawTasks.find((task: any) => task.id === taskIdUrl);
-        if (t) {
-          setTaskDetailsOpen(t);
-          window.history.replaceState({}, '', window.location.pathname);
+    const handleOpenTaskEvent = (e: any) => {
+      const taskObj = e.detail?.task;
+      const taskId = e.detail?.taskId;
+      if (taskObj && (taskObj.board_id === boardId || !taskObj.board_id)) {
+        setTaskDetailsOpen(taskObj);
+        return;
+      }
+      if (taskId) {
+        const found = rawTasks?.find((t: any) => t.id === taskId);
+        if (found) {
+          setTaskDetailsOpen(found);
+        } else {
+          supabase
+            .from('tasks')
+            .select('*, task_updates(*)')
+            .eq('id', taskId)
+            .maybeSingle()
+            .then(({ data }) => {
+              if (data) setTaskDetailsOpen(data);
+            });
         }
       }
-    }
-  }, [rawTasks]);
+    };
+
+    window.addEventListener('crtask_open_task', handleOpenTaskEvent);
+
+    const checkPendingTask = async () => {
+      let pendingTask: any = null;
+      if (typeof window !== 'undefined') {
+        const stored = sessionStorage.getItem('crtask_pending_open_task');
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (parsed && (parsed.board_id === boardId || !parsed.board_id)) {
+              pendingTask = parsed;
+            }
+          } catch {}
+        }
+      }
+
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const taskIdUrl = urlParams?.get('taskId');
+      const targetId = pendingTask?.id || taskIdUrl;
+
+      if (!targetId) return;
+
+      if (pendingTask && pendingTask.id === targetId) {
+        setTaskDetailsOpen(pendingTask);
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('crtask_pending_open_task');
+          const url = new URL(window.location.href);
+          url.searchParams.delete('taskId');
+          window.history.replaceState({}, '', url.toString());
+        }
+        return;
+      }
+
+      if (targetId) {
+        const found = rawTasks?.find((t: any) => t.id === targetId);
+        if (found) {
+          setTaskDetailsOpen(found);
+        } else {
+          const { data: fetchedTask } = await supabase
+            .from('tasks')
+            .select('*, task_updates(*)')
+            .eq('id', targetId)
+            .maybeSingle();
+          if (fetchedTask) {
+            setTaskDetailsOpen(fetchedTask);
+          }
+        }
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('crtask_pending_open_task');
+          const url = new URL(window.location.href);
+          url.searchParams.delete('taskId');
+          window.history.replaceState({}, '', url.toString());
+        }
+      }
+    };
+
+    checkPendingTask();
+
+    return () => {
+      window.removeEventListener('crtask_open_task', handleOpenTaskEvent);
+    };
+  }, [boardId, rawTasks]);
 
   const createTask = useMutation({
     mutationFn: async (dataToSave: any) => {

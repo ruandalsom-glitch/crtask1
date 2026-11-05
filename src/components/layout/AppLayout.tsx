@@ -122,7 +122,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               });
               n.onclick = () => {
                 window.focus();
-                router.push(`/boards/${lembrete.board_id}`);
+                if (typeof window !== 'undefined') {
+                  sessionStorage.setItem('crtask_pending_open_task', JSON.stringify(lembrete));
+                  window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: 'calendario' } }));
+                  window.dispatchEvent(new CustomEvent('crtask_open_task', { detail: { task: lembrete, taskId: lembrete.id } }));
+                }
+                router.push(`/boards/${lembrete.board_id}?tab=calendario&taskId=${lembrete.id}`);
               };
             }
           }

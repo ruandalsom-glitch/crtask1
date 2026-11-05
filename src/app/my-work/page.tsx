@@ -142,7 +142,15 @@ export default function MyWorkPage() {
                       {tasks.map((task: any) => (
                         <tr key={task.id} className="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors group">
                           <td className="px-6 py-3">
-                            <Link href={`/boards/${boardId}`} className="font-semibold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-indigo-400 truncate block">
+                            <Link 
+                              href={`/boards/${boardId}?tab=tabela&taskId=${task.id}`} 
+                              onClick={() => {
+                                if (typeof window !== 'undefined') {
+                                  sessionStorage.setItem('crtask_pending_open_task', JSON.stringify(task));
+                                }
+                              }}
+                              className="font-semibold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-indigo-400 truncate block"
+                            >
                               {task.title}
                             </Link>
                             <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">{task.group_name || 'Geral'}</span>
