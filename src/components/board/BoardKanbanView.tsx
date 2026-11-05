@@ -78,7 +78,7 @@ export function BoardKanbanView({ boardId, isReadOnly }: { boardId: string; isRe
       const memberUserIds = new Set(members?.map(m => m.user_id) || []);
 
       return (profiles || []).filter(p =>
-        (p.role === 'admin' || memberUserIds.has(p.id)) &&
+        memberUserIds.has(p.id) &&
         p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
       );
     },

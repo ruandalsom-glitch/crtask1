@@ -151,7 +151,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
       const memberUserIds = new Set(members?.map(m => m.user_id) || []);
 
       return profiles.filter((p: any) =>
-        (p.role === 'admin' || memberUserIds.has(p.id)) &&
+        memberUserIds.has(p.id) &&
         p.email !== 'ruan.dalsom@crexpresstransportessp.com.br'
       );
     },

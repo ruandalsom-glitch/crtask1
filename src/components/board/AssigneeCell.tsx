@@ -95,11 +95,11 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
     if (selectedSectorId === 'current') {
       if (currentWorkspaceId) {
         const memberUserIds = new Set(members.filter((m: any) => m.workspace_id === currentWorkspaceId).map((m: any) => m.user_id));
-        filteredProfiles = profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
+        filteredProfiles = profiles.filter((p: any) => memberUserIds.has(p.id));
       }
     } else if (selectedSectorId !== 'all') {
       const memberUserIds = new Set(members.filter((m: any) => m.workspace_id === selectedSectorId).map((m: any) => m.user_id));
-      filteredProfiles = profiles.filter((p: any) => p.role === 'admin' || memberUserIds.has(p.id));
+      filteredProfiles = profiles.filter((p: any) => memberUserIds.has(p.id));
     }
 
     // Exclui a conta de administração pura do Ruan para tarefas operacionais,

@@ -12,7 +12,7 @@ import {
   ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
   GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown, ArrowUpDown,
   Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX, Monitor,
-  Search, AtSign, User
+  Search, AtSign, User, Building2
 } from 'lucide-react';
 import mensagensConfig from '@/data/mensagens_config.json';
 
@@ -202,6 +202,7 @@ interface CargoCollaboratorSelectProps {
   placeholder?: string;
   allowCombination?: boolean;
   profiles?: any[];
+  sectorName?: string;
 }
 
 function CargoCollaboratorSelect({
@@ -212,7 +213,8 @@ function CargoCollaboratorSelect({
   presets = [],
   placeholder = 'Selecionar...',
   allowCombination = false,
-  profiles = []
+  profiles = [],
+  sectorName = 'Setor de Operações'
 }: CargoCollaboratorSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -383,8 +385,8 @@ function CargoCollaboratorSelect({
               <CargoIcon className="w-3.5 h-3.5 text-slate-500 dark:text-blue-400" />
               <span>{cargo}</span>
             </span>
-            <span className="text-[10px] text-slate-400 font-normal">
-              {systemCollaborators.length} no sistema
+            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
+              {sectorName} ({systemCollaborators.length})
             </span>
           </div>
 
@@ -447,13 +449,13 @@ function CargoCollaboratorSelect({
               </div>
             )}
 
-            {/* SEÇÃO 1: Colaboradores do Sistema (com @ e avatar) */}
+            {/* SEÇÃO 1: Colaboradores do Setor (com @ e avatar) */}
             {filteredSystemCollabs.length > 0 && (
               <div className="py-1">
                 <div className="px-3 py-1 bg-slate-50 dark:bg-slate-800/50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center justify-between">
                   <span className="flex items-center gap-1">
                     <AtSign className="w-3 h-3 text-blue-500" />
-                    <span>Colaboradores com @</span>
+                    <span>Colaboradores do Setor (@)</span>
                   </span>
                   <span>{filteredSystemCollabs.length}</span>
                 </div>
@@ -908,17 +910,79 @@ export default function MensagensPage() {
     staleTime: 10 * 1000
   });
 
-  // Busca lista de perfis do sistema para associação com @ nos cards de equipe e verificação de alarmes
-  const { data: allProfiles = [] } = useQuery({
-    queryKey: ['all_profiles_mensagens'],
+  // Busca informações do workspace operacional / setor visualizado no momento
+  const { data: sectorWorkspace } = useQuery({
+    queryKey: ['mensagens_sector_workspace'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let activeWsId: string | null = null;
+      if (typeof window !== 'undefined') {
+        activeWsId = localStorage.getItem('monday_active_workspace');
+      }
+
+      const { data: workspaces } = await supabase
+        .from('workspaces')
+        .select('id, name');
+
+      if (!workspaces || workspaces.length === 0) return null;
+
+      // Se o workspace ativo salvo no localStorage for operacional, usa ele
+      if (activeWsId) {
+        const found = workspaces.find(w => w.id === activeWsId);
+        if (found) {
+          const norm = (found.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (norm.includes('operac')) return found;
+        }
+      }
+
+      // Fallback padrão: localiza o Setor de Operações (pois o envio de mensagens é exclusivo dele)
+      const opWs = workspaces.find(w => {
+        const norm = (w.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return norm.includes('operac');
+      });
+
+      return opWs || workspaces[0];
+    },
+    staleTime: 10 * 60 * 1000
+  });
+
+  const sectorName = sectorWorkspace?.name || 'Setor de Operações';
+
+  // Busca lista de perfis do sistema ESTRITAMENTE do setor operacional (filtrados por workspace_members)
+  const { data: allProfiles = [] } = useQuery({
+    queryKey: ['profiles_setor_operacional', sectorWorkspace?.id],
+    queryFn: async () => {
+      if (!sectorWorkspace?.id) return [];
+
+      // 1. Busca os IDs dos membros vinculados a este setor
+      const { data: members, error: membersError } = await supabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', sectorWorkspace.id);
+
+      if (membersError) {
+        console.error('[Mensagens] Erro ao buscar membros do setor:', membersError);
+        return [];
+      }
+
+      const memberIds = new Set((members || []).map(m => m.user_id));
+
+      // 2. Busca os perfis
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, email, avatar_url, role')
         .order('email');
-      if (error) return [];
-      return data || [];
+
+      if (profilesError) return [];
+
+      // 3. Filtra estritamente apenas os colaboradores que pertencem ao setor operacional
+      // e remove a conta de administrador pura do Ruan para evitar confusão com a de líder
+      return (profiles || []).filter(p => {
+        if (!memberIds.has(p.id)) return false;
+        if (p.email === 'ruan.dalsom@crexpresstransportessp.com.br') return false;
+        return true;
+      });
     },
+    enabled: !!sectorWorkspace?.id,
     staleTime: 5 * 60 * 1000
   });
 
@@ -2368,6 +2432,10 @@ export default function MensagensPage() {
                   <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide">
                     Equipe Responsável da Base • {selectedBase}
                   </h2>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    <Building2 className="w-3 h-3 text-blue-500" />
+                    {sectorName}
+                  </span>
                   {isCurrentUserInEquipe ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
                       <BellRing className="w-3 h-3 text-emerald-600 dark:text-emerald-400 animate-pulse" />
@@ -2381,7 +2449,7 @@ export default function MensagensPage() {
                   )}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Escala operacional individual por base com suporte a @ dos colaboradores do sistema e nomes padrão. Os alarmes tocam apenas para quem está escalado.
+                  Escala operacional individual por base com colaboradores exclusivos do {sectorName}. Os alarmes tocam apenas para quem está escalado.
                 </p>
               </div>
             </div>
@@ -2418,6 +2486,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('supervisor', val)}
                 placeholder="Selecione o supervisor..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2431,6 +2500,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('analista', val)}
                 placeholder="Selecione os analistas..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2443,6 +2513,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('assistente', val)}
                 placeholder="Selecione o assistente..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2456,6 +2527,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('resp_manha', val)}
                 placeholder="Colaborador da manhã..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2469,6 +2541,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('resp_inter', val)}
                 placeholder="Colaborador intermédio..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2482,6 +2555,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('resp_tarde', val)}
                 placeholder="Colaborador da tarde..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2495,6 +2569,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('apoio_manha', val)}
                 placeholder="Apoio da manhã..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2508,6 +2583,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('apoio_inter', val)}
                 placeholder="Apoio intermédio..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
 
@@ -2521,6 +2597,7 @@ export default function MensagensPage() {
                 onChange={val => handleEquipeChange('apoio_tarde', val)}
                 placeholder="Apoio da tarde..."
                 profiles={allProfiles}
+                sectorName={sectorName}
               />
             </div>
           </div>
