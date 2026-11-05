@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck, Settings2, Check, LayoutGrid, Headset } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck, Settings2, Check, LayoutGrid, Headset, LayoutDashboard } from 'lucide-react';
 import Link from 'next/link';
 import { SlaManagementModal } from '@/components/board/SlaManagementModal';
+import { SectorOverviewDashboard } from '@/components/board/SectorOverviewDashboard';
 
 const AVAILABLE_MENU_TABS = [
   {
@@ -48,13 +49,31 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [selectedTabs, setSelectedTabs] = useState<string[]>(['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos']);
   const [isSlaManagementOpen, setIsSlaManagementOpen] = useState(false);
+  const [adminTab, setAdminTab] = useState<'visao_geral' | 'configuracoes'>('visao_geral');
 
   const [userRole, setUserRole] = useState<'admin' | 'leader' | 'user' | null>(null);
   const [leaderWorkspaceIds, setLeaderWorkspaceIds] = useState<string[]>([]);
 
   useEffect(() => {
     checkPermissions();
+    if (typeof window !== 'undefined') {
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam === 'configuracoes' || tabParam === 'config') {
+        setAdminTab('configuracoes');
+      } else if (tabParam === 'visao_geral' || tabParam === 'visao' || tabParam === 'overview') {
+        setAdminTab('visao_geral');
+      }
+    }
   }, []);
+
+  const handleSwitchAdminTab = (tab: 'visao_geral' | 'configuracoes') => {
+    setAdminTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
 
   const checkPermissions = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -364,7 +383,7 @@ export default function AdminPage() {
   return (
     <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-[#0b0e17] text-slate-900 dark:text-slate-100 p-6 md:p-10">
       <div className="max-w-6xl mx-auto pb-16">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-8 h-8 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
@@ -372,20 +391,82 @@ export default function AdminPage() {
                 {isAdmin ? 'Painel de Administração Global' : `Gestão do Setor: ${selectedWorkspaceName}`}
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                {isAdmin ? 'Gerencie todos os setores, aloque membros, configure privacidade e defina permissões.' : 'Aloque membros e configure regras de privacidade dos quadros do seu setor.'}
+                {isAdmin ? 'Acompanhe a visão geral de cada setor, configure privacidade, gerencie membros e defina permissões.' : 'Acompanhe o desempenho do setor, aloque membros e configure regras de privacidade dos quadros.'}
               </p>
             </div>
           </div>
-          <Link 
-            href="/admin/reports" 
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm text-sm shrink-0 self-start md:self-auto"
-          >
-            <BarChart3 className="w-4 h-4" />
-            Relatórios e Insights
-          </Link>
+
+          <div className="flex items-center gap-3 shrink-0 self-start md:self-auto">
+            {/* Seletor rápido de Setor para Administrador no topo */}
+            {isAdmin && workspaces && workspaces.length > 0 && (
+              <div className="flex items-center gap-2 bg-white dark:bg-[#131929] border border-slate-200 dark:border-white/[0.08] px-3.5 py-2 rounded-xl shadow-xs">
+                <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Setor:</span>
+                <select
+                  value={selectedWorkspace}
+                  onChange={(e) => setSelectedWorkspace(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer"
+                >
+                  {workspaces.map((w: any) => (
+                    <option key={w.id} value={w.id} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <Link 
+              href="/admin/reports" 
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-sm text-xs shrink-0"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Relatórios e Insights
+            </Link>
+          </div>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+        {/* Abas Principais: Visão Geral do Setor & Configurações */}
+        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-white/[0.08] mb-6">
+          <button
+            type="button"
+            onClick={() => handleSwitchAdminTab('visao_geral')}
+            className={`flex items-center gap-2 px-5 py-3 font-bold text-sm border-b-2 transition-all cursor-pointer ${
+              adminTab === 'visao_geral'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30 rounded-t-xl'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Visão Geral do Setor</span>
+            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300">
+              {selectedWorkspaceName}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSwitchAdminTab('configuracoes')}
+            className={`flex items-center gap-2 px-5 py-3 font-bold text-sm border-b-2 transition-all cursor-pointer ${
+              adminTab === 'configuracoes'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30 rounded-t-xl'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <Settings2 className="w-4 h-4" />
+            <span>Configurações e Membros</span>
+          </button>
+        </div>
+
+        {adminTab === 'visao_geral' ? (
+          <SectorOverviewDashboard
+            workspaceId={selectedWorkspace}
+            workspaceName={selectedWorkspaceName}
+            userRole={userRole}
+            onNavigateToConfig={() => handleSwitchAdminTab('configuracoes')}
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           
           {/* Bloco 1: Criar Setor (Apenas Admin) */}
           {isAdmin && (
@@ -842,6 +923,7 @@ export default function AdminPage() {
           )}
 
         </div>
+      )}
       </div>
 
       {/* Modal de Gestão Administrativa de Escalas SLA */}
