@@ -362,16 +362,16 @@ export default function AdminPage() {
   const activeVisibilityMode = currentWorkspace?.visibility_mode || 'own_only';
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-slate-50 p-6 md:p-10">
+    <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-[#0b0e17] text-slate-900 dark:text-slate-100 p-6 md:p-10">
       <div className="max-w-6xl mx-auto pb-16">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-3">
-            <ShieldCheck className="w-8 h-8 text-blue-600 shrink-0" />
+            <ShieldCheck className="w-8 h-8 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
-              <h1 className="text-2xl md:text-3xl font-black text-slate-800">
+              <h1 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white">
                 {isAdmin ? 'Painel de Administração Global' : `Gestão do Setor: ${selectedWorkspaceName}`}
               </h1>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 {isAdmin ? 'Gerencie todos os setores, aloque membros, configure privacidade e defina permissões.' : 'Aloque membros e configure regras de privacidade dos quadros do seu setor.'}
               </p>
             </div>
@@ -389,20 +389,20 @@ export default function AdminPage() {
           
           {/* Bloco 1: Criar Setor (Apenas Admin) */}
           {isAdmin && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] flex flex-col justify-between">
               <div>
-                <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-blue-600" />
+                <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   1. Criar Novo Setor
                 </h2>
-                <p className="text-xs text-slate-500 mb-4">Adicione um novo setor/workspace à organização.</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Adicione um novo setor/workspace à organização.</p>
                 <div className="flex gap-2">
                   <input 
                     type="text" 
                     placeholder="Ex: Comercial, Operacional"
                     value={newWorkspaceName}
                     onChange={(e) => setNewWorkspaceName(e.target.value)}
-                    className="flex-1 px-4 py-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500 text-sm"
+                    className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:border-blue-500 text-sm"
                   />
                   <button 
                     onClick={() => createWorkspace.mutate(newWorkspaceName)}
@@ -416,9 +416,9 @@ export default function AdminPage() {
 
               <div className="mt-6">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Setores Existentes:</h3>
-                <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl max-h-48 overflow-y-auto">
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl max-h-48 overflow-y-auto">
                   {workspaces?.map((w: any) => (
-                    <li key={w.id} className="p-3 text-sm text-slate-700 font-medium flex items-center justify-between">
+                    <li key={w.id} className="p-3 text-sm text-slate-700 dark:text-slate-200 font-medium flex items-center justify-between">
                       <span>{w.name}</span>
                     </li>
                   ))}
@@ -428,23 +428,23 @@ export default function AdminPage() {
           )}
 
           {/* Bloco 2: Alocar Usuário no Setor (Admin + Líder de Setor) */}
-          <div className={`bg-white p-6 rounded-2xl shadow-sm border border-slate-200 ${!isAdmin ? 'md:col-span-2' : ''}`}>
-            <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-green-600" />
+          <div className={`bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] ${!isAdmin ? 'md:col-span-2' : ''}`}>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-green-600 dark:text-green-400" />
               {isAdmin ? '2. Alocar Usuário no Setor' : 'Alocar Usuário no Seu Setor'}
             </h2>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               Selecione o usuário cadastrado para vincular diretamente ao setor correspondente.
             </p>
             
             <div className="flex flex-col gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Setor Alvo</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Setor Alvo</label>
                 {isAdmin ? (
                   <select 
                     value={selectedWorkspace}
                     onChange={(e) => setSelectedWorkspace(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none text-sm text-slate-800 focus:border-blue-500 bg-white"
+                    className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-xl outline-none text-sm focus:border-blue-500"
                   >
                     <option value="">-- Escolha um setor --</option>
                     {workspaces?.map((w: any) => (
@@ -452,18 +452,18 @@ export default function AdminPage() {
                     ))}
                   </select>
                 ) : (
-                  <div className="w-full px-4 py-2.5 border border-slate-200 bg-slate-50 rounded-xl text-sm font-bold text-slate-700">
+                  <div className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200">
                     {selectedWorkspaceName}
                   </div>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Selecione o Usuário</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Selecione o Usuário</label>
                 <select 
                   value={selectedUser}
                   onChange={(e) => setSelectedUser(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none text-sm text-slate-800 focus:border-blue-500 bg-white"
+                  className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-xl outline-none text-sm focus:border-blue-500"
                 >
                   <option value="">-- Escolha um usuário --</option>
                   {profiles?.map((p: any) => (
@@ -482,19 +482,19 @@ export default function AdminPage() {
             </div>
 
             {selectedWorkspace && (
-              <div className="mt-6 border-t border-slate-100 pt-4">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+              <div className="mt-6 border-t border-slate-100 dark:border-slate-800 pt-4">
+                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-2">
                   Membros alocados em "{selectedWorkspaceName}":
                 </h3>
-                <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl max-h-48 overflow-y-auto">
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl max-h-48 overflow-y-auto">
                   {workspaceMembers?.filter((m: any) => m.workspace_id === selectedWorkspace).map((m: any) => {
                     const profile = profiles?.find((p: any) => p.id === m.user_id);
                     return (
-                      <li key={m.user_id} className="p-3 text-sm text-slate-700 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                      <li key={m.user_id} className="p-3 text-sm text-slate-700 dark:text-slate-200 flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold">{profile?.email || 'Usuário desconhecido'}</span>
-                          {profile?.role === 'leader' && <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Líder</span>}
-                          {profile?.role === 'admin' && <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">Admin</span>}
+                          {profile?.role === 'leader' && <span className="text-[10px] bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 font-bold px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">Líder</span>}
+                          {profile?.role === 'admin' && <span className="text-[10px] bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 font-bold px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">Admin</span>}
                         </div>
                         <button 
                           onClick={() => {
@@ -502,7 +502,7 @@ export default function AdminPage() {
                               removeMember.mutate({ workspace_id: selectedWorkspace, user_id: m.user_id });
                             }
                           }}
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50 p-1.5 rounded-lg transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1"
                           title="Remover Acesso"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -521,17 +521,17 @@ export default function AdminPage() {
 
           {/* Bloco 3: Regras de Privacidade e Visibilidade de Quadros no Setor */}
           {selectedWorkspace && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] md:col-span-2">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2">
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <Eye className="w-5 h-5 text-purple-600" />
+                <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   Privacidade dos Quadros no Setor: "{selectedWorkspaceName}"
                 </h2>
-                <span className="text-xs px-3 py-1 rounded-full font-bold bg-purple-50 text-purple-700 border border-purple-200 self-start md:self-auto">
+                <span className="text-xs px-3 py-1 rounded-full font-bold bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 self-start md:self-auto">
                   Configuração de Visibilidade
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mb-6">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
                 Defina como os membros comuns (`user`) enxergam os quadros dos colegas e dos líderes neste setor.
               </p>
 
@@ -541,19 +541,19 @@ export default function AdminPage() {
                   onClick={() => updateVisibilityMode.mutate('own_only')}
                   className={`p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
                     activeVisibilityMode === 'own_only'
-                      ? 'border-blue-600 bg-blue-50/60 shadow-xs ring-2 ring-blue-600/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                      ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 shadow-xs ring-2 ring-blue-600/20'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-900/60'
                   }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <span className="p-2.5 bg-blue-100 text-blue-700 rounded-xl"><Lock className="w-5 h-5" /></span>
+                      <span className="p-2.5 bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 rounded-xl"><Lock className="w-5 h-5" /></span>
                       {activeVisibilityMode === 'own_only' && (
                         <span className="text-[10px] font-extrabold bg-blue-600 text-white px-2.5 py-0.5 rounded-full">ATIVO</span>
                       )}
                     </div>
-                    <h3 className="font-bold text-slate-800 text-sm mb-1.5">Apenas Próprio Quadro</h3>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-1.5">Apenas Próprio Quadro</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                       Cada usuário comum acessa estritamente seu próprio quadro. Líderes continuam visualizando todos os quadros.
                     </p>
                   </div>
@@ -564,19 +564,19 @@ export default function AdminPage() {
                   onClick={() => updateVisibilityMode.mutate('all_except_leaders')}
                   className={`p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
                     activeVisibilityMode === 'all_except_leaders'
-                      ? 'border-purple-600 bg-purple-50/60 shadow-xs ring-2 ring-purple-600/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                      ? 'border-purple-600 bg-purple-50/60 dark:bg-purple-950/40 shadow-xs ring-2 ring-purple-600/20'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-900/60'
                   }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <span className="p-2.5 bg-purple-100 text-purple-700 rounded-xl"><UserCheck className="w-5 h-5" /></span>
+                      <span className="p-2.5 bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 rounded-xl"><UserCheck className="w-5 h-5" /></span>
                       {activeVisibilityMode === 'all_except_leaders' && (
                         <span className="text-[10px] font-extrabold bg-purple-600 text-white px-2.5 py-0.5 rounded-full">ATIVO</span>
                       )}
                     </div>
-                    <h3 className="font-bold text-slate-800 text-sm mb-1.5">Todos Menos Líderes</h3>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-1.5">Todos Menos Líderes</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                       Usuários enxergam os quadros de todos os colegas do setor, <strong>exceto os quadros pertencentes aos Líderes</strong>.
                     </p>
                   </div>
@@ -587,19 +587,19 @@ export default function AdminPage() {
                   onClick={() => updateVisibilityMode.mutate('all_vs_all')}
                   className={`p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
                     activeVisibilityMode === 'all_vs_all'
-                      ? 'border-emerald-600 bg-emerald-50/60 shadow-xs ring-2 ring-emerald-600/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                      ? 'border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/40 shadow-xs ring-2 ring-emerald-600/20'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-900/60'
                   }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <span className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl"><Globe className="w-5 h-5" /></span>
+                      <span className="p-2.5 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 rounded-xl"><Globe className="w-5 h-5" /></span>
                       {activeVisibilityMode === 'all_vs_all' && (
                         <span className="text-[10px] font-extrabold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full">ATIVO</span>
                       )}
                     </div>
-                    <h3 className="font-bold text-slate-800 text-sm mb-1.5">Todos x Todos</h3>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-1.5">Todos x Todos</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                       Visibilidade total no setor. Todos os usuários enxergam e navegam entre os quadros de todos os membros.
                     </p>
                   </div>
@@ -610,17 +610,17 @@ export default function AdminPage() {
 
           {/* Bloco: Opções do Menu e Abas dos Quadros no Setor */}
           {selectedWorkspace && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] md:col-span-2">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                     <LayoutGrid className="w-5 h-5" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-slate-800">
+                    <h2 className="text-lg font-bold text-slate-800 dark:text-white">
                       Opções do Menu e Abas dos Quadros: "{selectedWorkspaceName}"
                     </h2>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       Escolha exatamente quais opções e abas de navegação estarão visíveis nos quadros deste setor.
                     </p>
                   </div>
@@ -630,14 +630,14 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => setSelectedTabs(['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'])}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                   >
                     Marcar Todas
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedTabs(['tabela', 'kanban', 'calendario'])}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                   >
                     Apenas Padrão (3)
                   </button>
@@ -654,34 +654,34 @@ export default function AdminPage() {
                       onClick={() => handleToggleTab(tab.id)}
                       className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
                         isChecked 
-                          ? 'border-blue-600 bg-blue-50/40 shadow-xs' 
-                          : 'border-slate-200 bg-slate-50/50 hover:border-slate-300 opacity-75'
+                          ? 'border-blue-600 bg-blue-50/40 dark:bg-blue-950/40 shadow-xs' 
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/60 hover:border-slate-300 dark:hover:border-slate-600 opacity-75'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
+                          <span className="font-bold text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
                             {tab.label}
-                            {tab.sublabel && <span className="text-[10px] text-slate-500 font-normal">{tab.sublabel}</span>}
+                            {tab.sublabel && <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">{tab.sublabel}</span>}
                           </span>
                           <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
                             isChecked 
                               ? 'bg-blue-600 text-white' 
-                              : 'bg-slate-200 text-slate-600'
+                              : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                           }`}>
                             {isChecked ? 'VISÍVEL' : 'OCULTO'}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 leading-relaxed">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                           {tab.description}
                         </p>
                       </div>
-                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-xs font-medium">
-                        <span className={isChecked ? 'text-blue-700 font-semibold' : 'text-slate-400'}>
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs font-medium">
+                        <span className={isChecked ? 'text-blue-700 dark:text-blue-400 font-semibold' : 'text-slate-400 dark:text-slate-500'}>
                           {isChecked ? 'Ativo no setor' : 'Inativo no setor'}
                         </span>
                         <div className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
-                          isChecked ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
+                          isChecked ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
                         }`}>
                           {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
@@ -691,8 +691,8 @@ export default function AdminPage() {
                 })}
               </div>
 
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100">
-                <span className="text-xs text-slate-500">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   {selectedTabs.length} de {AVAILABLE_MENU_TABS.length} opções habilitadas para {selectedWorkspaceName}.
                 </span>
                 <button
@@ -709,35 +709,35 @@ export default function AdminPage() {
 
           {/* Bloco 3.8: Gerenciamento e Exclusão de Quadros do Setor (Apenas Administrador) */}
           {isAdmin && selectedWorkspace && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] md:col-span-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <LayoutGrid className="w-5 h-5 text-rose-600" />
+                <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <LayoutGrid className="w-5 h-5 text-rose-600 dark:text-rose-400" />
                   <span>Gerenciamento e Exclusão de Quadros: "{selectedWorkspaceName}"</span>
                 </h2>
-                <span className="text-xs px-3 py-1 rounded-full font-bold bg-rose-50 text-rose-700 border border-rose-200 self-start sm:self-auto">
+                <span className="text-xs px-3 py-1 rounded-full font-bold bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 self-start sm:self-auto">
                   Apenas Administrador
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mb-5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
                 Exclua quadros obsoletos ou de teste deste setor com segurança. Esta ação apaga o quadro e todas as tarefas nele contidas.
               </p>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
                 {adminBoards && adminBoards.length > 0 ? (
                   adminBoards.map((b: any) => {
                     const creator = profiles?.find((p: any) => p.id === b.created_by || p.email === b.created_by);
                     return (
-                      <div key={b.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors gap-3">
+                      <div key={b.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0">
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
                             <LayoutGrid className="w-4 h-4" />
                           </div>
                           <div className="min-w-0">
-                            <span className="text-sm font-bold text-slate-800 truncate block">
+                            <span className="text-sm font-bold text-slate-800 dark:text-white truncate block">
                               {b.name}
                             </span>
-                            <span className="text-xs text-slate-400 truncate block">
+                            <span className="text-xs text-slate-400 dark:text-slate-400 truncate block">
                               Criado por: {creator?.email || 'Sistema'}
                             </span>
                           </div>
@@ -751,7 +751,7 @@ export default function AdminPage() {
                             }
                           }}
                           disabled={deleteBoardMutation.isPending}
-                          className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                          className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
                           title="Excluir quadro definitivamente"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -771,42 +771,42 @@ export default function AdminPage() {
 
           {/* Bloco 4: Controle de Funções e Permissões Globais (Apenas Admin) */}
           {isAdmin && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
-              <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
-                <Users className="w-5 h-5 text-indigo-600" />
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] md:col-span-2">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 4. Controle de Funções e Permissões Globais
               </h2>
-              <p className="text-xs text-slate-500 mb-4">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
                 Defina o papel de cada usuário no sistema (Administrador, Líder de Setor ou Usuário Padrão).
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">
                       <th className="pb-3 font-semibold">E-mail do Usuário</th>
                       <th className="pb-3 font-semibold">Função Atribuída</th>
                       <th className="pb-3 font-semibold text-right">Escopo de Acesso</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
                     {profiles?.map((p: any) => (
-                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3 text-slate-800 font-medium">{p.email}</td>
+                      <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                        <td className="py-3 text-slate-800 dark:text-slate-200 font-medium">{p.email}</td>
                         <td className="py-3">
                           <select 
                             value={p.role || 'user'} 
                             onChange={(e) => toggleRole.mutate({ userId: p.id, newRole: e.target.value })}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold outline-none cursor-pointer border transition-colors ${p.role === 'admin' ? 'bg-blue-50 border-blue-200 text-blue-700' : p.role === 'leader' ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-slate-100 border-slate-200 text-slate-600'}`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold outline-none cursor-pointer border transition-colors ${p.role === 'admin' ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : p.role === 'leader' ? 'bg-purple-50 dark:bg-purple-950/70 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}
                           >
-                            <option value="user" className="bg-white text-slate-700">Usuário Padrão</option>
-                            <option value="leader" className="bg-white text-slate-700">Líder de Setor</option>
-                            <option value="admin" className="bg-white text-slate-700">Administrador Global</option>
+                            <option value="user" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Usuário Padrão</option>
+                            <option value="leader" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Líder de Setor</option>
+                            <option value="admin" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Administrador Global</option>
                           </select>
                         </td>
                         <td className="py-3 text-right">
-                          {p.role === 'admin' && <span className="text-xs text-blue-600 font-bold bg-blue-50 px-2.5 py-1 rounded-md">Todos os Setores</span>}
-                          {p.role === 'leader' && <span className="text-xs text-purple-600 font-bold bg-purple-50 px-2.5 py-1 rounded-md">1 Setor Exclusivo + Gestão</span>}
-                          {(p.role === 'user' || !p.role) && <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2.5 py-1 rounded-md">1 Setor Exclusivo</span>}
+                          {p.role === 'admin' && <span className="text-xs text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-950/70 px-2.5 py-1 rounded-md border border-blue-200 dark:border-blue-800">Todos os Setores</span>}
+                          {p.role === 'leader' && <span className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/70 px-2.5 py-1 rounded-md border border-purple-200 dark:border-purple-800">1 Setor Exclusivo + Gestão</span>}
+                          {(p.role === 'user' || !p.role) && <span className="text-xs text-slate-500 dark:text-slate-400 font-medium bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700">1 Setor Exclusivo</span>}
                         </td>
                       </tr>
                     ))}
@@ -818,14 +818,14 @@ export default function AdminPage() {
 
           {/* Bloco Gestão de Escalas SLA de Atendimento */}
           {hasAccess && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] md:col-span-2">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
-                    <Headset className="w-5 h-5 text-purple-600" />
+                  <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
+                    <Headset className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                     Gestão de Escalas SLA de Atendimento
                   </h2>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Verifique os colaboradores escalados, altere plantonistas e horários ou retire escalas de atendimento SLA.
                   </p>
                 </div>

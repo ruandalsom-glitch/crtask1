@@ -12,6 +12,39 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const INACTIVITY_LIMIT = 12 * 60 * 60 * 1000; // 12 horas em ms
 
+  // Garante a aplicação imediata e contínua do tema Claro / Escuro em todas as trocas de rota (evita reset para tema claro)
+  useEffect(() => {
+    const applyCurrentTheme = () => {
+      try {
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+
+        if (shouldBeDark) {
+          document.documentElement.classList.add('dark');
+          document.body.classList.add('dark');
+          document.documentElement.style.colorScheme = 'dark';
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.body.classList.remove('dark');
+          document.documentElement.style.colorScheme = 'light';
+        }
+      } catch (e) {
+        console.error('Erro ao sincronizar tema:', e);
+      }
+    };
+
+    applyCurrentTheme();
+
+    window.addEventListener('crtask_theme_change', applyCurrentTheme);
+    window.addEventListener('storage', applyCurrentTheme);
+
+    return () => {
+      window.removeEventListener('crtask_theme_change', applyCurrentTheme);
+      window.removeEventListener('storage', applyCurrentTheme);
+    };
+  }, [pathname]);
+
   const handleLogout = useCallback(async () => {
     localStorage.clear();
     sessionStorage.clear();

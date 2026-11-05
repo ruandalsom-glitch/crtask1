@@ -340,12 +340,12 @@ export default function ReportsPage() {
     printWindow.document.close();
   };
 
-  if (hasAccess === null) return <div className="p-10 text-center text-slate-500 font-medium">Verificando permissões...</div>;
+  if (hasAccess === null) return <div className="p-10 text-center text-slate-500 dark:text-slate-400 font-medium">Verificando permissões...</div>;
   if (hasAccess === false) return (
-    <div className="p-10 flex flex-col items-center justify-center h-full w-full bg-slate-50">
+    <div className="p-10 flex flex-col items-center justify-center h-full w-full bg-slate-50 dark:bg-[#0b0e17] text-slate-900 dark:text-slate-100">
       <ShieldAlert className="w-20 h-20 text-red-500 mb-4" />
-      <h1 className="text-2xl font-bold text-slate-800">Acesso Negado</h1>
-      <p className="text-slate-500 mt-2">Você precisa ter função de Líder de Setor ou Administrador para acessar os relatórios.</p>
+      <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Acesso Negado</h1>
+      <p className="text-slate-500 dark:text-slate-400 mt-2">Você precisa ter função de Líder de Setor ou Administrador para acessar os relatórios.</p>
       <Link href="/" className="mt-6 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors">Voltar ao Início</Link>
     </div>
   );
@@ -385,23 +385,23 @@ export default function ReportsPage() {
   const barData = userStats ? Object.values(userStats).sort((a: any, b: any) => (b.concluido + b.pendente) - (a.concluido + a.pendente)).slice(0, 10) : [];
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-slate-50 p-6 md:p-10">
+    <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-[#0b0e17] text-slate-900 dark:text-slate-100 p-6 md:p-10">
       <div className="max-w-6xl mx-auto pb-16">
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/admin" className="p-2 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors shadow-xs" title="Voltar ao Painel Admin">
+          <Link href="/admin" className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-slate-600 dark:text-slate-300 transition-colors shadow-xs" title="Voltar ao Painel Admin">
             <ArrowLeft className="w-6 h-6" />
           </Link>
-          <BarChart3 className="w-8 h-8 text-blue-600" />
-          <h1 className="text-2xl md:text-3xl font-black text-slate-800">Relatórios e Insights do Time</h1>
+          <BarChart3 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+          <h1 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white">Relatórios e Insights do Time</h1>
         </div>
       
       {isLoading ? (
-        <div className="text-slate-500 font-medium p-6">Carregando dados do sistema...</div>
+        <div className="text-slate-500 dark:text-slate-400 font-medium p-6">Carregando dados do sistema...</div>
       ) : (
         <div className="flex flex-col gap-8">
           
           {/* Sessão de Insights IA */}
-          <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-slate-50 p-6 md:p-8 rounded-2xl shadow-xs border border-indigo-100">
+          <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-slate-50 dark:from-slate-900 dark:via-indigo-950/40 dark:to-slate-900 p-6 md:p-8 rounded-2xl shadow-xs border border-indigo-100 dark:border-indigo-900/40">
             
             {/* Header da IA com Filtros */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 border-b border-indigo-100 pb-5">
@@ -427,10 +427,10 @@ export default function ReportsPage() {
             </div>
 
             {/* Barra de Filtros */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 bg-white/80 backdrop-blur-xs p-4 rounded-xl border border-indigo-100/80 shadow-2xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs p-4 rounded-xl border border-indigo-100/80 dark:border-indigo-900/60 shadow-2xs">
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                   Filtrar por Setor (Workspace)
                 </label>
                 <select
@@ -439,7 +439,7 @@ export default function ReportsPage() {
                     setSelectedSector(e.target.value);
                     setSelectedAssignee('');
                   }}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500 transition-colors"
                 >
                   <option value="">-- Todos os Setores (Geral) --</option>
                   {workspaces?.map((ws: any) => (
@@ -449,14 +449,14 @@ export default function ReportsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-indigo-600" />
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                   Filtrar por Colaborador
                 </label>
                 <select
                   value={selectedAssignee}
                   onChange={(e) => setSelectedAssignee(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500 transition-colors"
                 >
                   <option value="">-- Todos os Colaboradores --</option>
                   {uniqueAssignees.map((email: string) => (
@@ -468,30 +468,30 @@ export default function ReportsPage() {
             
             {/* Conteúdo do Relatório */}
             {latestInsight ? (
-              <div className="bg-white p-6 rounded-xl border border-indigo-100 shadow-2xs">
+              <div className="bg-white dark:bg-[#131929] p-6 rounded-xl border border-indigo-100 dark:border-indigo-900/60 shadow-2xs">
                 
                 {/* Ações do Relatório (Copiar / PDF) */}
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
-                  <span className="text-xs font-bold text-indigo-900 uppercase tracking-wider bg-indigo-50 px-3 py-1 rounded-md border border-indigo-100">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/70 px-3 py-1 rounded-md border border-indigo-100 dark:border-indigo-800">
                     Análise Concluída
                   </span>
                   
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleCopyInsight}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                      className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
                       title="Copiar texto do relatório"
                     >
-                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />}
                       {copied ? 'Copiado!' : 'Copiar Texto'}
                     </button>
 
                     <button
                       onClick={handleExportAiPdf}
-                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer border border-indigo-200"
+                      className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer border border-indigo-200 dark:border-indigo-800"
                       title="Exportar como PDF visual formatado"
                     >
-                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                       Exportar PDF
                     </button>
                   </div>
@@ -500,14 +500,14 @@ export default function ReportsPage() {
                 {/* ReactMarkdown Formatado */}
                 <div 
                   id="ai-insight-content"
-                  className="prose prose-indigo max-w-none w-full text-slate-700 text-sm md:text-base leading-relaxed space-y-4 [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:bg-indigo-950 [&_th]:text-white [&_th]:p-3 [&_th]:text-xs [&_th]:font-bold [&_th]:border [&_th]:border-indigo-900 [&_td]:p-2.5 [&_td]:text-xs [&_td]:border [&_td]:border-slate-200 [&_tr:nth-child(even)]:bg-indigo-50/40 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                  className="prose prose-indigo dark:prose-invert max-w-none w-full text-slate-700 dark:text-slate-200 text-sm md:text-base leading-relaxed space-y-4 [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:bg-indigo-950 dark:[&_th]:bg-slate-800 [&_th]:text-white [&_th]:p-3 [&_th]:text-xs [&_th]:font-bold [&_th]:border [&_th]:border-indigo-900 dark:[&_th]:border-slate-700 [&_td]:p-2.5 [&_td]:text-xs [&_td]:border [&_td]:border-slate-200 dark:[&_td]:border-slate-800 [&_tr:nth-child(even)]:bg-indigo-50/40 dark:[&_tr:nth-child(even)]:bg-slate-800/40 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
                 >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {latestInsight.summary_text}
                   </ReactMarkdown>
                 </div>
 
-                <p className="text-xs text-slate-400 mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                <p className="text-xs text-slate-400 mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                   <span>Última atualização: {new Date(latestInsight.created_at).toLocaleString('pt-BR')}</span>
                   <span className="text-[11px] text-slate-400">Powered by Google Gemini</span>
                 </p>
@@ -520,31 +520,31 @@ export default function ReportsPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h2 className="text-slate-500 font-semibold mb-2">Total de Tarefas Cadastradas</h2>
-              <p className="text-5xl font-black text-slate-800">{totalTasks}</p>
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08]">
+              <h2 className="text-slate-500 dark:text-slate-400 font-semibold mb-2">Total de Tarefas Cadastradas</h2>
+              <p className="text-5xl font-black text-slate-800 dark:text-white">{totalTasks}</p>
             </div>
             
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-200 relative overflow-hidden">
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-emerald-200 dark:border-emerald-800/40 relative overflow-hidden">
               <div className="relative z-10">
-                <h2 className="text-emerald-600 font-semibold mb-2">Tarefas Concluídas (Feito)</h2>
-                <p className="text-5xl font-black text-emerald-600">{completedTasks}</p>
+                <h2 className="text-emerald-600 dark:text-emerald-400 font-semibold mb-2">Tarefas Concluídas (Feito)</h2>
+                <p className="text-5xl font-black text-emerald-600 dark:text-emerald-400">{completedTasks}</p>
               </div>
               <div className="absolute -right-4 -bottom-4 opacity-10">
                 <PieChartIcon className="w-32 h-32 text-emerald-600" />
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-orange-200">
-              <h2 className="text-orange-600 font-semibold mb-2">Tarefas Pendentes / Em andamento</h2>
-              <p className="text-5xl font-black text-orange-600">{pendingTasks}</p>
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-800/40">
+              <h2 className="text-orange-600 dark:text-orange-400 font-semibold mb-2">Tarefas Pendentes / Em andamento</h2>
+              <p className="text-5xl font-black text-orange-600 dark:text-orange-400">{pendingTasks}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1">
-              <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-                <PieChartIcon className="w-5 h-5 text-blue-500" />
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] lg:col-span-1">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2">
+                <PieChartIcon className="w-5 h-5 text-blue-500 dark:text-blue-400" />
                 Status das Tarefas
               </h2>
               <div className="h-[350px] w-full">
@@ -555,28 +555,28 @@ export default function ReportsPage() {
                         <Cell key={`cell-${index}`} fill={entry.name === 'Feito' ? '#10b981' : entry.name === 'Travado' ? '#ef4444' : entry.name === 'Trabalhando' ? '#f59e0b' : '#3b82f6'} />
                       ))}
                     </Pie>
-                    <RechartsTooltip />
+                    <RechartsTooltip contentStyle={{ backgroundColor: 'var(--card-bg, #1e293b)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '8px' }} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
-              <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-indigo-500" />
+            <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] lg:col-span-2">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
                 Carga de Trabalho por Usuário (Top 10)
               </h2>
               <div className="h-[350px] w-full overflow-x-auto">
                 <ResponsiveContainer width="100%" height="100%" minWidth={500}>
                   <BarChart data={barData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
-                    <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
-                    <RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
+                    <XAxis dataKey="name" tick={{fill: '#94a3b8', fontSize: 12}} axisLine={false} tickLine={false} />
+                    <YAxis tick={{fill: '#94a3b8', fontSize: 12}} axisLine={false} tickLine={false} />
+                    <RechartsTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: 'var(--card-bg, #1e293b)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '8px' }} />
                     <Legend />
                     <Bar dataKey="concluido" name="Concluídas" stackId="a" fill="#10b981" radius={[0, 0, 4, 4]} />
-                    <Bar dataKey="pendente" name="Pendentes" stackId="a" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="pendente" name="Pendentes" stackId="a" fill="#64748b" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

@@ -86,22 +86,22 @@ export default function Home() {
   }, [router]);
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-slate-50 p-6">
+    <div className="flex h-full w-full items-center justify-center bg-slate-50 dark:bg-[#0b0e17] text-slate-900 dark:text-slate-100 p-6">
       {loading ? (
         <div className="flex flex-col items-center">
-          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-          <p className="text-slate-600 font-medium">Validando permissões e acessando seu setor...</p>
+          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 dark:border-indigo-500/30 dark:border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400 font-medium">Validando permissões e acessando seu setor...</p>
         </div>
       ) : (
-        <div className="p-8 bg-white rounded-xl shadow-lg border border-slate-200 max-w-md text-center">
-          <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-4 font-bold text-xl">
+        <div className="p-8 bg-white dark:bg-[#131929] rounded-xl shadow-lg border border-slate-200 dark:border-white/[0.08] max-w-md text-center">
+          <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-4 font-bold text-xl">
             🔒
           </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Acesso de Setor</h2>
-          <p className="text-slate-600 text-sm leading-relaxed mb-4">{error}</p>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Acesso de Setor</h2>
+          <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed mb-4">{error}</p>
           <button 
             onClick={() => { supabase.auth.signOut(); window.location.href = '/login'; }} 
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition-colors cursor-pointer"
+            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium rounded-lg transition-colors cursor-pointer"
           >
             Sair e Fazer Login Novamente
           </button>

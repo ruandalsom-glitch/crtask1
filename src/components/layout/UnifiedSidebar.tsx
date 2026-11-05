@@ -178,14 +178,29 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
   // Sincronização do tema Claro / Escuro
   useEffect(() => {
     const syncTheme = () => {
-      const savedTheme = localStorage.getItem('theme');
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-      setIsDarkMode(shouldBeDark);
+      try {
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+        setIsDarkMode(shouldBeDark);
+        if (shouldBeDark) {
+          document.documentElement.classList.add('dark');
+          document.body.classList.add('dark');
+          document.documentElement.style.colorScheme = 'dark';
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.body.classList.remove('dark');
+          document.documentElement.style.colorScheme = 'light';
+        }
+      } catch (e) {}
     };
     syncTheme();
     window.addEventListener('crtask_theme_change', syncTheme);
-    return () => window.removeEventListener('crtask_theme_change', syncTheme);
+    window.addEventListener('storage', syncTheme);
+    return () => {
+      window.removeEventListener('crtask_theme_change', syncTheme);
+      window.removeEventListener('storage', syncTheme);
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -194,10 +209,12 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
     if (nextMode) {
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
+      document.documentElement.style.colorScheme = 'dark';
       localStorage.setItem('theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
       document.body.classList.remove('dark');
+      document.documentElement.style.colorScheme = 'light';
       localStorage.setItem('theme', 'light');
     }
     window.dispatchEvent(new Event('crtask_theme_change'));
