@@ -296,13 +296,29 @@ namespace CRTaskDesktop
                                     fgTitle.IndexOf("crtask", StringComparison.OrdinalIgnoreCase) >= 0 ||
                                     (fg == appHwnd && appHwnd != IntPtr.Zero);
 
+                // SE A CÓPIA FOI FEITA FORA DO CR TASK (ex: no WhatsApp, Word, navegador, etc.):
+                // Cancela e limpa imediatamente qualquer legenda ou imagem pendente para NUNCA interferir nas cópias do usuário!
+                if (!isFromCRTask)
+                {
+                    hasPendingImageAndCaption = false;
+                    pendingCaption = "";
+                    if (pendingImage != null)
+                    {
+                        try { pendingImage.Dispose(); } catch { }
+                        pendingImage = null;
+                    }
+                    pasteCaptionTimer.Stop();
+                    restoreClipboardTimer.Stop();
+                    return;
+                }
+
                 bool hasImg = Clipboard.ContainsImage();
                 bool hasTxt = Clipboard.ContainsText();
 
                 if (hasTxt && !hasImg)
                 {
                     string txt = (Clipboard.GetText() ?? "").Trim();
-                    if (!string.IsNullOrEmpty(txt) && !txt.StartsWith("http", StringComparison.OrdinalIgnoreCase) && isFromCRTask)
+                    if (!string.IsNullOrEmpty(txt) && !txt.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                     {
                         pendingCaption = txt;
                         pendingCaptionTime = DateTime.Now;
@@ -323,13 +339,13 @@ namespace CRTaskDesktop
 
                     if (!string.IsNullOrEmpty(pendingCaption) && (DateTime.Now - pendingCaptionTime).TotalSeconds < 10)
                     {
+                        if (pendingImage != null)
+                        {
+                            try { pendingImage.Dispose(); } catch { }
+                        }
                         pendingImage = Clipboard.GetImage();
                         hasPendingImageAndCaption = true;
                         pendingCaptionTime = DateTime.Now;
-                    }
-                    else if (!isFromCRTask)
-                    {
-                        hasPendingImageAndCaption = false;
                     }
                 }
             }
@@ -344,17 +360,47 @@ namespace CRTaskDesktop
                 if (vkCode == VK_V)
                 {
                     bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                    if (ctrlDown && hasPendingImageAndCaption && !string.IsNullOrEmpty(pendingCaption))
+                    if (ctrlDown)
                     {
-                        if ((DateTime.Now - pendingCaptionTime).TotalMinutes < 30)
+                        // Se não tem legenda/imagem pendente da CR Task, não faz absolutamente nada!
+                        if (!hasPendingImageAndCaption || string.IsNullOrEmpty(pendingCaption))
                         {
-                            IntPtr fg = GetForegroundWindow();
-                            string fgTitle = GetWindowTitle(fg);
-                            if (fgTitle.IndexOf("WhatsApp", StringComparison.OrdinalIgnoreCase) >= 0)
+                            return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                        }
+
+                        // Timeout estrito: só é válido até 30 segundos após copiar no CR Task
+                        if ((DateTime.Now - pendingCaptionTime).TotalSeconds > 30)
+                        {
+                            hasPendingImageAndCaption = false;
+                            pendingCaption = "";
+                            return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                        }
+
+                        // VERIFICAÇÃO CRÍTICA: o clipboard atual do Windows contém imagem?
+                        // Se o usuário estiver colando um texto simples, NUNCA interfere!
+                        try
+                        {
+                            if (!Clipboard.ContainsImage())
                             {
-                                pasteCaptionTimer.Stop();
-                                pasteCaptionTimer.Start();
+                                hasPendingImageAndCaption = false;
+                                pendingCaption = "";
+                                return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
                             }
+                        }
+                        catch
+                        {
+                            return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                        }
+
+                        IntPtr fg = GetForegroundWindow();
+                        string fgTitle = GetWindowTitle(fg);
+                        if (fgTitle.IndexOf("WhatsApp", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            // Consome a flag IMEDIATAMENTE para ser uso único (One-Time)
+                            // Nunca dispara duas vezes no mesmo ou próximo Ctrl+V!
+                            hasPendingImageAndCaption = false;
+                            pasteCaptionTimer.Stop();
+                            pasteCaptionTimer.Start();
                         }
                     }
                 }
@@ -365,25 +411,24 @@ namespace CRTaskDesktop
         private void PasteCaptionTimer_Tick(object sender, EventArgs e)
         {
             pasteCaptionTimer.Stop();
-            if (string.IsNullOrEmpty(pendingCaption)) return;
+            string captionToPaste = pendingCaption;
+            pendingCaption = ""; // Limpa a legenda consumida imediatamente!
+
+            if (string.IsNullOrEmpty(captionToPaste)) return;
 
             try
             {
                 isInternalClipboardChange = true;
                 isSimulatingPaste = true;
 
-                if (pendingImage == null && Clipboard.ContainsImage())
-                {
-                    pendingImage = Clipboard.GetImage();
-                }
-
-                Clipboard.SetText(pendingCaption);
+                Clipboard.SetText(captionToPaste);
 
                 keybd_event((byte)VK_CONTROL, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
                 keybd_event((byte)VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
 
+                // Aguarda para limpar flags, SEM reescrever o clipboard do Windows!
                 restoreClipboardTimer.Stop();
                 restoreClipboardTimer.Start();
             }
@@ -399,15 +444,12 @@ namespace CRTaskDesktop
             restoreClipboardTimer.Stop();
             try
             {
+                // NÃO reescreve a área de transferência do Windows com dados antigos!
+                // Isso evita poluir ou corromper as próximas cópias do usuário.
                 if (pendingImage != null)
                 {
-                    DataObject data = new DataObject();
-                    data.SetImage(pendingImage);
-                    if (!string.IsNullOrEmpty(pendingCaption))
-                    {
-                        data.SetText(pendingCaption);
-                    }
-                    Clipboard.SetDataObject(data, true);
+                    try { pendingImage.Dispose(); } catch { }
+                    pendingImage = null;
                 }
             }
             catch { }
@@ -415,6 +457,8 @@ namespace CRTaskDesktop
             {
                 isInternalClipboardChange = false;
                 isSimulatingPaste = false;
+                hasPendingImageAndCaption = false;
+                pendingCaption = "";
             }
         }
 
