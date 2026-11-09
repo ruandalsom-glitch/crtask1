@@ -821,12 +821,12 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
               cursor: pointer;
             }
           `}} />
-          <div className="bg-white dark:bg-[#131929] relative rounded-xl border border-slate-200 dark:border-white/[0.08] shadow-xs overflow-hidden">
-            <table className="w-full text-left border-collapse">
+          <div className="bg-white dark:bg-[#131929] relative rounded-xl border border-slate-200 dark:border-white/[0.08] shadow-xs overflow-x-auto">
+            <table className="w-full text-left border-collapse table-fixed min-w-[1260px]">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-white/[0.06] text-[#676879] dark:text-slate-400 text-[13px] bg-slate-50/70 dark:bg-white/[0.02]">
-                  <th className="w-2 p-0"></th>
-                  <th className="w-10 text-center p-0 border-r border-slate-200 dark:border-white/[0.06] relative">
+                  <th className="w-[8px] min-w-[8px] max-w-[8px] p-0"></th>
+                  <th className="w-[40px] min-w-[40px] max-w-[40px] text-center p-0 border-r border-slate-200 dark:border-white/[0.06] relative">
                     <input 
                       type="checkbox" 
                       checked={groupTasks && groupTasks.length > 0 && groupTasks.every((t: any) => selectedTasks.includes(t.id))}
@@ -835,24 +835,28 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                       title={groupTasks && groupTasks.length > 0 && groupTasks.every((t: any) => selectedTasks.includes(t.id)) ? "Desmarcar todas do grupo" : "Selecionar todas do grupo"}
                     />
                   </th>
-                  <th className="font-semibold px-4 py-2 border-r border-slate-200 dark:border-white/[0.06] text-left min-w-[380px]">Item / Tarefa</th>
-                  <th className="w-12 text-center p-0 border-r border-slate-200 dark:border-white/[0.06]"></th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-36 text-center">Responsável</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-36 text-center">Status</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-40 text-center">Timeline</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-32 text-center">Prazo</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-32 text-center">Prioridade</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-32 text-center">Esforço</th>
-                  <th className="font-semibold px-3 py-2 border-r border-slate-200 dark:border-white/[0.06] w-24 text-center">Arquivos</th>
-                  <th className="w-10 text-center p-0"></th>
+                  <th className="font-semibold px-4 py-2 border-r border-slate-200 dark:border-white/[0.06] text-left min-w-[280px]">Item / Tarefa</th>
+                  <th className="w-[44px] min-w-[44px] max-w-[44px] text-center p-0 border-r border-slate-200 dark:border-white/[0.06]">
+                    <div className="flex items-center justify-center w-full h-full" title="Atualizações e Comentários">
+                      <MessageSquare className="w-3.5 h-3.5 text-slate-400/60 dark:text-slate-500/60 mx-auto" />
+                    </div>
+                  </th>
+                  <th className="font-semibold px-2 py-2 border-r border-slate-200 dark:border-white/[0.06] w-[144px] min-w-[144px] max-w-[144px] text-center">Responsável</th>
+                  <th className="font-semibold px-2 py-2 border-r border-slate-200 dark:border-white/[0.06] w-[140px] min-w-[140px] max-w-[140px] text-center">Status</th>
+                  <th className="font-semibold px-2 py-2 border-r border-slate-200 dark:border-white/[0.06] w-[150px] min-w-[150px] max-w-[150px] text-center">Timeline</th>
+                  <th className="font-semibold px-2 py-2 border-r border-slate-200 dark:border-white/[0.06] w-[125px] min-w-[125px] max-w-[125px] text-center">Prazo</th>
+                  <th className="font-semibold px-2 py-2 border-r border-slate-200 dark:border-white/[0.06] w-[125px] min-w-[125px] max-w-[125px] text-center">Prioridade</th>
+                  <th className="font-semibold px-2 py-2 border-r border-slate-200 dark:border-white/[0.06] w-[125px] min-w-[125px] max-w-[125px] text-center">Esforço</th>
+                  <th className="font-semibold px-2 py-2 border-r border-slate-200 dark:border-white/[0.06] w-[90px] min-w-[90px] max-w-[90px] text-center">Arquivos</th>
+                  <th className="w-[40px] min-w-[40px] max-w-[40px] text-center p-0"></th>
                 </tr>
               </thead>
               <tbody className="text-[14px]">
                 {groupTasks && groupTasks.length > 0 ? (
                   groupTasks.map((task) => (
-                    <tr key={task.id} className={`group/row border-b border-slate-200 transition-colors h-[42px] ${selectedTasks.includes(task.id) ? 'bg-blue-50/50' : 'hover:bg-[#f5f6f8] dark:hover:bg-white/[0.02]'}`}>
-                      <td className="w-2 p-0" style={{ backgroundColor: colors.bg }}></td>
-                      <td className="w-10 text-center p-0 border-r border-slate-200 dark:border-white/[0.06] relative bg-transparent">
+                    <tr key={task.id} className={`group/row border-b border-slate-200 dark:border-white/[0.06] transition-colors h-[42px] ${selectedTasks.includes(task.id) ? 'bg-blue-50/50 dark:bg-blue-900/20' : 'hover:bg-[#f5f6f8] dark:hover:bg-white/[0.02]'}`}>
+                      <td className="w-[8px] min-w-[8px] max-w-[8px] p-0" style={{ backgroundColor: colors.bg }}></td>
+                      <td className="w-[40px] min-w-[40px] max-w-[40px] text-center p-0 border-r border-slate-200 dark:border-white/[0.06] relative bg-transparent">
                         <input 
                           type="checkbox" 
                           checked={selectedTasks.includes(task.id)}
@@ -860,7 +864,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                           className="w-4 h-4 rounded border-slate-300 opacity-0 group-hover/row:opacity-100 transition-opacity absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer checked:opacity-100 accent-blue-600" 
                         />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06] relative group/title min-w-[380px]">
+                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06] relative group/title min-w-[280px] overflow-hidden">
                         <div className="flex items-center justify-between w-full h-full">
                           <div className="flex items-center gap-2 flex-1 min-w-0 pr-6">
                             {task.is_external && (
@@ -893,40 +897,40 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                           </div>
                         </div>
                       </td>
-                      <td className="border-r border-slate-200 dark:border-white/[0.06] text-center relative hover:bg-slate-50 transition-colors">
-                        <div className="absolute inset-0 flex items-center justify-center cursor-pointer group/chat" onClick={() => setTaskDetailsOpen(task)}>
-                          <div className="relative">
-                            <MessageCirclePlus className="w-5 h-5 text-slate-300 group-hover/chat:text-blue-500 stroke-[1.5] transition-colors" />
+                      <td className="w-[44px] min-w-[44px] max-w-[44px] p-0 border-r border-slate-200 dark:border-white/[0.06] text-center relative hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors">
+                        <div className="flex items-center justify-center w-full h-[42px] cursor-pointer group/chat" onClick={() => setTaskDetailsOpen(task)}>
+                          <div className="relative inline-flex items-center justify-center">
+                            <MessageCirclePlus className="w-5 h-5 text-slate-300 dark:text-slate-500 group-hover/chat:text-blue-500 dark:group-hover/chat:text-blue-400 stroke-[1.5] transition-colors" />
                             {/* Simulação de notificação: Badge azul com count se existir updates_count na DB */}
                             {task.task_updates?.length > 0 && (
-                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                              <div className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white dark:border-[#131929] shadow-xs pointer-events-none">
                                 <span className="text-[10px] text-white font-bold leading-none">{task.task_updates.length}</span>
                               </div>
                             )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06] text-center relative group/assignee">
+                      <td className="px-2 py-0 border-r border-slate-200 dark:border-white/[0.06] text-center relative group/assignee w-[144px] min-w-[144px] max-w-[144px] overflow-hidden">
                         <AssigneeCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] relative z-10">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] relative z-10 w-[140px] min-w-[140px] max-w-[140px] overflow-hidden">
                         <StatusCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06]">
+                      <td className="px-3 py-0 border-r border-slate-200 dark:border-white/[0.06] w-[150px] min-w-[150px] max-w-[150px] overflow-hidden">
                         <TimelineBar 
                           progress={task.status === 'Feito' ? 100 : task.status === 'Trabalhando' ? 60 : 30} 
                           color={task.status === 'Feito' ? 'bg-[#00c875]' : task.status === 'Trabalhando' ? 'bg-[#fdab3d]' : 'bg-[#579bfc]'} 
                         />
                       </td>
-                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center relative group/date h-full">
-                        <div className="flex items-center justify-center gap-2 h-[42px] w-full group-hover/date:bg-slate-100 transition-colors relative cursor-pointer">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center relative group/date h-full w-[125px] min-w-[125px] max-w-[125px] overflow-hidden">
+                        <div className="flex items-center justify-center gap-2 h-[42px] w-full group-hover/date:bg-slate-100 dark:group-hover/date:bg-white/[0.04] transition-colors relative cursor-pointer">
                            {getDueStatus(task.due_date, task.status) === 'overdue' && task.status !== 'Feito' && (
                              <AlertCircle className="w-4 h-4 text-red-500 fill-red-50 stroke-red-500" />
                            )}
                            {getDueStatus(task.due_date, task.status) === 'done' && (
                              <CheckCircle2 className="w-4 h-4 text-green-500" />
                            )}
-                           <span className={`text-[13px] ${getDueStatus(task.due_date, task.status) === 'overdue' && task.status !== 'Feito' ? 'text-red-500 font-medium' : 'text-[#323338]'} ${task.status === 'Feito' ? 'line-through text-slate-400' : ''}`}>
+                           <span className={`text-[13px] ${getDueStatus(task.due_date, task.status) === 'overdue' && task.status !== 'Feito' ? 'text-red-500 font-medium' : 'text-[#323338] dark:text-slate-200'} ${task.status === 'Feito' ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
                              {formatDate(task.due_date) || '-'}
                            </span>
                            {!isReadOnly && (
@@ -939,17 +943,17 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                            )}
                         </div>
                       </td>
-                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center w-[125px] min-w-[125px] max-w-[125px] overflow-hidden">
                         <PriorityCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center">
+                      <td className="p-0 border-r border-slate-200 dark:border-white/[0.06] text-center w-[125px] min-w-[125px] max-w-[125px] overflow-hidden">
                         <EffortCell task={task} disabled={isReadOnly} />
                       </td>
-                      <td className="px-4 py-0 border-r border-slate-200 dark:border-white/[0.06] text-center hover:bg-slate-50 cursor-pointer group/file relative h-full">
+                      <td className="px-2 py-0 border-r border-slate-200 dark:border-white/[0.06] text-center hover:bg-slate-50 dark:hover:bg-white/[0.04] cursor-pointer group/file relative h-full w-[90px] min-w-[90px] max-w-[90px] overflow-hidden">
                         <label className="flex items-center justify-center h-[42px] w-full cursor-pointer">
-                          <div className="flex items-center gap-1 text-slate-400 group-hover/file:bg-slate-200 px-2 py-1 rounded transition-colors relative">
+                          <div className="flex items-center gap-1 text-slate-400 group-hover/file:bg-slate-200 dark:group-hover/file:bg-white/[0.08] px-2 py-1 rounded transition-colors relative">
                             <span className="text-lg leading-none opacity-0 group-hover/file:opacity-100 absolute -left-2">+</span>
-                            <FileText className="w-[18px] h-[18px] group-hover/file:text-slate-600" />
+                            <FileText className="w-[18px] h-[18px] group-hover/file:text-slate-600 dark:group-hover/file:text-slate-300" />
                           </div>
                           <input 
                             type="file" 
@@ -964,12 +968,12 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                           />
                         </label>
                       </td>
-                      <td className="w-10 text-center p-0"></td>
+                      <td className="w-[40px] min-w-[40px] max-w-[40px] text-center p-0"></td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={9} className="text-center py-6 text-slate-400 text-sm">
+                    <td colSpan={12} className="text-center py-6 text-slate-400 text-sm">
                       Nenhuma tarefa aqui ainda.
                     </td>
                   </tr>
@@ -978,9 +982,9 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                 {/* Linha de Adicionar Item */}
                 {canEditBoard && (
                 <tr className="hover:bg-[#f5f6f8] dark:hover:bg-white/[0.02] transition-colors h-[42px]">
-                  <td className="w-2 p-0 bg-transparent border-l-[3px] border-transparent group-hover:border-l-slate-300"></td>
-                  <td className="w-10 border-r border-slate-200 dark:border-white/[0.06] bg-transparent"></td>
-                  <td colSpan={9} className="px-4 py-0">
+                  <td className="w-[8px] min-w-[8px] max-w-[8px] p-0 bg-transparent border-l-[3px] border-transparent group-hover:border-l-slate-300"></td>
+                  <td className="w-[40px] min-w-[40px] max-w-[40px] border-r border-slate-200 dark:border-white/[0.06] bg-transparent"></td>
+                  <td colSpan={10} className="px-4 py-0">
                     <input 
                       type="text" 
                       placeholder="+ Adicionar Item" 
