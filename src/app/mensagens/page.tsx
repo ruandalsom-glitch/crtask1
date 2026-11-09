@@ -241,14 +241,6 @@ function CargoCollaboratorSelect({
                     cargo === 'Analistas' ? Briefcase :
                     cargo === 'Assistentes' ? ClipboardList : Users;
 
-  const handleSelect = (val: string) => {
-    onChange(val);
-    setIsOpen(false);
-    setIsTypingCustom(false);
-    setCustomValue('');
-    setSearch('');
-  };
-
   // Formata os colaboradores cadastrados no Supabase com @handle e nome
   const systemCollaborators = useMemo(() => {
     return (profiles || []).map(p => {
@@ -269,6 +261,50 @@ function CargoCollaboratorSelect({
     });
   }, [profiles]);
 
+  // Extrai lista de colaboradores a partir do valor (suporta 1 ou mais colaboradores)
+  const selectedCollaborators = useMemo(() => {
+    if (!value || value === 'Nenhum') return [];
+    
+    // Divide por vírgula ou " / "
+    const parts = value.split(/,|\s\/\s/).map(p => p.trim()).filter(Boolean);
+    
+    return parts.map(part => {
+      const match = part.match(/^(.*?)\s*\((@?[^)]+)\)$/);
+      let rawName = match ? match[1].trim() : part;
+      let rawHandle = match ? match[2].trim() : '';
+
+      if (part.startsWith('@')) {
+        rawHandle = part;
+        rawName = part;
+      }
+
+      const matchedProfile = systemCollaborators.find(c => {
+        if (rawHandle && (c.handle.toLowerCase() === rawHandle.toLowerCase() || `@${c.cleanHandle.toLowerCase()}` === rawHandle.toLowerCase())) {
+          return true;
+        }
+        if (c.cleanHandle && part.toLowerCase().includes(c.cleanHandle.toLowerCase())) {
+          return true;
+        }
+        if (c.name && normalizeName(rawName) === normalizeName(c.name)) {
+          return true;
+        }
+        return false;
+      });
+
+      const finalName = matchedProfile?.name || (rawName.startsWith('@') ? (matchedProfile?.name || rawName) : rawName);
+      const finalHandle = matchedProfile?.handle || rawHandle;
+      const avatarSrc = matchedProfile?.avatarSrc || null;
+
+      return {
+        raw: part,
+        name: finalName,
+        handle: finalHandle,
+        avatarSrc,
+        cleanHandle: matchedProfile?.cleanHandle || (rawHandle ? rawHandle.replace('@', '') : '')
+      };
+    }).filter(c => c.name && c.name !== 'Nenhum');
+  }, [value, systemCollaborators]);
+
   // Filtra por termo de busca
   const filteredSystemCollabs = useMemo(() => {
     if (!search.trim()) return systemCollaborators;
@@ -286,45 +322,52 @@ function CargoCollaboratorSelect({
     return members.filter(m => normalizeName(m).includes(term));
   }, [members, search]);
 
-  // Informações de exibição do valor selecionado no botão
-  const displayInfo = useMemo(() => {
-    if (!value || value === 'Nenhum') {
-      return { name: value || '', handle: '', avatarSrc: null, isNone: true };
+  // Alterna a seleção de um colaborador (permite múltiplos colaboradores no mesmo cargo)
+  const handleToggleCollaborator = (itemRawValue: string, isSystemCollab = false, collabObj?: any) => {
+    const isAlreadySelected = selectedCollaborators.some(sc => {
+      if (collabObj?.cleanHandle && sc.cleanHandle) {
+        return sc.cleanHandle.toLowerCase() === collabObj.cleanHandle.toLowerCase();
+      }
+      return normalizeName(sc.name) === normalizeName(itemRawValue) || 
+             normalizeName(sc.raw) === normalizeName(itemRawValue);
+    });
+
+    let newItems: string[] = [];
+
+    if (isAlreadySelected) {
+      newItems = selectedCollaborators
+        .filter(sc => {
+          if (collabObj?.cleanHandle && sc.cleanHandle) {
+            return sc.cleanHandle.toLowerCase() !== collabObj.cleanHandle.toLowerCase();
+          }
+          return normalizeName(sc.name) !== normalizeName(itemRawValue) &&
+                 normalizeName(sc.raw) !== normalizeName(itemRawValue);
+        })
+        .map(sc => sc.raw);
+    } else {
+      const existingRaws = selectedCollaborators.map(sc => sc.raw);
+      newItems = [...existingRaws, itemRawValue];
     }
 
-    // Tenta encontrar perfil correspondente para avatar e @
-    const matchedProfile = systemCollaborators.find(c => 
-      value.toLowerCase().includes(c.cleanHandle.toLowerCase()) ||
-      normalizeName(value).includes(normalizeName(c.name))
-    );
-
-    // Extrai padrão "Nome (@handle)"
-    const match = value.match(/^(.*?)\s*\((@?[^)]+)\)$/);
-    if (match) {
-      return {
-        name: match[1].trim(),
-        handle: match[2].trim(),
-        avatarSrc: matchedProfile?.avatarSrc || null,
-        isNone: false
-      };
+    if (newItems.length === 0) {
+      onChange('Nenhum');
+    } else {
+      onChange(newItems.join(', '));
     }
+  };
 
-    if (value.startsWith('@')) {
-      return {
-        name: matchedProfile?.name || value,
-        handle: value,
-        avatarSrc: matchedProfile?.avatarSrc || null,
-        isNone: false
-      };
+  // Remove um colaborador específico clicando no 'x' do chip
+  const handleRemoveCollaborator = (collab: any) => {
+    const newItems = selectedCollaborators
+      .filter(sc => sc.raw !== collab.raw && sc.name !== collab.name)
+      .map(sc => sc.raw);
+
+    if (newItems.length === 0) {
+      onChange('Nenhum');
+    } else {
+      onChange(newItems.join(', '));
     }
-
-    return {
-      name: value,
-      handle: matchedProfile ? matchedProfile.handle : '',
-      avatarSrc: matchedProfile?.avatarSrc || null,
-      isNone: false
-    };
-  }, [value, systemCollaborators]);
+  };
 
   return (
     <div className="relative w-full" ref={dropdownRef}>
@@ -338,56 +381,90 @@ function CargoCollaboratorSelect({
         </span>
       </div>
 
-      {/* Botão de Disparo */}
+      {/* Botão de Disparo / Caixa com Chips lado a lado (Sem a menção do @ na frente) */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full text-left bg-white dark:bg-slate-900 border rounded-xl px-3 py-2 text-xs transition-all flex items-center justify-between cursor-pointer shadow-2xs ${
+        className={`w-full text-left bg-white dark:bg-slate-900 border rounded-xl px-2.5 py-1.5 text-xs transition-all flex items-center justify-between cursor-pointer shadow-2xs min-h-[38px] ${
           isOpen
             ? 'border-blue-500 ring-1 ring-blue-500/20 bg-slate-50/50 dark:bg-slate-800'
             : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
         }`}
       >
-        <div className="flex items-center gap-2 truncate min-w-0">
-          {!displayInfo.isNone && displayInfo.name ? (
-            <>
-              {displayInfo.avatarSrc ? (
-                <img src={displayInfo.avatarSrc} alt={displayInfo.name} className="w-5 h-5 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
-              ) : (
-                <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-emerald-400 font-bold text-[9px] flex items-center justify-center shrink-0">
-                  {getInitials(displayInfo.name)}
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1 py-0.5">
+          {selectedCollaborators.length > 0 ? (
+            selectedCollaborators.map((collab, idx) => (
+              <span 
+                key={collab.name + idx}
+                className="inline-flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 text-xs shrink-0 max-w-full group/chip hover:border-blue-300 dark:hover:border-blue-700 transition-all"
+              >
+                {collab.avatarSrc ? (
+                  <img src={collab.avatarSrc} alt={collab.name} className="w-4 h-4 rounded-full object-cover shrink-0" />
+                ) : (
+                  <span className="w-4 h-4 rounded-md bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-[8px] flex items-center justify-center shrink-0">
+                    {getInitials(collab.name)}
+                  </span>
+                )}
+                <span className="truncate font-bold text-slate-800 dark:text-slate-100 text-[11px] max-w-[130px]">
+                  {collab.name}
                 </span>
-              )}
-              <span className="truncate font-bold text-slate-900 dark:text-slate-100">
-                {displayInfo.name}
+                <span
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveCollaborator(collab);
+                  }}
+                  className="w-3.5 h-3.5 rounded-full hover:bg-rose-100 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 flex items-center justify-center cursor-pointer transition-colors"
+                  title={`Remover ${collab.name}`}
+                >
+                  <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                </span>
               </span>
-              {displayInfo.handle && (
-                <span className="px-1.5 py-0.2 rounded-md bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-mono font-bold shrink-0">
-                  {displayInfo.handle.startsWith('@') ? displayInfo.handle : `@${displayInfo.handle}`}
-                </span>
-              )}
-            </>
+            ))
           ) : (
-            <span className="text-slate-400 font-normal truncate">
+            <span className="text-slate-400 font-normal truncate text-[11px]">
               {placeholder}
             </span>
           )}
         </div>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ml-1 ${isOpen ? 'rotate-180 text-slate-700 dark:text-slate-200' : ''}`} />
+        <div className="flex items-center gap-1 shrink-0 ml-1.5 text-slate-400">
+          {selectedCollaborators.length > 0 && (
+            <span 
+              className="w-5 h-5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-blue-600 transition-colors"
+              title="Adicionar outro colaborador"
+            >
+              <Plus className="w-3 h-3" />
+            </span>
+          )}
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180 text-slate-700 dark:text-slate-200' : ''}`} />
+        </div>
       </button>
 
-      {/* Menu Suspenso Aprimorado: Colaboradores com @ + Nomes Padrão de Teste */}
+      {/* Menu Suspenso Multi-Colaborador */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 min-w-[280px] max-h-[380px] flex flex-col">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100 min-w-[280px] max-h-[390px] flex flex-col">
           {/* Cabeçalho do Cargo */}
           <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider shrink-0">
             <span className="flex items-center gap-1.5">
               <CargoIcon className="w-3.5 h-3.5 text-slate-500 dark:text-blue-400" />
               <span>{cargo}</span>
+              {selectedCollaborators.length > 0 && (
+                <span className="text-[10px] bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 px-1.5 py-0.2 rounded-full font-bold">
+                  {selectedCollaborators.length} selecionado{selectedCollaborators.length > 1 ? 's' : ''}
+                </span>
+              )}
             </span>
-            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
-              {sectorName} ({systemCollaborators.length})
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setIsTypingCustom(false);
+                setSearch('');
+              }}
+              className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer"
+            >
+              Concluir
+            </button>
           </div>
 
           {/* Campo de Busca Rápida de Colaborador */}
@@ -401,7 +478,7 @@ function CargoCollaboratorSelect({
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onClick={e => e.stopPropagation()}
-                className="w-full pl-8 pr-2 py-1 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 placeholder:text-slate-400"
+                className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 placeholder:text-slate-400"
               />
             </div>
           </div>
@@ -412,9 +489,14 @@ function CargoCollaboratorSelect({
             <div className="py-0.5 border-b border-slate-100 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => handleSelect('Nenhum')}
+                onClick={() => {
+                  onChange('Nenhum');
+                  setIsOpen(false);
+                  setIsTypingCustom(false);
+                  setSearch('');
+                }}
                 className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                  value === 'Nenhum' ? 'bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400'
+                  selectedCollaborators.length === 0 ? 'bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -423,7 +505,7 @@ function CargoCollaboratorSelect({
                   </span>
                   <span className="italic font-medium">Nenhum</span>
                 </div>
-                {value === 'Nenhum' && <Check className="w-3.5 h-3.5 text-slate-600 dark:text-emerald-400 shrink-0" />}
+                {selectedCollaborators.length === 0 && <Check className="w-3.5 h-3.5 text-slate-600 dark:text-emerald-400 shrink-0" />}
               </button>
             </div>
 
@@ -431,20 +513,24 @@ function CargoCollaboratorSelect({
             {presets.length > 0 && (
               <div className="px-2 pt-1.5 pb-1 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex flex-wrap gap-1">
-                  {presets.map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => handleSelect(p)}
-                      className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
-                        value === p
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      Turno {p}
-                    </button>
-                  ))}
+                  {presets.map(p => {
+                    const isPresetSelected = selectedCollaborators.some(sc => sc.name === p || sc.raw === p);
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => handleToggleCollaborator(p)}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                          isPresetSelected
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span>Turno {p}</span>
+                        {isPresetSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -460,22 +546,32 @@ function CargoCollaboratorSelect({
                   <span>{filteredSystemCollabs.length}</span>
                 </div>
                 {filteredSystemCollabs.map(collab => {
-                  const isSelected = value.toLowerCase().includes(collab.cleanHandle.toLowerCase());
+                  const isSelected = selectedCollaborators.some(sc => {
+                    if (collab.cleanHandle && sc.cleanHandle) {
+                      return sc.cleanHandle.toLowerCase() === collab.cleanHandle.toLowerCase();
+                    }
+                    return normalizeName(sc.name) === normalizeName(collab.name);
+                  });
+
                   return (
                     <button
                       key={collab.id}
                       type="button"
-                      onClick={() => handleSelect(`${collab.name} (${collab.handle})`)}
+                      onClick={() => handleToggleCollaborator(`${collab.name} (${collab.handle})`, true, collab)}
                       className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
                         isSelected ? 'bg-blue-50 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
+                        <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-all ${
+                          isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                        }`}>
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
                         <img src={collab.avatarSrc} alt={collab.name} className="w-5 h-5 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
                         <span className="truncate font-semibold">{collab.name}</span>
                         <span className="text-[10px] text-blue-600 dark:text-blue-400 font-mono font-bold shrink-0">{collab.handle}</span>
                       </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
                     </button>
                   );
                 })}
@@ -493,43 +589,53 @@ function CargoCollaboratorSelect({
                   <span>{filteredStandardMembers.length}</span>
                 </div>
                 {filteredStandardMembers.map(member => {
-                  const isSelected = value === member;
+                  const isSelected = selectedCollaborators.some(sc => normalizeName(sc.name) === normalizeName(member) || normalizeName(sc.raw) === normalizeName(member));
+
                   return (
                     <button
                       key={member}
                       type="button"
-                      onClick={() => handleSelect(member)}
+                      onClick={() => handleToggleCollaborator(member)}
                       className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
                         isSelected ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
                       }`}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 truncate">
+                        <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-all ${
+                          isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                        }`}>
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
                         <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
                           {getInitials(member)}
                         </span>
-                        <span>{member}</span>
+                        <span className="truncate">{member}</span>
                       </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
                     </button>
                   );
                 })}
 
-                {/* Opção combinada para Analistas */}
-                {allowCombination && members.length > 1 && (
+                {/* Opção combinada para cargos com múltiplos membros padrão */}
+                {members.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => handleSelect(members.join(' / '))}
-                    className={`w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer border-t border-slate-50 dark:border-slate-800 ${
-                      value === members.join(' / ') ? 'bg-blue-50/80 dark:bg-blue-950/60 font-bold text-blue-900 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
-                    }`}
+                    onClick={() => {
+                      const allSelected = members.every(m => selectedCollaborators.some(sc => normalizeName(sc.name) === normalizeName(m)));
+                      if (allSelected) {
+                        const remaining = selectedCollaborators.filter(sc => !members.some(m => normalizeName(sc.name) === normalizeName(m))).map(sc => sc.raw);
+                        onChange(remaining.length > 0 ? remaining.join(', ') : 'Nenhum');
+                      } else {
+                        const existingRaws = selectedCollaborators.map(sc => sc.raw);
+                        const toAdd = members.filter(m => !selectedCollaborators.some(sc => normalizeName(sc.name) === normalizeName(m)));
+                        onChange([...existingRaws, ...toAdd].join(', '));
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors cursor-pointer border-t border-slate-100 dark:border-slate-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50/60 dark:hover:bg-blue-950/40 font-bold"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[9px] flex items-center justify-center shrink-0">
-                        &
-                      </span>
-                      <span>{members.join(' / ')} (Ambos)</span>
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Selecionar todos os {members.length} {cargo}</span>
                     </div>
-                    {value === members.join(' / ') && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
                   </button>
                 )}
               </div>
@@ -537,13 +643,15 @@ function CargoCollaboratorSelect({
           </div>
 
           {/* Opção Manual / Digitar Outro */}
-          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 px-2 pb-0.5 shrink-0 bg-slate-50/50 dark:bg-slate-900">
+          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 px-2 pb-1.5 shrink-0 bg-slate-50/50 dark:bg-slate-900">
             {isTypingCustom ? (
               <form
                 onSubmit={e => {
                   e.preventDefault();
                   if (customValue.trim()) {
-                    handleSelect(customValue.trim());
+                    handleToggleCollaborator(customValue.trim());
+                    setCustomValue('');
+                    setIsTypingCustom(false);
                   }
                 }}
                 className="flex items-center gap-1 my-0.5"
@@ -580,17 +688,37 @@ function CargoCollaboratorSelect({
                   <Edit2 className="w-3 h-3" />
                   <span>Digitar outro nome ou @...</span>
                 </button>
-                {value && (
-                  <button
-                    type="button"
-                    onClick={() => handleSelect('')}
-                    className="text-[10px] text-slate-400 hover:text-red-500 cursor-pointer"
-                  >
-                    Limpar
-                  </button>
-                )}
               </div>
             )}
+          </div>
+
+          {/* Barra de Rodapé: Limpar e Confirmar */}
+          <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 flex items-center justify-between gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                onChange('Nenhum');
+              }}
+              className="text-[11px] text-slate-500 hover:text-red-600 dark:text-slate-400 font-semibold cursor-pointer"
+            >
+              Limpar todos
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setIsTypingCustom(false);
+                setSearch('');
+              }}
+              className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
+            >
+              <span>Confirmar</span>
+              {selectedCollaborators.length > 0 && (
+                <span className="bg-white/20 px-1 rounded-full text-[10px]">
+                  {selectedCollaborators.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
       )}
@@ -1958,10 +2086,15 @@ export default function MensagensPage() {
     ctx.lineWidth = 1 * scale;
     ctx.stroke();
 
+    const cleanCollabText = (txt: string) => {
+      if (!txt || txt === 'Nenhum') return '-';
+      return txt.replace(/\s*\(@?[^)]+\)/g, '').trim();
+    };
+
     ctx.fillStyle = '#FFFFFF';
     ctx.font = `bold ${13 * scale}px "Segoe UI", Inter, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(`SUPERVISÃO: ${equipeData.supervisor.toUpperCase()}`, width / 2, supY + (19 * scale));
+    ctx.fillText(`SUPERVISÃO: ${cleanCollabText(equipeData.supervisor).toUpperCase()}`, width / 2, supY + (19 * scale));
 
     // 3. Grid de Responsáveis, Analistas, Assistentes e Apoios (Sem emotes)
     const colW = (width - (padding * 2) - (12 * scale)) / 2;
@@ -1969,10 +2102,10 @@ export default function MensagensPage() {
     const xCol2 = padding + colW + (12 * scale);
 
     const equipeRows = [
-      [`Analistas: ${equipeData.analista}`, `Assistente: ${equipeData.assistente}`],
-      [`Resp. Manhã: ${equipeData.resp_manha}`, `Apoio Manhã: ${equipeData.apoio_manha}`],
-      [`Intermédio: ${equipeData.resp_inter}`, `Apoio Intermédio: ${equipeData.apoio_inter}`],
-      [`Resp. Tarde: ${equipeData.resp_tarde}`, `Apoio Tarde: ${equipeData.apoio_tarde}`],
+      [`Analistas: ${cleanCollabText(equipeData.analista)}`, `Assistente: ${cleanCollabText(equipeData.assistente)}`],
+      [`Resp. Manhã: ${cleanCollabText(equipeData.resp_manha)}`, `Apoio Manhã: ${cleanCollabText(equipeData.apoio_manha)}`],
+      [`Intermédio: ${cleanCollabText(equipeData.resp_inter)}`, `Apoio Intermédio: ${cleanCollabText(equipeData.apoio_inter)}`],
+      [`Resp. Tarde: ${cleanCollabText(equipeData.resp_tarde)}`, `Apoio Tarde: ${cleanCollabText(equipeData.apoio_tarde)}`],
     ];
 
     let currY = 140 * scale;
