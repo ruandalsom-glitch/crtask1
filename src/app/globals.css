@@ -72,8 +72,10 @@ html.dark [class*=" bg-[#f7f8f9]"]:not([class*="dark:text-"]) {
 }
 
 /* 2. Cartões, Modais e Painéis Principais */
-html.dark .bg-white {
+html.dark .bg-white:not([class*="dark:bg-"]) {
   background-color: #1e293b !important;
+}
+html.dark .bg-white:not([class*="dark:text-"]) {
   color: #f8fafc !important;
 }
 
@@ -388,6 +390,24 @@ html.dark .text-slate-500:not([class*="dark:text-"]) {
 }
 
 html.dark .text-slate-400:not([class*="dark:text-"]) {
+  color: #64748b !important;
+}
+
+html.dark .text-gray-950:not([class*="dark:text-"]),
+html.dark .text-gray-900:not([class*="dark:text-"]),
+html.dark .text-gray-800:not([class*="dark:text-"]),
+html.dark .text-gray-700:not([class*="dark:text-"]),
+html.dark .text-black:not([class*="dark:text-"]) {
+  color: #f1f5f9 !important;
+}
+
+html.dark .text-gray-600:not([class*="dark:text-"]),
+html.dark .text-gray-500:not([class*="dark:text-"]) {
+  color: #94a3b8 !important;
+}
+
+html.dark .text-gray-400:not([class*="dark:text-"]),
+html.dark .text-gray-300:not([class*="dark:text-"]) {
   color: #64748b !important;
 }
 

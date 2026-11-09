@@ -144,8 +144,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     };
   }, [pathname, router]);
 
-  if (pathname === '/login') {
-    return <main className="flex-1 w-full bg-[#0a0a0a] min-h-screen">{children}</main>;
+  if (pathname === '/login' || pathname === '/reset-password') {
+    return <main className="flex-1 w-full bg-slate-50 dark:bg-[#07090e] min-h-screen transition-colors duration-150">{children}</main>;
   }
 
   return (
