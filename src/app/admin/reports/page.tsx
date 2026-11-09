@@ -67,19 +67,23 @@ export default function ReportsPage() {
     enabled: hasAccess === true && !!userRoleProfile
   });
 
-  // Buscar as tarefas de acordo com os setores permitidos
+  // Buscar as tarefas de acordo com os setores permitidos (apenas do Quadro Principal)
   const { data: allTasks, isLoading } = useQuery({
     queryKey: ['admin_all_tasks', userRoleProfile],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tasks')
-        .select('id, title, status, priority, assignee_email, due_date, task_type, group_name, board_id, boards(workspace_id, name)');
+        .select('id, title, status, priority, assignee_email, due_date, task_type, is_routine, group_name, board_id, boards(workspace_id, name)');
       if (error) throw error;
+      
+      // Filtrar estritamente tarefas do Quadro Principal (exclui lembretes do calendário e rotinas diárias)
+      const validTasks = (data || []).filter((t: any) => !t.is_routine && t.task_type !== 'Lembrete');
+
       if (userRoleProfile?.role === 'admin') {
-        return data || [];
+        return validTasks;
       } else {
         const allowed = new Set(userRoleProfile?.allowedWorkspaceIds || []);
-        return (data || []).filter((t: any) => t.boards?.workspace_id && allowed.has(t.boards.workspace_id));
+        return validTasks.filter((t: any) => t.boards?.workspace_id && allowed.has(t.boards.workspace_id));
       }
     },
     enabled: hasAccess === true && !!userRoleProfile

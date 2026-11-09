@@ -43,7 +43,7 @@ export function SectorOverviewDashboard({
   onNavigateToConfig
 }: SectorOverviewDashboardProps) {
   const queryClient = useQueryClient();
-  const [taskFilterTab, setTaskFilterTab] = useState<'pendentes' | 'andamento' | 'concluidas' | 'todas'>('pendentes');
+  const [taskFilterTab, setTaskFilterTab] = useState<'pendentes' | 'andamento' | 'concluidas' | 'atrasadas' | 'todas'>('pendentes');
   const [selectedBoardFilter, setSelectedBoardFilter] = useState<string>('all');
 
   // 1. Usuário atual
@@ -78,7 +78,7 @@ export function SectorOverviewDashboard({
     return workspaceBoards.map((b: any) => b.id);
   }, [boardId, workspaceBoards]);
 
-  // 3. Tarefas pertencentes aos quadros do setor
+  // 3. Tarefas pertencentes aos quadros do setor (apenas do Quadro Principal)
   const { data: allSectorTasks = [], isLoading: isLoadingTasks } = useQuery({
     queryKey: ['workspace_overview_tasks', workspaceId, boardId, effectiveBoardIds],
     queryFn: async () => {
@@ -93,7 +93,8 @@ export function SectorOverviewDashboard({
         console.error('Erro ao buscar tarefas do setor:', error);
         return [];
       }
-      return data || [];
+      // Considera estritamente as tarefas do Quadro Principal (exclui lembretes do calendário e rotinas diárias)
+      return (data || []).filter((t: any) => !t.is_routine && t.task_type !== 'Lembrete');
     },
     enabled: effectiveBoardIds.length > 0
   });
@@ -136,7 +137,9 @@ export function SectorOverviewDashboard({
     return allSectorTasks.filter((t: any) => t.board_id === selectedBoardFilter);
   }, [allSectorTasks, selectedBoardFilter]);
 
-  // Estatísticas calculadas
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Estatísticas calculadas estritamente para tarefas do Quadro Principal
   const totalTasks = scopedTasks.length;
   const concluidasTasks = scopedTasks.filter(
     (t: any) => t.status === 'Feito' || t.status === 'Concluído'
@@ -144,14 +147,19 @@ export function SectorOverviewDashboard({
   const andamentoTasks = scopedTasks.filter(
     (t: any) => t.status === 'Trabalhando' || t.status === 'Em Andamento'
   );
-  const travadasOuAtrasadas = scopedTasks.filter((t: any) => {
-    if (t.status === 'Travado') return true;
-    if (t.due_date && t.status !== 'Feito' && t.status !== 'Concluído') {
-      const today = new Date().toISOString().split('T')[0];
-      return t.due_date < today;
+  // Atrasadas: tarefas não concluídas com prazo de entrega anterior ao dia de hoje
+  const atrasadasTasks = scopedTasks.filter((t: any) => {
+    if (t.status === 'Feito' || t.status === 'Concluído') return false;
+    if (t.due_date) {
+      const taskDate = t.due_date.split('T')[0];
+      return taskDate < todayStr;
     }
     return false;
   });
+  // Travadas: tarefas sinalizadas com status Travado
+  const travadasTasks = scopedTasks.filter(
+    (t: any) => t.status === 'Travado'
+  );
   const pendentesTasks = scopedTasks.filter(
     (t: any) =>
       t.status !== 'Feito' &&
@@ -167,8 +175,9 @@ export function SectorOverviewDashboard({
     if (taskFilterTab === 'pendentes') return pendentesTasks;
     if (taskFilterTab === 'andamento') return andamentoTasks;
     if (taskFilterTab === 'concluidas') return concluidasTasks;
+    if (taskFilterTab === 'atrasadas') return atrasadasTasks;
     return scopedTasks;
-  }, [taskFilterTab, pendentesTasks, andamentoTasks, concluidasTasks, scopedTasks]);
+  }, [taskFilterTab, pendentesTasks, andamentoTasks, concluidasTasks, atrasadasTasks, scopedTasks]);
 
   // Toggle rápido de status da tarefa
   const handleToggleTaskStatus = async (task: any) => {
@@ -286,8 +295,15 @@ export function SectorOverviewDashboard({
 
       {/* 2. CARDS DE KPI (MÉTRICAS DO SETOR) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Tarefas do Setor */}
-        <div className="bg-white dark:bg-[#131929] border border-slate-200 dark:border-white/[0.08] hover:border-blue-400 dark:hover:border-blue-500/40 rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden">
+        {/* Card 1: Total de Tarefas */}
+        <div 
+          onClick={() => setTaskFilterTab('todas')}
+          className={`bg-white dark:bg-[#131929] border rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden cursor-pointer ${
+            taskFilterTab === 'todas'
+              ? 'border-blue-500 ring-2 ring-blue-500/20'
+              : 'border-slate-200 dark:border-white/[0.08] hover:border-blue-400 dark:hover:border-blue-500/40'
+          }`}
+        >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-500 dark:text-blue-400">
@@ -310,7 +326,14 @@ export function SectorOverviewDashboard({
         </div>
 
         {/* Card 2: Em Andamento */}
-        <div className="bg-white dark:bg-[#131929] border border-slate-200 dark:border-white/[0.08] hover:border-amber-400 dark:hover:border-amber-500/40 rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden">
+        <div 
+          onClick={() => setTaskFilterTab('andamento')}
+          className={`bg-white dark:bg-[#131929] border rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden cursor-pointer ${
+            taskFilterTab === 'andamento'
+              ? 'border-amber-500 ring-2 ring-amber-500/20'
+              : 'border-slate-200 dark:border-white/[0.08] hover:border-amber-400 dark:hover:border-amber-500/40'
+          }`}
+        >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500 dark:text-amber-400">
@@ -333,7 +356,14 @@ export function SectorOverviewDashboard({
         </div>
 
         {/* Card 3: Concluídas */}
-        <div className="bg-white dark:bg-[#131929] border border-slate-200 dark:border-white/[0.08] hover:border-emerald-400 dark:hover:border-emerald-500/40 rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden">
+        <div 
+          onClick={() => setTaskFilterTab('concluidas')}
+          className={`bg-white dark:bg-[#131929] border rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden cursor-pointer ${
+            taskFilterTab === 'concluidas'
+              ? 'border-emerald-500 ring-2 ring-emerald-500/20'
+              : 'border-slate-200 dark:border-white/[0.08] hover:border-emerald-400 dark:hover:border-emerald-500/40'
+          }`}
+        >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500 dark:text-emerald-400">
@@ -355,31 +385,40 @@ export function SectorOverviewDashboard({
           </div>
         </div>
 
-        {/* Card 4: Atrasadas / Travadas */}
-        <div className="bg-white dark:bg-[#131929] border border-slate-200 dark:border-white/[0.08] hover:border-rose-400 dark:hover:border-rose-500/40 rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden">
+        {/* Card 4: Tarefas Atrasadas */}
+        <div 
+          onClick={() => setTaskFilterTab('atrasadas')}
+          className={`bg-white dark:bg-[#131929] border rounded-2xl p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all group relative overflow-hidden cursor-pointer ${
+            taskFilterTab === 'atrasadas'
+              ? 'border-rose-500 ring-2 ring-rose-500/20'
+              : 'border-slate-200 dark:border-white/[0.08] hover:border-rose-400 dark:hover:border-rose-500/40'
+          }`}
+        >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-500 dark:text-rose-400">
                 <AlertTriangle className="w-4 h-4" />
               </div>
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Atrasadas / Travadas</span>
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Tarefas Atrasadas</span>
             </div>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-              travadasOuAtrasadas.length > 0 
+              atrasadasTasks.length > 0 
                 ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800'
                 : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
             }`}>
-              {travadasOuAtrasadas.length > 0 ? 'Atenção' : 'Em Dia'}
+              {atrasadasTasks.length > 0 ? `${atrasadasTasks.length} atrasada${atrasadasTasks.length > 1 ? 's' : ''}` : 'Em Dia'}
             </span>
           </div>
           <div className="flex items-baseline justify-between mt-2">
             <h3 className="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">
-              {travadasOuAtrasadas.length}
+              {atrasadasTasks.length}
             </h3>
             <span className={`text-[11px] font-bold flex items-center gap-0.5 ${
-              travadasOuAtrasadas.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+              atrasadasTasks.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
             }`}>
-              {travadasOuAtrasadas.length > 0 ? 'Requer atenção' : 'Nenhuma pendência crítica'}
+              {atrasadasTasks.length > 0 
+                ? (travadasTasks.length > 0 ? `${atrasadasTasks.length} vencida • ${travadasTasks.length} travada(s)` : 'Prazo vencido') 
+                : (travadasTasks.length > 0 ? `${travadasTasks.length} travada(s) • prazos em dia` : 'Prazos em dia')}
             </span>
           </div>
         </div>
@@ -520,6 +559,17 @@ export function SectorOverviewDashboard({
                 }`}
               >
                 Concluídas ({concluidasTasks.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTaskFilterTab('atrasadas')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  taskFilterTab === 'atrasadas'
+                    ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+                }`}
+              >
+                Atrasadas ({atrasadasTasks.length})
               </button>
               <button
                 type="button"
