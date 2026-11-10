@@ -1506,7 +1506,7 @@ export default function MensagensPage() {
               'text/plain': new Blob([cleanTxt], { type: 'text/plain' })
             });
             await navigator.clipboard.write([clipboardItem]);
-            setShareFeedbackMsg('Imagem e texto copiados! Dê Ctrl+V no WhatsApp.');
+            setShareFeedbackMsg('Imagem e texto copiados! Dê Ctrl+V no WhatsApp (pode repetir em vários grupos).');
             setTimeout(() => setIsCopiedAll(false), 2500);
             setTimeout(() => setShareFeedbackMsg(''), 4000);
             return;

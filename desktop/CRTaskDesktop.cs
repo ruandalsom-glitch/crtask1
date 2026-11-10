@@ -123,6 +123,9 @@ namespace CRTaskDesktop
         [DllImport("user32.dll")]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
+        [DllImport("user32.dll")]
+        private static extern uint GetClipboardSequenceNumber();
+
         [DllImport("gdi32.dll")]
         private static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int cx, int cy);
 
@@ -145,7 +148,9 @@ namespace CRTaskDesktop
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
         private const int VK_CONTROL = 0x11;
+        private const byte VK_C = 0x43;
         private const byte VK_V = 0x56;
+        private const byte VK_X = 0x58;
         private const uint KEYEVENTF_KEYUP = 0x0002;
 
         private const string APP_URL = "https://crtask1.vercel.app/mensagens";
@@ -166,7 +171,7 @@ namespace CRTaskDesktop
         private DateTime lastLaunchAttempt = DateTime.MinValue;
         private bool launchHiddenNext = false;
 
-        // WhatsApp Auto-Caption State
+        // WhatsApp Auto-Caption Multi-Group State
         private ClipboardWatcherForm clipboardForm;
         private IntPtr keyboardHookId = IntPtr.Zero;
         private LowLevelKeyboardProc keyboardProcDelegate;
@@ -174,6 +179,9 @@ namespace CRTaskDesktop
         private DateTime pendingCaptionTime = DateTime.MinValue;
         private Image pendingImage = null;
         private bool hasPendingImageAndCaption = false;
+        private uint expectedClipboardSeq = 0;
+        private uint lastInternalSeq = 0;
+        private bool isPastingSequenceActive = false;
         private bool isInternalClipboardChange = false;
         private bool isSimulatingPaste = false;
 
@@ -185,7 +193,10 @@ namespace CRTaskDesktop
         private string profileFolder;
         private ToolStripMenuItem startupMenuItem;
         private ToolStripMenuItem autoCaptionMenuItem;
+        private ToolStripMenuItem multiGroupMenuItem;
+        private ToolStripMenuItem clearClipboardBundleMenuItem;
         private bool autoCaptionEnabled = true;
+        private bool multiGroupModeEnabled = true;
 
         public TrayApplicationContext()
         {
@@ -218,8 +229,24 @@ namespace CRTaskDesktop
             {
                 autoCaptionEnabled = !autoCaptionEnabled;
                 autoCaptionMenuItem.Checked = autoCaptionEnabled;
+                if (!autoCaptionEnabled) ClearPendingBundle();
             };
             menu.Items.Add(autoCaptionMenuItem);
+
+            multiGroupMenuItem = new ToolStripMenuItem("Modo Multi-Grupo (Repetir Ctrl+V em vários grupos)");
+            multiGroupMenuItem.Checked = multiGroupModeEnabled;
+            multiGroupMenuItem.Click += (s, e) =>
+            {
+                multiGroupModeEnabled = !multiGroupModeEnabled;
+                multiGroupMenuItem.Checked = multiGroupModeEnabled;
+            };
+            menu.Items.Add(multiGroupMenuItem);
+
+            clearClipboardBundleMenuItem = new ToolStripMenuItem("Limpar Imagem + Texto da Memória");
+            clearClipboardBundleMenuItem.Click += (s, e) => ClearPendingBundle();
+            menu.Items.Add(clearClipboardBundleMenuItem);
+
+            menu.Items.Add(new ToolStripSeparator());
 
             startupMenuItem = new ToolStripMenuItem("Iniciar junto com o Windows");
             startupMenuItem.Checked = IsStartupEnabled();
@@ -243,7 +270,7 @@ namespace CRTaskDesktop
             trayIcon = new NotifyIcon
             {
                 Icon = appIcon,
-                Text = "CR Task • Ativo (Alarmes + Auto-Legenda WhatsApp)",
+                Text = "CR Task • Ativo (Alarmes + Multi-Grupo WhatsApp)",
                 ContextMenuStrip = menu,
                 Visible = true
             };
@@ -268,11 +295,11 @@ namespace CRTaskDesktop
             }
 
             pasteCaptionTimer = new System.Windows.Forms.Timer();
-            pasteCaptionTimer.Interval = 750;
+            pasteCaptionTimer.Interval = 700;
             pasteCaptionTimer.Tick += PasteCaptionTimer_Tick;
 
             restoreClipboardTimer = new System.Windows.Forms.Timer();
-            restoreClipboardTimer.Interval = 350;
+            restoreClipboardTimer.Interval = 400;
             restoreClipboardTimer.Tick += RestoreClipboardTimer_Tick;
 
             LaunchBrowserApp();
@@ -283,34 +310,58 @@ namespace CRTaskDesktop
             monitorTimer.Start();
         }
 
+        private bool IsCRTaskWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return false;
+            if (appHwnd != IntPtr.Zero && hwnd == appHwnd) return true;
+            string fgTitle = GetWindowTitle(hwnd);
+            return fgTitle.IndexOf("CR Task", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   fgTitle.IndexOf("CR Admin Workspace", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   fgTitle.IndexOf("crtask", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void ClearPendingBundle()
+        {
+            hasPendingImageAndCaption = false;
+            pendingCaption = "";
+            expectedClipboardSeq = 0;
+            lastInternalSeq = 0;
+            isPastingSequenceActive = false;
+            if (pasteCaptionTimer != null) pasteCaptionTimer.Stop();
+            if (restoreClipboardTimer != null) restoreClipboardTimer.Stop();
+            if (pendingImage != null)
+            {
+                try { pendingImage.Dispose(); } catch { }
+                pendingImage = null;
+            }
+        }
+
         private void OnClipboardChanged()
         {
             if (isInternalClipboardChange) return;
 
+            uint currentSeq = GetClipboardSequenceNumber();
+
+            // Ignora notificações WM_CLIPBOARDUPDATE atrasadas geradas pelas nossas próprias escritas internas
+            if (currentSeq != 0 && (currentSeq == lastInternalSeq || currentSeq == expectedClipboardSeq))
+            {
+                return;
+            }
+
             try
             {
                 IntPtr fg = GetForegroundWindow();
-                string fgTitle = GetWindowTitle(fg);
-                bool isFromCRTask = fgTitle.IndexOf("CR Task", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    fgTitle.IndexOf("CR Admin Workspace", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    fgTitle.IndexOf("crtask", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    (fg == appHwnd && appHwnd != IntPtr.Zero);
+                bool isFromCRTask = IsCRTaskWindow(fg);
 
-                // SE A CÓPIA FOI FEITA FORA DO CR TASK (ex: no WhatsApp, Word, navegador, etc.):
+                // SE A CÓPIA FOI FEITA FORA DO CR TASK (ex: no WhatsApp, Word, navegador, PrintScreen, etc.):
                 // Cancela e limpa imediatamente qualquer legenda ou imagem pendente para NUNCA interferir nas cópias do usuário!
                 if (!isFromCRTask)
                 {
-                    hasPendingImageAndCaption = false;
-                    pendingCaption = "";
-                    if (pendingImage != null)
-                    {
-                        try { pendingImage.Dispose(); } catch { }
-                        pendingImage = null;
-                    }
-                    pasteCaptionTimer.Stop();
-                    restoreClipboardTimer.Stop();
+                    ClearPendingBundle();
                     return;
                 }
+
+                isPastingSequenceActive = false;
 
                 bool hasImg = Clipboard.ContainsImage();
                 bool hasTxt = Clipboard.ContainsText();
@@ -323,6 +374,11 @@ namespace CRTaskDesktop
                         pendingCaption = txt;
                         pendingCaptionTime = DateTime.Now;
                         hasPendingImageAndCaption = false;
+                        expectedClipboardSeq = 0;
+                    }
+                    else
+                    {
+                        ClearPendingBundle();
                     }
                 }
                 else if (hasImg)
@@ -342,11 +398,31 @@ namespace CRTaskDesktop
                         if (pendingImage != null)
                         {
                             try { pendingImage.Dispose(); } catch { }
+                            pendingImage = null;
                         }
-                        pendingImage = Clipboard.GetImage();
-                        hasPendingImageAndCaption = true;
-                        pendingCaptionTime = DateTime.Now;
+
+                        Image img = Clipboard.GetImage();
+                        if (img != null)
+                        {
+                            pendingImage = new Bitmap(img);
+                            img.Dispose();
+                            hasPendingImageAndCaption = true;
+                            pendingCaptionTime = DateTime.Now;
+                            expectedClipboardSeq = currentSeq;
+                        }
+                        else
+                        {
+                            ClearPendingBundle();
+                        }
                     }
+                    else
+                    {
+                        ClearPendingBundle();
+                    }
+                }
+                else
+                {
+                    ClearPendingBundle();
                 }
             }
             catch { }
@@ -354,54 +430,66 @@ namespace CRTaskDesktop
 
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN && autoCaptionEnabled && !isSimulatingPaste)
+            if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN && !isSimulatingPaste)
             {
                 int vkCode = Marshal.ReadInt32(lParam);
-                if (vkCode == VK_V)
+                bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+
+                // 1. PROTEÇÃO INSTANTÂNEA: Qualquer Ctrl+C ou Ctrl+X fora do CR Task limpa tudo imediatamente
+                if (ctrlDown && (vkCode == VK_C || vkCode == VK_X))
                 {
-                    bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                    if (ctrlDown)
+                    IntPtr fg = GetForegroundWindow();
+                    if (!IsCRTaskWindow(fg))
                     {
-                        // Se não tem legenda/imagem pendente da CR Task, não faz absolutamente nada!
-                        if (!hasPendingImageAndCaption || string.IsNullOrEmpty(pendingCaption))
+                        ClearPendingBundle();
+                    }
+                    return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                }
+
+                // 2. AUTO-LEGENDA WHATSAPP COM VALIDAÇÃO ESTRITA POR IMPRESSÃO DIGITAL (Sequence Number)
+                if (ctrlDown && vkCode == VK_V && autoCaptionEnabled)
+                {
+                    if (isPastingSequenceActive || !hasPendingImageAndCaption || string.IsNullOrEmpty(pendingCaption) || pendingImage == null)
+                    {
+                        return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                    }
+
+                    // Validade: até 10 minutos entre grupos no Modo Multi-Grupo (ou 60s em modo único), renovada a cada colagem
+                    double maxSeconds = multiGroupModeEnabled ? 600.0 : 60.0;
+                    if ((DateTime.Now - pendingCaptionTime).TotalSeconds > maxSeconds)
+                    {
+                        ClearPendingBundle();
+                        return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                    }
+
+                    // TRAVA DE IMPRESSÃO DIGITAL DO CLIPBOARD: só age se a sequência do Windows ainda for a mesma do pacote do CR Task!
+                    uint currentSeq = GetClipboardSequenceNumber();
+                    if (expectedClipboardSeq == 0 || currentSeq != expectedClipboardSeq)
+                    {
+                        ClearPendingBundle();
+                        return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                    }
+
+                    try
+                    {
+                        if (!Clipboard.ContainsImage())
                         {
+                            ClearPendingBundle();
                             return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
                         }
+                    }
+                    catch
+                    {
+                        return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
+                    }
 
-                        // Timeout estrito: só é válido até 30 segundos após copiar no CR Task
-                        if ((DateTime.Now - pendingCaptionTime).TotalSeconds > 30)
-                        {
-                            hasPendingImageAndCaption = false;
-                            pendingCaption = "";
-                            return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
-                        }
-
-                        // VERIFICAÇÃO CRÍTICA: o clipboard atual do Windows contém imagem?
-                        // Se o usuário estiver colando um texto simples, NUNCA interfere!
-                        try
-                        {
-                            if (!Clipboard.ContainsImage())
-                            {
-                                hasPendingImageAndCaption = false;
-                                pendingCaption = "";
-                                return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
-                            }
-                        }
-                        catch
-                        {
-                            return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
-                        }
-
-                        IntPtr fg = GetForegroundWindow();
-                        string fgTitle = GetWindowTitle(fg);
-                        if (fgTitle.IndexOf("WhatsApp", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            // Consome a flag IMEDIATAMENTE para ser uso único (One-Time)
-                            // Nunca dispara duas vezes no mesmo ou próximo Ctrl+V!
-                            hasPendingImageAndCaption = false;
-                            pasteCaptionTimer.Stop();
-                            pasteCaptionTimer.Start();
-                        }
+                    IntPtr fg = GetForegroundWindow();
+                    string fgTitle = GetWindowTitle(fg);
+                    if (fgTitle.IndexOf("WhatsApp", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        isPastingSequenceActive = true;
+                        pasteCaptionTimer.Stop();
+                        pasteCaptionTimer.Start();
                     }
                 }
             }
@@ -411,24 +499,31 @@ namespace CRTaskDesktop
         private void PasteCaptionTimer_Tick(object sender, EventArgs e)
         {
             pasteCaptionTimer.Stop();
-            string captionToPaste = pendingCaption;
-            pendingCaption = ""; // Limpa a legenda consumida imediatamente!
 
-            if (string.IsNullOrEmpty(captionToPaste)) return;
+            // Revalida sequência antes de injetar a legenda (garante que o usuário não copiou nada durante os 700ms)
+            uint currentSeq = GetClipboardSequenceNumber();
+            if (!hasPendingImageAndCaption || string.IsNullOrEmpty(pendingCaption) || expectedClipboardSeq == 0 || currentSeq != expectedClipboardSeq)
+            {
+                isPastingSequenceActive = false;
+                ClearPendingBundle();
+                return;
+            }
+
+            string captionToPaste = pendingCaption;
 
             try
             {
                 isInternalClipboardChange = true;
                 isSimulatingPaste = true;
 
-                Clipboard.SetText(captionToPaste);
+                Clipboard.SetDataObject(captionToPaste, true, 5, 50);
+                lastInternalSeq = GetClipboardSequenceNumber();
 
                 keybd_event((byte)VK_CONTROL, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
                 keybd_event((byte)VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
 
-                // Aguarda para limpar flags, SEM reescrever o clipboard do Windows!
                 restoreClipboardTimer.Stop();
                 restoreClipboardTimer.Start();
             }
@@ -436,6 +531,7 @@ namespace CRTaskDesktop
             {
                 isInternalClipboardChange = false;
                 isSimulatingPaste = false;
+                isPastingSequenceActive = false;
             }
         }
 
@@ -444,21 +540,35 @@ namespace CRTaskDesktop
             restoreClipboardTimer.Stop();
             try
             {
-                // NÃO reescreve a área de transferência do Windows com dados antigos!
-                // Isso evita poluir ou corromper as próximas cópias do usuário.
-                if (pendingImage != null)
+                // Se Modo Multi-Grupo está ativo, restaura a Imagem + Texto para permitir Ctrl+V direto no próximo grupo!
+                if (multiGroupModeEnabled && hasPendingImageAndCaption && pendingImage != null && !string.IsNullOrEmpty(pendingCaption))
                 {
-                    try { pendingImage.Dispose(); } catch { }
-                    pendingImage = null;
+                    isInternalClipboardChange = true;
+
+                    DataObject data = new DataObject();
+                    data.SetImage(pendingImage);
+                    data.SetText(pendingCaption);
+                    Clipboard.SetDataObject(data, true, 5, 50);
+
+                    uint restoredSeq = GetClipboardSequenceNumber();
+                    lastInternalSeq = restoredSeq;
+                    expectedClipboardSeq = restoredSeq;
+                    pendingCaptionTime = DateTime.Now; // Renova janela de tempo para o próximo grupo
+                }
+                else
+                {
+                    ClearPendingBundle();
                 }
             }
-            catch { }
+            catch
+            {
+                ClearPendingBundle();
+            }
             finally
             {
                 isInternalClipboardChange = false;
                 isSimulatingPaste = false;
-                hasPendingImageAndCaption = false;
-                pendingCaption = "";
+                isPastingSequenceActive = false;
             }
         }
 
@@ -1036,6 +1146,7 @@ namespace CRTaskDesktop
         {
             isExiting = true;
             monitorTimer.Stop();
+            ClearPendingBundle();
 
             try
             {
