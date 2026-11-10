@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
-import { useIsDesktopApp } from '@/lib/useIsDesktopApp';
+import { useDesktopAppStatus } from '@/lib/useIsDesktopApp';
 import { 
   Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
@@ -786,7 +786,14 @@ export default function MensagensPage() {
   const [isCopiedAll, setIsCopiedAll] = useState<boolean>(false);
   const [isExtensionModalOpen, setIsExtensionModalOpen] = useState<boolean>(false);
   const [isDesktopModalOpen, setIsDesktopModalOpen] = useState<boolean>(false);
-  const isDesktopApp = useIsDesktopApp();
+  const {
+    isDesktopApp,
+    needsUpdate: needsDesktopUpdate,
+    latestVersion: latestDesktopVersion,
+    releaseTitle: desktopReleaseTitle,
+    releaseSummary: desktopReleaseSummary,
+    mounted: desktopMounted
+  } = useDesktopAppStatus();
 
   // Sistema de Alarme no Horário de Envio
   const [activeAlarmItem, setActiveAlarmItem] = useState<{
@@ -2501,16 +2508,25 @@ export default function MensagensPage() {
                 </button>
               </div>
 
-              {/* Botão App Desktop Windows (oculto quando já está dentro do App Desktop) */}
-              {!isDesktopApp && (
+              {/* Botão App Desktop Windows (aparece no navegador ou quando existe nova versão disponível) */}
+              {desktopMounted && (!isDesktopApp || needsDesktopUpdate) && (
                 <button
                   type="button"
                   onClick={() => setIsDesktopModalOpen(true)}
-                  className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
-                  title="Baixar Aplicativo CR Task para Windows (Fica na bandeja ^, toca alarme em 2º plano e já cola Imagem + Texto juntos no WhatsApp)"
+                  className={`flex items-center gap-1.5 border text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 ${
+                    needsDesktopUpdate
+                      ? 'bg-amber-600 hover:bg-amber-700 border-amber-500'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-700'
+                  }`}
+                  title={needsDesktopUpdate ? `${desktopReleaseTitle} ${desktopReleaseSummary}` : 'Baixar Aplicativo CR Task para Windows (Fica na bandeja ^, toca alarme em 2º plano e já cola Imagem + Texto juntos no WhatsApp)'}
                 >
-                  <Monitor className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>App Desktop (PC)</span>
+                  <Monitor className={`w-3.5 h-3.5 ${needsDesktopUpdate ? 'text-white' : 'text-emerald-400'}`} />
+                  <span>{needsDesktopUpdate ? `Atualizar App (v${latestDesktopVersion})` : 'App Desktop (PC)'}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase ${
+                    needsDesktopUpdate ? 'bg-white text-amber-800' : 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                  }`}>
+                    v{latestDesktopVersion}
+                  </span>
                 </button>
               )}
             </div>
@@ -3807,11 +3823,16 @@ export default function MensagensPage() {
                   <Monitor className="w-5 h-5 text-emerald-300" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black tracking-wide uppercase">
-                    CR Task • Aplicativo Desktop (Windows)
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black tracking-wide uppercase">
+                      CR Task • Aplicativo Desktop (Windows)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                      v{latestDesktopVersion}
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-300">
-                    Fica na bandeja do sistema (^) igual ao Slack e atualiza sozinho
+                    Fica na bandeja do sistema (^) igual ao Slack e facilita envios no WhatsApp
                   </p>
                 </div>
               </div>
@@ -3825,14 +3846,21 @@ export default function MensagensPage() {
             </div>
 
             <div className="p-6 space-y-4">
+              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-xl p-3.5 text-xs text-amber-950 dark:text-amber-200 leading-relaxed">
+                <div className="font-black uppercase tracking-wider text-[11px] text-amber-800 dark:text-amber-300 mb-1">
+                  Novidades da Versão v{latestDesktopVersion}
+                </div>
+                <p>{desktopReleaseSummary}</p>
+              </div>
+
               <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4 text-xs text-emerald-950 dark:text-emerald-200 leading-relaxed">
-                O <strong>CR Task Desktop (.exe)</strong> transforma o sistema em um aplicativo dedicado para o PC. Ao minimizar (<kbd className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 font-mono font-bold">_</kbd>), ele vai direto para a <strong>setinha de ícones ocultos (<kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 font-mono font-bold">^</kbd>) perto do relógio</strong> (igual ao Slack) e continua rodando em 2º plano sem ocupar a barra de tarefas!
+                O <strong>CR Task Desktop (.exe)</strong> transforma o sistema em um aplicativo dedicado para o PC. Ao minimizar (<kbd className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 font-mono font-bold">_</kbd>), ele vai direto para a <strong>setinha de ícones ocultos (<kbd className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 font-mono font-bold">^</kbd>) perto do relógio</strong> (igual ao Slack) e continua rodando em 2º plano sem ocupar a barra de tarefas!
               </div>
 
               <div className="space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
                 <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
-                  <span><strong>Auto-Legenda no WhatsApp (Sem Extensão!):</strong> Ao clicar em <strong>Copiar</strong> no CR Task e dar <kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600">Ctrl+V</kbd> no WhatsApp (Web ou PC), o aplicativo cola a <strong>Imagem e o Texto da legenda juntos automaticamente</strong>!</span>
+                  <span><strong>Auto-Legenda Multi-Grupo no WhatsApp:</strong> Ao clicar em <strong>Copiar</strong> no CR Task e dar <kbd className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600">Ctrl+V</kbd> no WhatsApp (Grupo 1, Grupo 2, etc.), o aplicativo cola <strong>Imagem + Legenda juntos automaticamente</strong> e impede mistura com cópias externas!</span>
                 </div>
                 <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
@@ -3840,7 +3868,7 @@ export default function MensagensPage() {
                 </div>
                 <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">✓</span>
-                  <span><strong>Atualização 100% Automática:</strong> Você instala apenas 1 única vez. Qualquer melhoria futura no sistema ou nas mensagens já abre atualizada na hora.</span>
+                  <span><strong>Aviso de Nova Versão:</strong> Sempre que sair uma atualização do App Desktop, um quadro de aviso aparece na barra lateral — basta baixar e executar por cima que ele atualiza sozinho.</span>
                 </div>
               </div>
             </div>
@@ -3860,7 +3888,7 @@ export default function MensagensPage() {
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
               >
                 <Download className="w-4 h-4" />
-                <span>Baixar Aplicativo (.EXE)</span>
+                <span>{needsDesktopUpdate ? `Baixar Atualização v${latestDesktopVersion} (.EXE)` : `Baixar Aplicativo v${latestDesktopVersion} (.EXE)`}</span>
               </a>
             </div>
           </div>

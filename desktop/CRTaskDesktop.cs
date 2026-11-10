@@ -153,7 +153,7 @@ namespace CRTaskDesktop
         private const byte VK_X = 0x58;
         private const uint KEYEVENTF_KEYUP = 0x0002;
 
-        private const string APP_URL = "https://crtask1.vercel.app/mensagens";
+        private const string APP_URL = "https://crtask1.vercel.app/mensagens?desktop=1&v=2.1.0";
         private const string RUN_REGISTRY_KEY = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string RUN_VALUE_NAME = "CRTaskDesktop";
 
@@ -270,7 +270,7 @@ namespace CRTaskDesktop
             trayIcon = new NotifyIcon
             {
                 Icon = appIcon,
-                Text = "CR Task • Ativo (Alarmes + Multi-Grupo WhatsApp)",
+                Text = "CR Task v2.1 • Alarmes + Multi-Grupo WhatsApp",
                 ContextMenuStrip = menu,
                 Visible = true
             };
