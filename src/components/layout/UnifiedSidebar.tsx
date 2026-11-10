@@ -56,7 +56,6 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
     needsUpdate: needsDesktopUpdate,
     isNoticeDismissed: isDesktopNoticeDismissed,
     latestVersion: latestDesktopVersion,
-    releaseTitle: desktopReleaseTitle,
     releaseSummary: desktopReleaseSummary,
     dismissNotice: dismissDesktopNotice,
     mounted: desktopMounted
@@ -864,30 +863,33 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
           <div className="pt-2 space-y-2">
             {/* Quadro de Aviso de Nova Versão em cima do App Desktop */}
             {(!isDesktopNoticeDismissed || needsDesktopUpdate) && (
-              <div className="relative p-2.5 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50/80 dark:from-amber-500/15 dark:to-orange-500/10 border border-amber-300/80 dark:border-amber-500/30 shadow-2xs">
-                <div className="flex items-start justify-between gap-1.5">
+              <div className="relative px-3 py-2.5 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50/80 dark:from-amber-500/15 dark:to-orange-500/10 border border-amber-300/80 dark:border-amber-500/30 shadow-2xs">
+                <div className="flex items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="relative flex h-2 w-2 shrink-0">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                     </span>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 truncate flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 shrink-0 text-amber-600 dark:text-amber-400" />
-                      <span>{desktopReleaseTitle}</span>
+                    <Sparkles className="w-3 h-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span className="text-[11px] font-extrabold text-amber-900 dark:text-amber-200 tracking-tight truncate">
+                      Nova versão
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-md text-[9px] font-black bg-amber-200/70 dark:bg-amber-500/25 text-amber-900 dark:text-amber-200 border border-amber-300/80 dark:border-amber-500/30 shrink-0">
+                      v{latestDesktopVersion}
                     </span>
                   </div>
                   {!needsDesktopUpdate && (
                     <button
                       type="button"
                       onClick={dismissDesktopNotice}
-                      className="p-0.5 rounded text-amber-600/70 hover:text-amber-900 dark:text-amber-400/70 dark:hover:text-amber-200 transition-colors cursor-pointer shrink-0"
+                      className="p-0.5 rounded-md text-amber-700/70 hover:text-amber-950 hover:bg-amber-200/50 dark:text-amber-400/70 dark:hover:text-amber-200 dark:hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
                       title="Ocultar aviso desta versão"
                     >
                       <X className="w-3 h-3" />
                     </button>
                   )}
                 </div>
-                <p className="text-[10px] text-amber-900/90 dark:text-amber-200/90 leading-snug mt-1">
+                <p className="text-[10.5px] text-amber-900/85 dark:text-amber-200/85 leading-snug mt-1">
                   {desktopReleaseSummary}
                 </p>
                 <a
@@ -896,10 +898,10 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
                   onClick={() => {
                     if (!needsDesktopUpdate) dismissDesktopNotice();
                   }}
-                  className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 dark:text-amber-300 hover:underline"
+                  className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 dark:text-amber-300 hover:underline"
                 >
-                  <Download className="w-2.5 h-2.5" />
-                  <span>{needsDesktopUpdate ? `Atualizar agora (v${latestDesktopVersion})` : `Baixar nova versão (v${latestDesktopVersion})`}</span>
+                  <Download className="w-3 h-3 shrink-0" />
+                  <span>{needsDesktopUpdate ? 'Atualizar aplicativo' : 'Baixar nova versão'}</span>
                 </a>
               </div>
             )}
@@ -911,14 +913,14 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
               onClick={() => {
                 if (!needsDesktopUpdate) dismissDesktopNotice();
               }}
-              className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-gradient-to-r dark:from-[#141a2c] dark:to-[#1c243c] border border-slate-200 dark:border-white/[0.08] hover:border-emerald-500/40 text-slate-800 dark:text-white shadow-2xs transition-all group"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-2xl bg-slate-50 dark:bg-gradient-to-r dark:from-[#141a2c] dark:to-[#1c243c] border border-slate-200 dark:border-white/[0.08] hover:border-emerald-500/40 text-slate-800 dark:text-white shadow-2xs transition-all group"
             >
               <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
                 <Monitor className="w-4 h-4" />
               </div>
               <div className="flex flex-col min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold truncate">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[11.5px] font-bold truncate">
                     {needsDesktopUpdate ? 'Atualizar App (PC)' : 'App Desktop (PC)'}
                   </span>
                   <span className="px-1.5 py-0.2 rounded-md text-[9px] font-extrabold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shrink-0">
@@ -929,7 +931,7 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
                   {needsDesktopUpdate ? 'Clique para baixar a atualização' : 'Bandeja ^ + Multi-Grupo'}
                 </span>
               </div>
-              <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 ml-auto shrink-0 transition-colors" />
+              <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 shrink-0 transition-colors" />
             </a>
           </div>
         )}
