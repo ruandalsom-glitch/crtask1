@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck, Settings2, Check, LayoutGrid, Headset, LayoutDashboard } from 'lucide-react';
+import { renameBoard } from '@/lib/boardActions';
+import { ShieldAlert, ShieldCheck, BarChart3, Users, Building2, UserPlus, Trash2, Eye, Lock, Globe, UserCheck, Settings2, Check, LayoutGrid, Headset, LayoutDashboard, Pencil, X } from 'lucide-react';
 import Link from 'next/link';
 import { SlaManagementModal } from '@/components/board/SlaManagementModal';
 import { SectorOverviewDashboard } from '@/components/board/SectorOverviewDashboard';
@@ -50,6 +51,8 @@ export default function AdminPage() {
   const [selectedTabs, setSelectedTabs] = useState<string[]>(['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos']);
   const [isSlaManagementOpen, setIsSlaManagementOpen] = useState(false);
   const [adminTab, setAdminTab] = useState<'visao_geral' | 'configuracoes'>('visao_geral');
+  const [editingAdminBoardId, setEditingAdminBoardId] = useState<string | null>(null);
+  const [editingAdminBoardName, setEditingAdminBoardName] = useState('');
 
   const [userRole, setUserRole] = useState<'admin' | 'leader' | 'user' | null>(null);
   const [leaderWorkspaceIds, setLeaderWorkspaceIds] = useState<string[]>([]);
@@ -183,7 +186,7 @@ export default function AdminPage() {
     enabled: hasAccess
   });
 
-  // 2.8 Puxar Quadros do Setor para o Bloco de Exclusão de Administrador
+  // 2.8 Puxar Quadros do Setor para Gerenciamento (Renomear e Exclusão)
   const { data: adminBoards } = useQuery({
     queryKey: ['admin_boards_management', selectedWorkspace],
     queryFn: async () => {
@@ -196,7 +199,25 @@ export default function AdminPage() {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!selectedWorkspace && isAdmin
+    enabled: !!selectedWorkspace && hasAccess
+  });
+
+  const renameBoardMutation = useMutation({
+    mutationFn: async ({ board, newName }: { board: any; newName: string }) => {
+      return await renameBoard({
+        boardId: board.id,
+        currentName: board.name,
+        newName,
+        queryClient
+      });
+    },
+    onSuccess: () => {
+      setEditingAdminBoardId(null);
+      setEditingAdminBoardName('');
+    },
+    onError: (err: any) => {
+      alert('Erro ao renomear quadro: ' + (err?.message || 'Erro desconhecido.'));
+    }
   });
 
   const deleteBoardMutation = useMutation({
@@ -788,56 +809,133 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* Bloco 3.8: Gerenciamento e Exclusão de Quadros do Setor (Apenas Administrador) */}
-          {isAdmin && selectedWorkspace && (
+          {/* Bloco 3.8: Gerenciamento de Quadros do Setor (Renomear e Excluir) */}
+          {hasAccess && selectedWorkspace && (
             <div className="bg-white dark:bg-[#131929] p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/[0.08] md:col-span-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
                 <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                  <LayoutGrid className="w-5 h-5 text-rose-600 dark:text-rose-400" />
-                  <span>Gerenciamento e Exclusão de Quadros: "{selectedWorkspaceName}"</span>
+                  <LayoutGrid className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  <span>Gerenciamento de Quadros: "{selectedWorkspaceName}"</span>
                 </h2>
-                <span className="text-xs px-3 py-1 rounded-full font-bold bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 self-start sm:self-auto">
-                  Apenas Administrador
+                <span className="text-xs px-3 py-1 rounded-full font-bold bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 self-start sm:self-auto">
+                  {isAdmin ? 'Administração Completa' : 'Renomear Quadros do Setor'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
-                Exclua quadros obsoletos ou de teste deste setor com segurança. Esta ação apaga o quadro e todas as tarefas nele contidas.
+                Renomeie quadros existentes deste setor com facilidade{isAdmin ? ' ou exclua quadros obsoletos/de teste com segurança (a exclusão remove todas as tarefas do quadro)' : '.'}
               </p>
 
               <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
                 {adminBoards && adminBoards.length > 0 ? (
                   adminBoards.map((b: any) => {
                     const creator = profiles?.find((p: any) => p.id === b.created_by || p.email === b.created_by);
+                    const isEditingThis = editingAdminBoardId === b.id;
+
                     return (
-                      <div key={b.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
+                      <div key={b.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
                             <LayoutGrid className="w-4 h-4" />
                           </div>
-                          <div className="min-w-0">
-                            <span className="text-sm font-bold text-slate-800 dark:text-white truncate block">
-                              {b.name}
-                            </span>
-                            <span className="text-xs text-slate-400 dark:text-slate-400 truncate block">
-                              Criado por: {creator?.email || 'Sistema'}
-                            </span>
+                          <div className="min-w-0 flex-1">
+                            {isEditingThis ? (
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const trimmed = editingAdminBoardName.trim();
+                                  if (!trimmed || trimmed === (b.name || '').trim()) {
+                                    setEditingAdminBoardId(null);
+                                    setEditingAdminBoardName('');
+                                    return;
+                                  }
+                                  renameBoardMutation.mutate({ board: b, newName: trimmed });
+                                }}
+                                className="flex items-center gap-2 max-w-md"
+                              >
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={editingAdminBoardName}
+                                  disabled={renameBoardMutation.isPending}
+                                  onChange={(e) => setEditingAdminBoardName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Escape') {
+                                      setEditingAdminBoardId(null);
+                                      setEditingAdminBoardName('');
+                                    }
+                                  }}
+                                  onFocus={(e) => e.currentTarget.select()}
+                                  className="flex-1 px-2.5 py-1 text-sm font-bold bg-white dark:bg-slate-900 border border-blue-500 rounded-lg text-slate-900 dark:text-white outline-none"
+                                  placeholder="Novo nome do quadro..."
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={renameBoardMutation.isPending}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                                  title="Salvar novo nome"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Salvar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingAdminBoardId(null);
+                                    setEditingAdminBoardName('');
+                                  }}
+                                  disabled={renameBoardMutation.isPending}
+                                  className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer shrink-0"
+                                  title="Cancelar"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </form>
+                            ) : (
+                              <>
+                                <span className="text-sm font-bold text-slate-800 dark:text-white truncate block">
+                                  {b.name}
+                                </span>
+                                <span className="text-xs text-slate-400 dark:text-slate-400 truncate block">
+                                  Criado por: {creator?.email || 'Sistema'}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`ATENÇÃO ADMINISTRADOR:\n\nTem certeza absoluta que deseja excluir o quadro "${b.name}"?\nTodas as tarefas deste quadro serão excluídas permanentemente.`)) {
-                              deleteBoardMutation.mutate(b.id);
-                            }
-                          }}
-                          disabled={deleteBoardMutation.isPending}
-                          className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-                          title="Excluir quadro definitivamente"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Excluir Quadro</span>
-                        </button>
+                        {!isEditingThis && (
+                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAdminBoardId(b.id);
+                                setEditingAdminBoardName(b.name || '');
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                              title="Renomear quadro"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>Renomear</span>
+                            </button>
+
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`ATENÇÃO ADMINISTRADOR:\n\nTem certeza absoluta que deseja excluir o quadro "${b.name}"?\nTodas as tarefas deste quadro serão excluídas permanentemente.`)) {
+                                    deleteBoardMutation.mutate(b.id);
+                                  }
+                                }}
+                                disabled={deleteBoardMutation.isPending}
+                                className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                                title="Excluir quadro definitivamente"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Excluir Quadro</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })

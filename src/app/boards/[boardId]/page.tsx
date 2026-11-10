@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
+import { renameBoard } from '@/lib/boardActions';
 import {
   Table2,
   Columns3,
@@ -16,7 +17,10 @@ import {
   Grid3x3,
   Search,
   Lock,
-  LayoutGrid
+  LayoutGrid,
+  Pencil,
+  Check,
+  X
 } from 'lucide-react';
 
 const TabLoadingSkeleton = () => (
@@ -66,6 +70,9 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
     }
     return 'tabela';
   });
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
 
   useEffect(() => {
     const handleTabSwitch = (e: any) => {
@@ -245,6 +252,42 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   const isReadOnly = accessCheck?.canEdit === false;
   const visibleTabs: string[] = accessCheck?.visibleTabs || ['tabela', 'kanban', 'calendario', 'rotina', 'escala', 'turnos'];
 
+  const handleStartRename = () => {
+    if (isReadOnly) return;
+    setDraftName(boardName);
+    setIsEditingName(true);
+  };
+
+  const handleCancelRename = () => {
+    setIsEditingName(false);
+    setDraftName('');
+  };
+
+  const handleConfirmRename = async () => {
+    const trimmed = draftName.trim();
+    if (!trimmed || trimmed === boardName.trim()) {
+      handleCancelRename();
+      return;
+    }
+    if (isSavingName) return;
+
+    setIsSavingName(true);
+    try {
+      await renameBoard({
+        boardId,
+        currentName: boardName,
+        newName: trimmed,
+        queryClient
+      });
+      setIsEditingName(false);
+      setDraftName('');
+    } catch (err: any) {
+      alert(err?.message || 'Não foi possível renomear o quadro.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   if (isLoading || (accessCheck?.allowed === false && accessCheck?.redirectBoardId && accessCheck.redirectBoardId !== boardId)) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-slate-50 dark:bg-[#0b0e17]">
@@ -309,10 +352,73 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
             )}
 
             <div className="min-w-0">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight truncate">
-                  {boardName}
-                </h1>
+              <div className="flex items-center gap-2.5 flex-wrap group/board-title">
+                {isEditingName ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={draftName}
+                      disabled={isSavingName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleConfirmRename();
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          handleCancelRename();
+                        }
+                      }}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onBlur={handleConfirmRename}
+                      className="text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 border border-blue-500 rounded-xl px-3 py-1 outline-none min-w-[200px] max-w-[360px]"
+                      placeholder="Nome do quadro..."
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleConfirmRename}
+                      disabled={isSavingName}
+                      className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer shrink-0"
+                      title="Salvar nome"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleCancelRename}
+                      disabled={isSavingName}
+                      className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer shrink-0"
+                      title="Cancelar"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h1
+                      onDoubleClick={handleStartRename}
+                      className={`text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight truncate ${
+                        !isReadOnly ? 'cursor-text' : ''
+                      }`}
+                      title={!isReadOnly ? 'Clique duas vezes ou no lápis para renomear' : undefined}
+                    >
+                      {boardName}
+                    </h1>
+                    {!isReadOnly && (
+                      <button
+                        type="button"
+                        onClick={handleStartRename}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all cursor-pointer shrink-0"
+                        title="Renomear quadro"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Badge de Privacidade */}
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-white/[0.06] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/[0.1] shrink-0">

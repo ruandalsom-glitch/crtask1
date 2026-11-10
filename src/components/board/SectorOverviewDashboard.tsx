@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
+import { renameBoard } from '@/lib/boardActions';
 import {
   CheckCircle2,
   Clock,
@@ -17,7 +18,9 @@ import {
   Users,
   Settings2,
   ExternalLink,
-  Filter
+  Filter,
+  Pencil,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -45,6 +48,34 @@ export function SectorOverviewDashboard({
   const queryClient = useQueryClient();
   const [taskFilterTab, setTaskFilterTab] = useState<'pendentes' | 'andamento' | 'concluidas' | 'atrasadas' | 'todas'>('pendentes');
   const [selectedBoardFilter, setSelectedBoardFilter] = useState<string>('all');
+  const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
+  const [editingBoardName, setEditingBoardName] = useState('');
+  const [isRenamingBoard, setIsRenamingBoard] = useState(false);
+
+  const handleConfirmCardRename = async (board: any) => {
+    const trimmed = editingBoardName.trim();
+    if (!trimmed || trimmed === (board.name || '').trim()) {
+      setEditingBoardId(null);
+      setEditingBoardName('');
+      return;
+    }
+    if (isRenamingBoard) return;
+    setIsRenamingBoard(true);
+    try {
+      await renameBoard({
+        boardId: board.id,
+        currentName: board.name,
+        newName: trimmed,
+        queryClient
+      });
+      setEditingBoardId(null);
+      setEditingBoardName('');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao renomear quadro.');
+    } finally {
+      setIsRenamingBoard(false);
+    }
+  };
 
   // 1. Usuário atual
   const { data: currentUser } = useQuery({
@@ -449,16 +480,81 @@ export function SectorOverviewDashboard({
               const bDone = bTasks.filter((t: any) => t.status === 'Feito' || t.status === 'Concluído').length;
               const bProgress = bTasks.length > 0 ? Math.round((bDone / bTasks.length) * 100) : 0;
 
+              const isEditingThis = editingBoardId === b.id;
+
               return (
                 <div
                   key={b.id}
                   className="p-4 rounded-xl border border-slate-200 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02] hover:border-blue-400 dark:hover:border-blue-500/40 transition-all flex flex-col justify-between group"
                 >
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-bold text-sm text-slate-800 dark:text-white truncate">
-                        {b.name}
-                      </span>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      {isEditingThis ? (
+                        <div className="flex items-center gap-1 flex-1 min-w-0">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingBoardName}
+                            disabled={isRenamingBoard}
+                            onChange={(e) => setEditingBoardName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleConfirmCardRename(b);
+                              } else if (e.key === 'Escape') {
+                                setEditingBoardId(null);
+                                setEditingBoardName('');
+                              }
+                            }}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onBlur={() => handleConfirmCardRename(b)}
+                            className="w-full min-w-0 px-2 py-0.5 text-sm font-bold bg-white dark:bg-slate-900 border border-blue-500 rounded-lg text-slate-900 dark:text-white outline-none"
+                            placeholder="Nome do quadro..."
+                          />
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handleConfirmCardRename(b)}
+                            disabled={isRenamingBoard}
+                            className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shrink-0"
+                            title="Salvar"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setEditingBoardId(null);
+                              setEditingBoardName('');
+                            }}
+                            disabled={isRenamingBoard}
+                            className="p-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer shrink-0"
+                            title="Cancelar"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="font-bold text-sm text-slate-800 dark:text-white truncate">
+                            {b.name}
+                          </span>
+                          {!isReadOnly && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingBoardId(b.id);
+                                setEditingBoardName(b.name || '');
+                              }}
+                              className="p-1 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400 hover:bg-slate-200/70 dark:hover:bg-white/[0.08] transition-all cursor-pointer shrink-0"
+                              title="Renomear quadro"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0">
                         {bProgress}%
                       </span>

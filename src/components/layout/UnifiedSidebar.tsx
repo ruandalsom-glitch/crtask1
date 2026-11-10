@@ -28,13 +28,16 @@ import {
   FileText,
   Mail,
   MailWarning,
-  BarChart3
+  BarChart3,
+  Pencil,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, usePathname } from 'next/navigation';
-import { canUserAccessBoard } from '@/lib/privacy';
+import { canUserAccessBoard, isBoardOwnedByUser } from '@/lib/privacy';
+import { renameBoard } from '@/lib/boardActions';
 import { useIsDesktopApp } from '@/lib/useIsDesktopApp';
 import { NotificationBell } from './NotificationBell';
 
@@ -56,6 +59,9 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [currentTab, setCurrentTab] = useState<string>('tabela');
+  const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
+  const [editingBoardName, setEditingBoardName] = useState('');
+  const [isRenamingBoard, setIsRenamingBoard] = useState(false);
 
   const userButtonRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -332,6 +338,42 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
       } else if (insertResult.error) {
         alert('Erro ao criar quadro: ' + insertResult.error.message);
       }
+    }
+  };
+
+  const startRenamingBoard = (e: React.MouseEvent, board: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditingBoardId(board.id);
+    setEditingBoardName(board.name || '');
+  };
+
+  const cancelRenamingBoard = () => {
+    setEditingBoardId(null);
+    setEditingBoardName('');
+  };
+
+  const confirmRenamingBoard = async (board: any) => {
+    const trimmed = editingBoardName.trim();
+    if (!trimmed || trimmed === (board.name || '').trim()) {
+      cancelRenamingBoard();
+      return;
+    }
+    if (isRenamingBoard) return;
+
+    setIsRenamingBoard(true);
+    try {
+      await renameBoard({
+        boardId: board.id,
+        currentName: board.name,
+        newName: trimmed,
+        queryClient
+      });
+      cancelRenamingBoard();
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao renomear quadro.');
+    } finally {
+      setIsRenamingBoard(false);
     }
   };
 
@@ -714,11 +756,72 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
             <div className="space-y-0.5">
               {boards.map((b: any) => {
                 const isActive = pathname === `/boards/${b.id}`;
+                const canRename =
+                  userRole === 'admin' ||
+                  userRole === 'leader' ||
+                  isBoardOwnedByUser(
+                    { name: b.name, created_by: b.created_by },
+                    { id: userProfile?.id, email: userProfile?.email || '' }
+                  );
+                const isEditingThis = editingBoardId === b.id;
+
+                if (isEditingThis) {
+                  return (
+                    <div
+                      key={b.id}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50/80 dark:bg-white/[0.06] border border-blue-400 dark:border-indigo-500/60"
+                    >
+                      <input
+                        type="text"
+                        autoFocus
+                        value={editingBoardName}
+                        disabled={isRenamingBoard}
+                        onChange={(e) => setEditingBoardName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            confirmRenamingBoard(b);
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            cancelRenamingBoard();
+                          }
+                        }}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onBlur={() => confirmRenamingBoard(b)}
+                        className="w-full min-w-0 bg-transparent text-xs font-semibold text-slate-900 dark:text-white outline-none"
+                        placeholder="Nome do quadro..."
+                      />
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => confirmRenamingBoard(b)}
+                        disabled={isRenamingBoard}
+                        className="p-0.5 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 cursor-pointer shrink-0"
+                        title="Salvar nome"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={cancelRenamingBoard}
+                        disabled={isRenamingBoard}
+                        className="p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-100/70 dark:hover:bg-rose-950/60 cursor-pointer shrink-0"
+                        title="Cancelar"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={b.id} className="group relative flex items-center">
                     <Link
                       href={`/boards/${b.id}`}
                       className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs transition-all ${
+                        canRename ? 'pr-8' : ''
+                      } ${
                         isActive
                           ? 'bg-blue-50 dark:bg-white/[0.08] text-blue-700 dark:text-white font-bold'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]'
@@ -727,6 +830,16 @@ export function UnifiedSidebar({ isCollapsed, onToggleCollapse }: UnifiedSidebar
                       <LayoutGrid className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span className="truncate">{b.name}</span>
                     </Link>
+                    {canRename && (
+                      <button
+                        type="button"
+                        onClick={(e) => startRenamingBoard(e, b)}
+                        className="absolute right-1.5 p-1 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400 hover:bg-slate-200/70 dark:hover:bg-white/[0.08] transition-all cursor-pointer"
+                        title="Renomear quadro"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 );
               })}
