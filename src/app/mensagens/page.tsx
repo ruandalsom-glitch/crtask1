@@ -1544,12 +1544,18 @@ export default function MensagensPage() {
     }
   };
 
-  // Copiar Imagem + Texto JUNTOS (Para colar direto no WhatsApp com Imagem e Legenda/Texto)
-  const handleCopyAllToClipboard = async (imageUrl?: string, text?: string, customSuccessMsg?: string) => {
-    const cleanImg = imageUrl || '';
+  // Copiar Pacote Completo (1 ou 2 Imagens + Texto JUNTOS em um único clique para colar com 1 único Ctrl+V no WhatsApp)
+  const handleCopyAllToClipboard = async (
+    imageUrl?: string,
+    text?: string,
+    imageUrl2?: string,
+    customSuccessMsg?: string
+  ) => {
+    const cleanImg = (imageUrl || '').trim();
+    const cleanImg2 = (imageUrl2 || '').trim();
     const cleanTxt = (text || '').trim();
 
-    if (!cleanImg && !cleanTxt) {
+    if (!cleanImg && !cleanImg2 && !cleanTxt) {
       alert('Esta mensagem não possui imagem nem texto para copiar.');
       return;
     }
@@ -1557,18 +1563,82 @@ export default function MensagensPage() {
     try {
       setIsCopiedAll(true);
 
-      // Cenário 1: Possui Imagem e Texto
-      if (cleanImg && cleanTxt) {
+      // Cenário Especial: Possui 2 Imagens (1ª Imagem + Texto + 2ª Imagem) em 1 único pacote de Clipboard!
+      if (cleanImg && cleanImg2) {
+        const [pngBlob1, pngBlob2] = await Promise.all([
+          imageUrlToPngBlob(cleanImg),
+          imageUrlToPngBlob(cleanImg2)
+        ]);
+
+        const img2DataUrl = pngBlob2
+          ? await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve((reader.result as string) || '');
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(pngBlob2);
+            })
+          : cleanImg2;
+
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('crtask-copy-whatsapp', { detail: { text: cleanTxt } }));
+          window.dispatchEvent(
+            new CustomEvent('crtask-copy-whatsapp', {
+              detail: { text: cleanTxt, image2: img2DataUrl }
+            })
+          );
         }
-        const pngBlob = await imageUrlToPngBlob(cleanImg);
+
+        // 1. Avisa o CRTaskDesktop.exe que o próximo item de imagem é a 2ª imagem (e envia a legenda junto)
+        try {
+          await navigator.clipboard.writeText(`__CRTASK_IMG2_HEADER__\n${cleanTxt}`);
+          await new Promise((r) => setTimeout(r, 115));
+        } catch {}
+
+        // 2. Envia a 2ª Imagem (PNG) para o slot secundário do CRTaskDesktop.exe
+        if (pngBlob2) {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob2 })]);
+            await new Promise((r) => setTimeout(r, 130));
+          } catch {}
+        }
+
+        // 3. Finaliza deixando a 1ª Imagem + Texto prontos na área de transferência principal
+        if (pngBlob1) {
+          try {
+            const itemData: Record<string, Blob> = { 'image/png': pngBlob1 };
+            if (cleanTxt) {
+              itemData['text/plain'] = new Blob([cleanTxt], { type: 'text/plain' });
+            }
+            await navigator.clipboard.write([new ClipboardItem(itemData)]);
+          } catch {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob1 })]);
+          }
+        }
+
+        setShareFeedbackMsg(
+          customSuccessMsg ||
+            'Pacote completo copiado (1ª Imagem + Texto + 2ª Imagem)! Dê um único Ctrl+V no WhatsApp.'
+        );
+        setTimeout(() => setIsCopiedAll(false), 2500);
+        setTimeout(() => setShareFeedbackMsg(''), 4500);
+        return;
+      }
+
+      const singleImg = cleanImg || cleanImg2;
+
+      // Cenário 1: Possui 1 Imagem e Texto
+      if (singleImg && cleanTxt) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('crtask-copy-whatsapp', { detail: { text: cleanTxt, image2: '' } })
+          );
+        }
+        const pngBlob = await imageUrlToPngBlob(singleImg);
 
         if (pngBlob) {
           try {
             // 1. Grava primeiro o texto isolado para que fique salvo no Histórico do Windows (Win + V)
             await navigator.clipboard.writeText(cleanTxt);
-            await new Promise(r => setTimeout(r, 120));
+            await new Promise((r) => setTimeout(r, 120));
 
             // 2. Escreve imagem (PNG) e texto puro juntos na área de transferência atual (Ctrl + V)
             const clipboardItem = new ClipboardItem({
@@ -1576,15 +1646,16 @@ export default function MensagensPage() {
               'text/plain': new Blob([cleanTxt], { type: 'text/plain' })
             });
             await navigator.clipboard.write([clipboardItem]);
-            setShareFeedbackMsg(customSuccessMsg || 'Imagem e texto copiados! Dê Ctrl+V no WhatsApp (pode repetir em vários grupos).');
+            setShareFeedbackMsg(
+              customSuccessMsg ||
+                'Imagem e texto copiados! Dê Ctrl+V no WhatsApp (pode repetir em vários grupos).'
+            );
             setTimeout(() => setIsCopiedAll(false), 2500);
             setTimeout(() => setShareFeedbackMsg(''), 4500);
             return;
           } catch (multiErr) {
             console.warn('ClipboardItem combinado falhou no browser, copiando imagem:', multiErr);
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': pngBlob })
-            ]);
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
             setShareFeedbackMsg(customSuccessMsg || 'Imagem copiada para a área de transferência!');
             setTimeout(() => setIsCopiedAll(false), 2500);
             setTimeout(() => setShareFeedbackMsg(''), 4500);
@@ -1593,16 +1664,19 @@ export default function MensagensPage() {
         }
       }
 
-      // Cenário 2: Apenas Imagem
-      if (cleanImg && !cleanTxt) {
-        await handleCopySoloImageToClipboard(cleanImg, customSuccessMsg || 'Imagem copiada para a área de transferência!');
+      // Cenário 2: Apenas 1 Imagem
+      if (singleImg && !cleanTxt) {
+        await handleCopySoloImageToClipboard(
+          singleImg,
+          customSuccessMsg || 'Imagem copiada para a área de transferência!'
+        );
         setIsCopiedAll(true);
         setTimeout(() => setIsCopiedAll(false), 2500);
         return;
       }
 
       // Cenário 3: Apenas Texto
-      if (cleanTxt && !cleanImg) {
+      if (cleanTxt && !singleImg) {
         await handleCopyTextToClipboard(cleanTxt);
         setIsCopiedAll(true);
         setTimeout(() => setIsCopiedAll(false), 2500);
@@ -1620,11 +1694,7 @@ export default function MensagensPage() {
     }
   };
 
-  // Fluxo de Cópia Inteligente:
-  // - Se tiver 1 imagem (ou só texto): copia Imagem + Texto normalmente.
-  // - Se tiver 2 imagens:
-  //   • 1º clique (Passo 1/2): copia 1ª Imagem + Texto e muda o botão para "2ª Img"
-  //   • 2º clique (Passo 2/2): copia 2ª Imagem SOLO (sem legenda) e volta o botão para o estado inicial
+  // Copia tudo em 1 único fluxo (1ª Imagem + Texto + 2ª Imagem se houver)
   const handleSequentialCopyItem = async (
     item: MensagemItem,
     overrideImg1?: string,
@@ -1639,25 +1709,7 @@ export default function MensagensPage() {
     const key = `${selectedDate}_${selectedBase}_${item.id}_${normTime}`;
     dismissAlarm(key, item.id);
 
-    if (img1 && img2) {
-      const currentStep = copyStepByItem[item.id] || 1;
-      if (currentStep === 1) {
-        await handleCopyAllToClipboard(
-          img1,
-          txt,
-          'Passo 1/2 copiado (1ª Imagem + Texto)! Cole nos grupos e clique no botão "2ª Img" para copiar a 2ª imagem solo.'
-        );
-        setCopyStepByItem((prev) => ({ ...prev, [item.id]: 2 }));
-      } else {
-        await handleCopySoloImageToClipboard(
-          img2,
-          'Passo 2/2 copiado (2ª Imagem Solo)! Dê Ctrl+V nos grupos para enviar a 2ª imagem.'
-        );
-        setCopyStepByItem((prev) => ({ ...prev, [item.id]: 1 }));
-      }
-    } else {
-      await handleCopyAllToClipboard(img1 || img2, txt);
-    }
+    await handleCopyAllToClipboard(img1, txt, img2);
   };
 
   // Gerenciamento Sonoro do Alarme
@@ -1720,38 +1772,12 @@ export default function MensagensPage() {
   };
 
   const handleCopyAndMarkAlarm = async (item: MensagemItem, alarmKey: string) => {
-    const hasTwoImgs = Boolean(item.imagem_url && item.imagem_url_2);
-    const currentStep = copyStepByItem[item.id] || 1;
-
-    if (hasTwoImgs && currentStep === 1) {
-      // No Passo 1/2: silencia o som, copia a 1ª Imagem + Texto, marca o check se ainda não estiver marcado,
-      // e mantém o modal aberto no Passo 2/2 para o operador copiar a 2ª Imagem Solo quando terminar de colar a 1ª!
-      stopAlarmSound();
-      if (!checksMap[item.id]?.checked) {
-        await handleToggleCheck(item.id);
-      }
-      await handleCopyAllToClipboard(
-        item.imagem_url,
-        item.texto_completo || item.mensagem,
-        'Passo 1/2 copiado (1ª Imagem + Texto) e envio marcado! Agora clique para copiar a 2ª Imagem (Solo).'
-      );
-      setCopyStepByItem((prev) => ({ ...prev, [item.id]: 2 }));
-      return;
-    }
-
-    if (hasTwoImgs && currentStep === 2) {
-      dismissAlarm(alarmKey, item.id);
-      await handleCopySoloImageToClipboard(
-        item.imagem_url_2!,
-        'Passo 2/2 copiado (2ª Imagem Solo)! Dê Ctrl+V nos grupos.'
-      );
-      setCopyStepByItem((prev) => ({ ...prev, [item.id]: 1 }));
-      return;
-    }
-
-    // Caso padrão (1 imagem ou só texto)
     dismissAlarm(alarmKey, item.id);
-    await handleCopyAllToClipboard(item.imagem_url || item.imagem_url_2, item.texto_completo || item.mensagem);
+    await handleCopyAllToClipboard(
+      item.imagem_url,
+      item.texto_completo || item.mensagem,
+      item.imagem_url_2
+    );
     if (!checksMap[item.id]?.checked) {
       await handleToggleCheck(item.id);
     }
@@ -1759,32 +1785,12 @@ export default function MensagensPage() {
   };
 
   const handleCopyAlarmOnly = async (item: MensagemItem, alarmKey: string) => {
-    const hasTwoImgs = Boolean(item.imagem_url && item.imagem_url_2);
-    const currentStep = copyStepByItem[item.id] || 1;
-
-    if (hasTwoImgs && currentStep === 1) {
-      stopAlarmSound();
-      await handleCopyAllToClipboard(
-        item.imagem_url,
-        item.texto_completo || item.mensagem,
-        'Passo 1/2 copiado (1ª Imagem + Texto)! Cole nos grupos e depois clique para copiar a 2ª Imagem (Solo).'
-      );
-      setCopyStepByItem((prev) => ({ ...prev, [item.id]: 2 }));
-      return;
-    }
-
-    if (hasTwoImgs && currentStep === 2) {
-      dismissAlarm(alarmKey, item.id);
-      await handleCopySoloImageToClipboard(
-        item.imagem_url_2!,
-        'Passo 2/2 copiado (2ª Imagem Solo)! Dê Ctrl+V nos grupos.'
-      );
-      setCopyStepByItem((prev) => ({ ...prev, [item.id]: 1 }));
-      return;
-    }
-
     dismissAlarm(alarmKey, item.id);
-    await handleCopyAllToClipboard(item.imagem_url || item.imagem_url_2, item.texto_completo || item.mensagem);
+    await handleCopyAllToClipboard(
+      item.imagem_url,
+      item.texto_completo || item.mensagem,
+      item.imagem_url_2
+    );
     setShareFeedbackMsg('Comunicado copiado para a área de transferência!');
   };
 
@@ -3228,58 +3234,21 @@ export default function MensagensPage() {
                         </td>
 
                         {/* Ações: Visualizar/Copiar, Editar e Excluir */}
-                        <td className="py-2 px-1 text-center whitespace-nowrap w-[135px] min-w-[135px]">
+                        <td className="py-2 px-1 text-center whitespace-nowrap w-[125px] min-w-[125px]">
                           <div className="flex items-center justify-center gap-1">
                             {(item.imagem_url || item.imagem_url_2 || item.texto_completo) && (
-                              item.imagem_url && item.imagem_url_2 ? (
-                                (copyStepByItem[item.id] || 1) === 2 ? (
-                                  <div className="flex items-center gap-0.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSequentialCopyItem(item)}
-                                      className="px-2 h-7 flex items-center justify-center gap-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-black text-[10px] shadow-xs transition-all cursor-pointer animate-pulse"
-                                      title="Passo 2/2: Clique para copiar a 2ª Imagem (solo, sem repetir o texto) para colar no WhatsApp"
-                                    >
-                                      <Copy className="w-3 h-3 shrink-0" />
-                                      <span>2ª Img</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        await handleCopyAllToClipboard(
-                                          item.imagem_url,
-                                          item.texto_completo || item.mensagem,
-                                          'Passo 1/2 recopiado (1ª Imagem + Texto)! Clique em "2ª Img" quando for colar a segunda.'
-                                        );
-                                        setCopyStepByItem((prev) => ({ ...prev, [item.id]: 2 }));
-                                      }}
-                                      className="w-5 h-7 flex items-center justify-center text-[9px] font-bold text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                                      title="Recopiar Passo 1/2 (1ª Imagem + Texto)"
-                                    >
-                                      1ª
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSequentialCopyItem(item)}
-                                    className="px-1.5 h-7 flex items-center justify-center gap-1 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70 rounded-lg font-bold text-[10px] transition-colors cursor-pointer"
-                                    title="Passo 1/2: Copiar 1ª Imagem + Texto (depois clique novamente para copiar a 2ª Imagem solo)"
-                                  >
-                                    <Copy className="w-3 h-3 shrink-0" />
-                                    <span>1/2</span>
-                                  </button>
-                                )
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSequentialCopyItem(item)}
-                                  className="w-7 h-7 flex items-center justify-center hover:bg-emerald-100 dark:hover:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors cursor-pointer"
-                                  title="Copiar Imagem + Texto juntos para colar no WhatsApp"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-                              )
+                              <button
+                                type="button"
+                                onClick={() => handleSequentialCopyItem(item)}
+                                className="w-7 h-7 flex items-center justify-center hover:bg-emerald-100 dark:hover:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors cursor-pointer"
+                                title={
+                                  item.imagem_url && item.imagem_url_2
+                                    ? 'Copiar Pacote Completo (1ª Imagem + Texto + 2ª Imagem) para colar de uma só vez no WhatsApp'
+                                    : 'Copiar Imagem + Texto juntos para colar no WhatsApp'
+                                }
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
                             )}
                             <button
                               onClick={() => openDetailModal(item)}
@@ -3466,12 +3435,12 @@ export default function MensagensPage() {
                 )}
               </div>
 
-              {/* Anexo de 2ª Imagem (Opcional - Enviada Solo) */}
+              {/* Anexo de 2ª Imagem (Opcional - Enviada junto no mesmo Ctrl+V) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
                     <ImageIcon className="w-3.5 h-3.5 text-amber-500" />
-                    <span>2ª Imagem Opcional (Enviada Solo no 2º Clique)</span>
+                    <span>2ª Imagem Opcional (Vai junto no mesmo Ctrl+V)</span>
                   </span>
                   {formImagemUrl2 && (
                     <button
@@ -3581,7 +3550,7 @@ export default function MensagensPage() {
                     </span>
                     {detailImage && detailImage2 && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-400/30">
-                        2 Imagens (Envio em 2 Passos)
+                        2 Imagens + Texto (1 Único Ctrl+V)
                       </span>
                     )}
                   </div>
@@ -3610,12 +3579,12 @@ export default function MensagensPage() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <ImageIcon className="w-4 h-4 text-blue-600" />
-                      <span>1ª Imagem (Vai com o Texto)</span>
+                      <span>1ª Imagem (Com Legenda)</span>
                     </label>
                     {detailImage && (
                       <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        Passo 1/2
+                        Anexada
                       </span>
                     )}
                   </div>
@@ -3633,16 +3602,16 @@ export default function MensagensPage() {
                       <div className="flex items-center gap-1.5 flex-wrap justify-center pt-1">
                         <button
                           type="button"
-                          onClick={() => handleCopyAllToClipboard(detailImage, detailText)}
+                          onClick={() => handleCopyAllToClipboard(detailImage, detailText, detailImage2)}
                           className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
                             isCopiedImage 
                               ? 'bg-emerald-600 text-white border-emerald-600'
                               : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
                           }`}
-                          title="Copiar 1ª Imagem + Texto para colar no WhatsApp"
+                          title="Copiar tudo para colar no WhatsApp"
                         >
                           <Copy className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Copiar 1ª + Texto</span>
+                          <span>{detailImage2 ? 'Copiar Tudo' : 'Copiar 1ª + Texto'}</span>
                         </button>
 
                         <label className="px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-2xs">
@@ -3715,17 +3684,17 @@ export default function MensagensPage() {
                   )}
                 </div>
 
-                {/* CARD DA 2ª IMAGEM (OPCIONAL - ENVIADA SOLO NO 2º CLIQUE) */}
+                {/* CARD DA 2ª IMAGEM (OPCIONAL - ENVIADA JUNTO NO MESMO CTRL+V) */}
                 <div className="flex flex-col">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <ImageIcon className="w-4 h-4 text-amber-500" />
-                      <span>2ª Imagem (Opcional • Solo)</span>
+                      <span>2ª Imagem (Opcional • Vai Junto)</span>
                     </label>
                     {detailImage2 && (
                       <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        Passo 2/2 (Sem Texto)
+                        1 Único Ctrl+V
                       </span>
                     )}
                   </div>
@@ -3749,10 +3718,10 @@ export default function MensagensPage() {
                               ? 'bg-amber-600 text-white border-amber-600'
                               : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500'
                           }`}
-                          title="Copiar 2ª Imagem SOLO (sem repetir o texto) para colar no WhatsApp"
+                          title="Copiar apenas a 2ª Imagem avulsa"
                         >
                           {isCopiedImage2 ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{isCopiedImage2 ? '2ª Imagem Copiada!' : 'Copiar 2ª Img (Solo)'}</span>
+                          <span>{isCopiedImage2 ? '2ª Imagem Copiada!' : 'Só 2ª Img'}</span>
                         </button>
 
                         <label className="px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-2xs">
@@ -3790,7 +3759,7 @@ export default function MensagensPage() {
                           Adicionar 2ª Imagem (Opcional)
                         </p>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          No 1º clique copia Img 1 + Texto; no 2º clique copia esta Img 2 solo
+                          Enviada junto com a 1ª Imagem + Texto em um único Ctrl+V
                         </p>
                       </div>
 
@@ -3849,7 +3818,7 @@ export default function MensagensPage() {
 
             </div>
 
-            {/* Barra de Ações Inferior com Botão de Copiar Sequencial */}
+            {/* Barra de Ações Inferior com Botão de Copiar Tudo em 1 Clique */}
             <div className="bg-slate-50 dark:bg-[#0f172a] border-t border-slate-200 dark:border-slate-700 px-6 py-3.5 flex items-center justify-between flex-wrap gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 {/* Botão de Marcar Check */}
@@ -3884,54 +3853,34 @@ export default function MensagensPage() {
                   {isSavingDetail ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
 
-                {/* Botão Copiar Sequencial (1 imagem = Copiar Imagem + Texto | 2 imagens = Passo 1/2 Img1+Texto -> Passo 2/2 Img2 Solo) */}
+                {/* Botão Único de Copiar Tudo (1 ou 2 Imagens + Texto em 1 Único Ctrl+V) */}
                 {(detailImage || detailImage2 || detailText) && (
-                  detailImage && detailImage2 ? (
-                    (copyStepByItem[selectedItemForDetail.id] || 1) === 2 ? (
-                      <button
-                        type="button"
-                        onClick={() => handleSequentialCopyItem(selectedItemForDetail, detailImage, detailImage2, detailText)}
-                        className="px-5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md bg-amber-500 hover:bg-amber-600 text-white active:scale-95 animate-pulse"
-                        title="Passo 2/2: Copia a 2ª Imagem SOLO (sem repetir o texto) para colar nos grupos do WhatsApp"
-                      >
-                        <Copy className="w-4 h-4" />
-                        <span>Passo 2/2: Copiar 2ª Imagem (Solo)</span>
-                      </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSequentialCopyItem(selectedItemForDetail, detailImage, detailImage2, detailText)}
+                    className="px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95"
+                    title="Copia tudo de uma vez para enviar no WhatsApp com um único Ctrl+V"
+                  >
+                    {isCopiedAll ? (
+                      <>
+                        <Check className="w-4 h-4 stroke-[3]" />
+                        <span>
+                          {detailImage && detailImage2
+                            ? 'Copiado (2 Imagens + Texto)!'
+                            : 'Copiado (Imagem + Texto)!'}
+                        </span>
+                      </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleSequentialCopyItem(selectedItemForDetail, detailImage, detailImage2, detailText)}
-                        className="px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95"
-                        title="Passo 1/2: Copia a 1ª Imagem + Texto juntos (e prepara o botão para a 2ª Imagem Solo)"
-                      >
+                      <>
                         <Copy className="w-4 h-4" />
-                        <span>Passo 1/2: Copiar 1ª Imagem + Texto</span>
-                      </button>
-                    )
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSequentialCopyItem(selectedItemForDetail, detailImage, detailImage2, detailText)}
-                      className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
-                        isCopiedAll
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      }`}
-                      title="Copia a Imagem e o Texto juntos para enviar no WhatsApp com um único Ctrl+V"
-                    >
-                      {isCopiedAll ? (
-                        <>
-                          <Check className="w-4 h-4 stroke-[3]" />
-                          <span>Copiado (Imagem + Texto)!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          <span>Copiar Imagem + Texto</span>
-                        </>
-                      )}
-                    </button>
-                  )
+                        <span>
+                          {detailImage && detailImage2
+                            ? 'Copiar Tudo (2 Imagens + Texto)'
+                            : 'Copiar Imagem + Texto'}
+                        </span>
+                      </>
+                    )}
+                  </button>
                 )}
 
                 {/* Botão Copiar Texto em Destaque */}
@@ -4081,7 +4030,7 @@ export default function MensagensPage() {
                       />
                       <div className="absolute top-2 left-2 bg-amber-600/90 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                         <ImageIcon className="w-3 h-3" />
-                        <span>2ª Img (Solo)</span>
+                        <span>2ª Img (Vai Junto)</span>
                       </div>
                     </div>
                   )}
@@ -4102,15 +4051,9 @@ export default function MensagensPage() {
 
               <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
                 {activeAlarmItem.item.imagem_url && activeAlarmItem.item.imagem_url_2 ? (
-                  (copyStepByItem[activeAlarmItem.item.id] || 1) === 2 ? (
-                    <span className="text-amber-600 dark:text-amber-400 font-bold">
-                      ✓ Passo 1/2 já copiado! Cole a 1ª imagem + texto nos grupos e clique abaixo para copiar a <strong>2ª Imagem (Solo)</strong>.
-                    </span>
-                  ) : (
-                    <span>
-                      Esta mensagem possui <strong>2 imagens</strong>: o 1º clique copia a <strong>1ª Imagem + Texto</strong> e o 2º clique copia a <strong>2ª Imagem (Solo)</strong>.
-                    </span>
-                  )
+                  <>
+                    Ao clicar em copiar, as <strong>2 imagens + o texto</strong> vão juntos para sua área de transferência para colar tudo de uma vez (<kbd className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700">Ctrl+V</kbd>) no WhatsApp.
+                  </>
                 ) : (
                   <>
                     Ao clicar em copiar, a <strong>imagem e o texto</strong> vão para sua área de transferência para colar diretamente (<kbd className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700">Ctrl+V</kbd>) no WhatsApp Web.
@@ -4142,47 +4085,25 @@ export default function MensagensPage() {
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                {activeAlarmItem.item.imagem_url && activeAlarmItem.item.imagem_url_2 && (copyStepByItem[activeAlarmItem.item.id] || 1) === 2 ? (
-                  <button
-                    type="button"
-                    onClick={() => handleCopyAndMarkAlarm(activeAlarmItem.item, activeAlarmItem.alarmKey)}
-                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95 transition-all cursor-pointer animate-pulse"
-                    title="Copiar 2ª Imagem (Solo) e fechar alarme"
-                  >
-                    <Copy className="w-4 h-4" />
-                    <span>Passo 2/2: Copiar 2ª Imagem (Solo)</span>
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyAlarmOnly(activeAlarmItem.item, activeAlarmItem.alarmKey)}
-                      className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      title="Apenas copiar sem marcar check"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>
-                        {activeAlarmItem.item.imagem_url && activeAlarmItem.item.imagem_url_2
-                          ? '1/2 Apenas Copiar'
-                          : 'Apenas Copiar'}
-                      </span>
-                    </button>
+                <button
+                  type="button"
+                  onClick={() => handleCopyAlarmOnly(activeAlarmItem.item, activeAlarmItem.alarmKey)}
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Apenas copiar sem marcar check"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Apenas Copiar</span>
+                </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleCopyAndMarkAlarm(activeAlarmItem.item, activeAlarmItem.alarmKey)}
-                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
-                      title="Copiar e marcar como enviado"
-                    >
-                      <Check className="w-4 h-4 stroke-[3]" />
-                      <span>
-                        {activeAlarmItem.item.imagem_url && activeAlarmItem.item.imagem_url_2
-                          ? '1/2 Copiar + Marcar'
-                          : 'Copiar e Marcar Envio'}
-                      </span>
-                    </button>
-                  </>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleCopyAndMarkAlarm(activeAlarmItem.item, activeAlarmItem.alarmKey)}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+                  title="Copiar tudo e marcar como enviado"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>Copiar e Marcar Envio</span>
+                </button>
               </div>
             </div>
           </div>

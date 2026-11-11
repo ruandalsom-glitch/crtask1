@@ -6,9 +6,9 @@ const STORAGE_KEY = 'crtask_is_desktop_app';
 const VERSION_STORAGE_KEY = 'crtask_desktop_version';
 const DISMISSED_VERSION_STORAGE_KEY = 'crtask_dismissed_desktop_notice_version';
 
-export const LATEST_DESKTOP_APP_VERSION = '2.1.0';
-export const DESKTOP_APP_RELEASE_TITLE = 'Nova versão v2.1 disponível!';
-export const DESKTOP_APP_RELEASE_SUMMARY = 'Envio Multi-Grupo no WhatsApp + proteção total de Ctrl+C/V.';
+export const LATEST_DESKTOP_APP_VERSION = '2.2.0';
+export const DESKTOP_APP_RELEASE_TITLE = 'Nova versão v2.2 disponível!';
+export const DESKTOP_APP_RELEASE_SUMMARY = 'Envio de 2 Imagens + Texto em 1 único Ctrl+V no WhatsApp.';
 
 /**
  * Detecta se a página está rodando dentro do App Desktop (PC).

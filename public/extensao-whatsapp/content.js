@@ -1,9 +1,10 @@
 // ============================================================================
-// CR TASK - EXTENSÃO AUTO-LEGENDA WHATSAPP WEB v1.2.0 (MAIN WORLD)
+// CR TASK - EXTENSÃO AUTO-LEGENDA + 2ª IMAGEM WHATSAPP WEB v1.3.0 (MAIN WORLD)
 // ============================================================================
 
 (function () {
   const isWhatsApp = window.location.hostname.includes('whatsapp.com');
+  const IMG2_HEADER = '__CRTASK_IMG2_HEADER__';
 
   function showExtToast(msg, bg = '#4f46e5') {
     try {
@@ -37,34 +38,32 @@
     } catch (e) {}
   }
 
-  function findModalTextOnCRTask() {
-    try {
-      const textarea = document.querySelector('textarea');
-      if (textarea && textarea.value && textarea.value.trim()) {
-        return textarea.value.trim();
-      }
-      const monoP = document.querySelector('p.font-mono');
-      if (monoP && monoP.textContent && monoP.textContent.trim()) {
-        return monoP.textContent.trim();
-      }
-    } catch (e) {}
-    return '';
+  function cleanCaptionHeader(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    if (raw.startsWith(IMG2_HEADER)) {
+      return raw.slice(IMG2_HEADER.length).trim();
+    }
+    return raw.trim();
   }
 
-  function sendCaptionToBridge(text) {
-    const clean = (text || '').trim();
-    if (!clean) return;
+  function sendBundleToBridge(text, image2) {
+    const clean = cleanCaptionHeader(text);
+    const cleanImg2 = typeof image2 === 'string' ? image2.trim() : '';
     try {
       window.postMessage(
         {
           source: 'CRTASK_EXT_MAIN',
           type: 'SAVE_CAPTION',
-          text: clean
+          text: clean,
+          image2: cleanImg2
         },
         '*'
       );
-      const preview = clean.length > 30 ? clean.slice(0, 30) + '...' : clean;
-      showExtToast(`⚡ Auto-Legenda pronta: "${preview}"`, '#059669');
+      if (clean || cleanImg2) {
+        const preview = clean.length > 26 ? clean.slice(0, 26) + '...' : clean;
+        const suffix = cleanImg2 ? ' (+ 2ª Imagem)' : '';
+        showExtToast(`⚡ Auto-Legenda pronta: "${preview}"${suffix}`, '#059669');
+      }
     } catch (e) {}
   }
 
@@ -75,44 +74,11 @@
     window.addEventListener('crtask-copy-whatsapp', (event) => {
       try {
         const detail = (event && event.detail) || {};
-        const txt = (detail.text || '').trim() || findModalTextOnCRTask();
-        if (txt) {
-          sendCaptionToBridge(txt);
-        }
+        const txt = cleanCaptionHeader(detail.text || '');
+        const img2 = detail.image2 || '';
+        sendBundleToBridge(txt, img2);
       } catch (e) {}
     });
-
-    if (navigator.clipboard) {
-      const origWriteText = navigator.clipboard.writeText.bind(navigator.clipboard);
-      navigator.clipboard.writeText = async function (text) {
-        if (typeof text === 'string' && text.trim() && !text.startsWith('http')) {
-          sendCaptionToBridge(text.trim());
-        }
-        return origWriteText(text);
-      };
-
-      if (navigator.clipboard.write) {
-        const origWrite = navigator.clipboard.write.bind(navigator.clipboard);
-        navigator.clipboard.write = async function (items) {
-          try {
-            let captured = '';
-            if (Array.isArray(items) && items[0] && items[0].types) {
-              if (items[0].types.includes('text/plain')) {
-                const blob = await items[0].getType('text/plain');
-                captured = (await blob.text()).trim();
-              }
-            }
-            if (!captured) {
-              captured = findModalTextOnCRTask();
-            }
-            if (captured) {
-              sendCaptionToBridge(captured);
-            }
-          } catch (e) {}
-          return origWrite(items);
-        };
-      }
-    }
     return;
   }
 
@@ -120,20 +86,26 @@
   // PARTE 2: Roda dentro do WhatsApp Web (Main World)
   // --------------------------------------------------------------------------
   let cachedCaption = '';
+  let cachedImage2 = '';
   let cachedTime = 0;
 
   window.addEventListener('message', (event) => {
     if (!event.data || event.data.source !== 'CRTASK_EXT_BRIDGE') return;
     if (event.data.type === 'SYNC_CAPTION') {
       cachedCaption = event.data.text || '';
+      cachedImage2 = event.data.image2 || '';
       cachedTime = event.data.time || 0;
     }
   });
 
-  function getSavedCaption() {
+  function getSavedBundle() {
     const domCaption =
       (document.documentElement &&
         document.documentElement.getAttribute('data-crtask-caption')) ||
+      '';
+    const domImage2 =
+      (document.documentElement &&
+        document.documentElement.getAttribute('data-crtask-image2')) ||
       '';
     const domTime = Number(
       (document.documentElement &&
@@ -141,13 +113,14 @@
         0
     );
 
-    const text = (domCaption || cachedCaption || '').trim();
+    const text = cleanCaptionHeader(domCaption || cachedCaption || '');
+    const image2 = (domImage2 || cachedImage2 || '').trim();
     const time = domTime || cachedTime || 0;
 
-    if (text && (!time || Date.now() - time < 30 * 60 * 1000)) {
-      return text;
+    if ((text || image2) && (!time || Date.now() - time < 30 * 60 * 1000)) {
+      return { text, image2 };
     }
-    return '';
+    return { text: '', image2: '' };
   }
 
   function hasEditorContent(editor) {
@@ -178,12 +151,10 @@
 
     focusEditorProperly(editor);
 
-    // Método 1: execCommand('insertText') - dispara beforeinput nativo do Chrome para o Lexical
     try {
       document.execCommand('insertText', false, text);
     } catch (e) {}
 
-    // Método 2: InputEvent('beforeinput')
     if (!hasEditorContent(editor)) {
       try {
         focusEditorProperly(editor);
@@ -197,7 +168,6 @@
       } catch (e) {}
     }
 
-    // Método 3: ClipboardEvent('paste')
     if (!hasEditorContent(editor)) {
       try {
         focusEditorProperly(editor);
@@ -217,7 +187,30 @@
     return hasEditorContent(editor);
   }
 
-  // Encontra APENAS o novo campo de legenda que abriu no modal da imagem
+  async function dispatchSyntheticSecondImagePaste(dataUrl) {
+    if (!dataUrl) return;
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `crtask_img2_${Date.now()}.png`, { type: 'image/png' });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+
+      const pasteEvt = new ClipboardEvent('paste', {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      });
+      Object.defineProperty(pasteEvt, '_crtaskSynthetic', { value: true });
+
+      const target = document.activeElement || document.body || document;
+      target.dispatchEvent(pasteEvt);
+    } catch (e) {
+      console.warn('[CR Task Ext] Falha ao anexar 2ª imagem:', e);
+    }
+  }
+
   function findNewMediaCaptionEditor(existingEditors) {
     const allEditors = Array.from(
       document.querySelectorAll('div[contenteditable="true"]')
@@ -241,11 +234,12 @@
     return null;
   }
 
-  function waitForCaptionBoxAndInsert(text, existingEditors) {
+  function waitForCaptionBoxAndInsert(text, image2, existingEditors) {
     let attempts = 0;
-    const maxAttempts = 60; // até ~4.8 segundos esperando o modal da imagem abrir
+    const maxAttempts = 60;
+    let secondImageDispatched = false;
 
-    showExtToast('⚡ CR Task: Aguardando tela da imagem para colar legenda...', '#4f46e5');
+    showExtToast('⚡ CR Task: Preparando legenda' + (image2 ? ' + 2ª imagem...' : '...'), '#4f46e5');
 
     const interval = setInterval(() => {
       attempts++;
@@ -254,17 +248,28 @@
       if (captionEditor) {
         clearInterval(interval);
 
-        [250, 550, 950].forEach((delay) => {
-          setTimeout(() => {
-            const target = findNewMediaCaptionEditor(existingEditors) || captionEditor;
-            if (target && !hasEditorContent(target)) {
-              const ok = insertIntoLexical(target, text);
-              if (ok) {
-                showExtToast('✅ CR Task: Legenda inserida automaticamente!', '#059669');
+        if (text) {
+          [220, 500].forEach((delay) => {
+            setTimeout(() => {
+              const target = findNewMediaCaptionEditor(existingEditors) || captionEditor;
+              if (target && !hasEditorContent(target)) {
+                insertIntoLexical(target, text);
               }
-            }
-          }, delay);
-        });
+            }, delay);
+          });
+        }
+
+        if (image2 && !secondImageDispatched) {
+          secondImageDispatched = true;
+          setTimeout(() => {
+            dispatchSyntheticSecondImagePaste(image2);
+            showExtToast('✅ CR Task: 1ª Imagem + Texto + 2ª Imagem prontos!', '#059669');
+          }, text ? 650 : 300);
+        } else if (text) {
+          setTimeout(() => {
+            showExtToast('✅ CR Task: Legenda inserida automaticamente!', '#059669');
+          }, 550);
+        }
       } else if (attempts >= maxAttempts) {
         clearInterval(interval);
       }
@@ -287,7 +292,7 @@
 
       if (!hasImage) return;
 
-      const directText = (cb.getData('text/plain') || '').trim();
+      const directText = cleanCaptionHeader(cb.getData('text/plain') || '');
 
       const existingEditors = new Set(
         document.querySelectorAll('div[contenteditable="true"]')
@@ -296,15 +301,15 @@
       window.postMessage({ source: 'CRTASK_EXT_MAIN', type: 'REQUEST_SYNC' }, '*');
 
       setTimeout(() => {
-        const textToUse = directText || getSavedCaption();
+        const saved = getSavedBundle();
+        const textToUse = directText || saved.text;
+        const image2ToUse = saved.image2;
 
-        if (textToUse) {
-          waitForCaptionBoxAndInsert(textToUse, existingEditors);
-        } else {
-          showExtToast('⚠️ CR Task: Nenhuma legenda salva. Copie a mensagem no CR Task primeiro.', '#d97706');
+        if (textToUse || image2ToUse) {
+          waitForCaptionBoxAndInsert(textToUse, image2ToUse, existingEditors);
         }
       }, 30);
     },
-    true // Capture phase
+    true
   );
 })();

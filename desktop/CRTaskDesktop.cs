@@ -153,15 +153,17 @@ namespace CRTaskDesktop
         private const byte VK_X = 0x58;
         private const uint KEYEVENTF_KEYUP = 0x0002;
 
-        private const string APP_URL = "https://crtask1.vercel.app/mensagens?desktop=1&v=2.1.0";
+        private const string APP_URL = "https://crtask1.vercel.app/mensagens?desktop=1&v=2.2.0";
         private const string RUN_REGISTRY_KEY = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string RUN_VALUE_NAME = "CRTaskDesktop";
+        private const string IMG2_CLIPBOARD_HEADER = "__CRTASK_IMG2_HEADER__";
 
         private NotifyIcon trayIcon;
         private Icon appIcon;
         private Image logoPngImage;
         private System.Windows.Forms.Timer monitorTimer;
         private System.Windows.Forms.Timer pasteCaptionTimer;
+        private System.Windows.Forms.Timer pasteSecondImageTimer;
         private System.Windows.Forms.Timer restoreClipboardTimer;
         private EventWaitHandle showEvent;
         private IntPtr appHwnd = IntPtr.Zero;
@@ -171,13 +173,16 @@ namespace CRTaskDesktop
         private DateTime lastLaunchAttempt = DateTime.MinValue;
         private bool launchHiddenNext = false;
 
-        // WhatsApp Auto-Caption Multi-Group State
+        // WhatsApp Auto-Caption Multi-Group + 2-Image Bundle State
         private ClipboardWatcherForm clipboardForm;
         private IntPtr keyboardHookId = IntPtr.Zero;
         private LowLevelKeyboardProc keyboardProcDelegate;
         private string pendingCaption = "";
         private DateTime pendingCaptionTime = DateTime.MinValue;
         private Image pendingImage = null;
+        private Image pendingImage2 = null;
+        private bool awaitingSecondImageSlot = false;
+        private bool hasPendingSecondImage = false;
         private bool hasPendingImageAndCaption = false;
         private uint expectedClipboardSeq = 0;
         private uint lastInternalSeq = 0;
@@ -270,7 +275,7 @@ namespace CRTaskDesktop
             trayIcon = new NotifyIcon
             {
                 Icon = appIcon,
-                Text = "CR Task v2.1 • Alarmes + Multi-Grupo WhatsApp",
+                Text = "CR Task v2.2 • Alarmes + Multi-Grupo + 2 Imagens WhatsApp",
                 ContextMenuStrip = menu,
                 Visible = true
             };
@@ -298,8 +303,12 @@ namespace CRTaskDesktop
             pasteCaptionTimer.Interval = 700;
             pasteCaptionTimer.Tick += PasteCaptionTimer_Tick;
 
+            pasteSecondImageTimer = new System.Windows.Forms.Timer();
+            pasteSecondImageTimer.Interval = 550;
+            pasteSecondImageTimer.Tick += PasteSecondImageTimer_Tick;
+
             restoreClipboardTimer = new System.Windows.Forms.Timer();
-            restoreClipboardTimer.Interval = 400;
+            restoreClipboardTimer.Interval = 420;
             restoreClipboardTimer.Tick += RestoreClipboardTimer_Tick;
 
             LaunchBrowserApp();
@@ -320,6 +329,17 @@ namespace CRTaskDesktop
                    fgTitle.IndexOf("crtask", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private void DisposeSecondImage()
+        {
+            awaitingSecondImageSlot = false;
+            hasPendingSecondImage = false;
+            if (pendingImage2 != null)
+            {
+                try { pendingImage2.Dispose(); } catch { }
+                pendingImage2 = null;
+            }
+        }
+
         private void ClearPendingBundle()
         {
             hasPendingImageAndCaption = false;
@@ -328,12 +348,14 @@ namespace CRTaskDesktop
             lastInternalSeq = 0;
             isPastingSequenceActive = false;
             if (pasteCaptionTimer != null) pasteCaptionTimer.Stop();
+            if (pasteSecondImageTimer != null) pasteSecondImageTimer.Stop();
             if (restoreClipboardTimer != null) restoreClipboardTimer.Stop();
             if (pendingImage != null)
             {
                 try { pendingImage.Dispose(); } catch { }
                 pendingImage = null;
             }
+            DisposeSecondImage();
         }
 
         private void OnClipboardChanged()
@@ -368,7 +390,20 @@ namespace CRTaskDesktop
 
                 if (hasTxt && !hasImg)
                 {
-                    string txt = (Clipboard.GetText() ?? "").Trim();
+                    string rawTxt = Clipboard.GetText() ?? "";
+                    if (rawTxt.StartsWith(IMG2_CLIPBOARD_HEADER, StringComparison.Ordinal))
+                    {
+                        DisposeSecondImage();
+                        pendingCaption = rawTxt.Substring(IMG2_CLIPBOARD_HEADER.Length).Trim();
+                        pendingCaptionTime = DateTime.Now;
+                        awaitingSecondImageSlot = true;
+                        hasPendingImageAndCaption = false;
+                        expectedClipboardSeq = 0;
+                        return;
+                    }
+
+                    DisposeSecondImage();
+                    string txt = rawTxt.Trim();
                     if (!string.IsNullOrEmpty(txt) && !txt.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                     {
                         pendingCaption = txt;
@@ -383,17 +418,45 @@ namespace CRTaskDesktop
                 }
                 else if (hasImg)
                 {
+                    // Se o CR Task acabou de avisar que esta escrita de imagem é a 2ª imagem do pacote (Img 2):
+                    if (awaitingSecondImageSlot && (DateTime.Now - pendingCaptionTime).TotalSeconds < 10)
+                    {
+                        if (pendingImage2 != null)
+                        {
+                            try { pendingImage2.Dispose(); } catch { }
+                            pendingImage2 = null;
+                        }
+
+                        Image img2 = Clipboard.GetImage();
+                        if (img2 != null)
+                        {
+                            pendingImage2 = new Bitmap(img2);
+                            img2.Dispose();
+                            hasPendingSecondImage = true;
+                            awaitingSecondImageSlot = false;
+                            pendingCaptionTime = DateTime.Now;
+                        }
+                        else
+                        {
+                            DisposeSecondImage();
+                        }
+                        return;
+                    }
+
                     if (hasTxt)
                     {
                         string txt = (Clipboard.GetText() ?? "").Trim();
-                        if (!string.IsNullOrEmpty(txt))
+                        if (!string.IsNullOrEmpty(txt) && !txt.StartsWith(IMG2_CLIPBOARD_HEADER, StringComparison.Ordinal))
                         {
                             pendingCaption = txt;
                             pendingCaptionTime = DateTime.Now;
                         }
                     }
 
-                    if (!string.IsNullOrEmpty(pendingCaption) && (DateTime.Now - pendingCaptionTime).TotalSeconds < 10)
+                    bool hasValidBundle = (!string.IsNullOrEmpty(pendingCaption) || hasPendingSecondImage) &&
+                                          (DateTime.Now - pendingCaptionTime).TotalSeconds < 10;
+
+                    if (hasValidBundle)
                     {
                         if (pendingImage != null)
                         {
@@ -446,10 +509,11 @@ namespace CRTaskDesktop
                     return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
                 }
 
-                // 2. AUTO-LEGENDA WHATSAPP COM VALIDAÇÃO ESTRITA POR IMPRESSÃO DIGITAL (Sequence Number)
+                // 2. AUTO-LEGENDA + 2ª IMAGEM WHATSAPP COM VALIDAÇÃO ESTRITA POR IMPRESSÃO DIGITAL (Sequence Number)
                 if (ctrlDown && vkCode == VK_V && autoCaptionEnabled)
                 {
-                    if (isPastingSequenceActive || !hasPendingImageAndCaption || string.IsNullOrEmpty(pendingCaption) || pendingImage == null)
+                    if (isPastingSequenceActive || !hasPendingImageAndCaption || pendingImage == null ||
+                        (string.IsNullOrEmpty(pendingCaption) && !hasPendingSecondImage))
                     {
                         return CallNextHookEx(keyboardHookId, nCode, wParam, lParam);
                     }
@@ -489,6 +553,7 @@ namespace CRTaskDesktop
                     {
                         isPastingSequenceActive = true;
                         pasteCaptionTimer.Stop();
+                        pasteSecondImageTimer.Stop();
                         pasteCaptionTimer.Start();
                     }
                 }
@@ -502,10 +567,25 @@ namespace CRTaskDesktop
 
             // Revalida sequência antes de injetar a legenda (garante que o usuário não copiou nada durante os 700ms)
             uint currentSeq = GetClipboardSequenceNumber();
-            if (!hasPendingImageAndCaption || string.IsNullOrEmpty(pendingCaption) || expectedClipboardSeq == 0 || currentSeq != expectedClipboardSeq)
+            if (!hasPendingImageAndCaption || expectedClipboardSeq == 0 || currentSeq != expectedClipboardSeq)
             {
                 isPastingSequenceActive = false;
                 ClearPendingBundle();
+                return;
+            }
+
+            // Se não houver texto mas houver 2ª imagem, pula direto para colar a 2ª imagem
+            if (string.IsNullOrEmpty(pendingCaption))
+            {
+                if (hasPendingSecondImage && pendingImage2 != null)
+                {
+                    PasteSecondImageTimer_Tick(sender, e);
+                }
+                else
+                {
+                    isPastingSequenceActive = false;
+                    ClearPendingBundle();
+                }
                 return;
             }
 
@@ -517,6 +597,54 @@ namespace CRTaskDesktop
                 isSimulatingPaste = true;
 
                 Clipboard.SetDataObject(captionToPaste, true, 5, 50);
+                lastInternalSeq = GetClipboardSequenceNumber();
+
+                keybd_event((byte)VK_CONTROL, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event((byte)VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+                if (hasPendingSecondImage && pendingImage2 != null)
+                {
+                    // Libera flags temporariamente e agenda a colagem da 2ª imagem logo após o WhatsApp processar a legenda
+                    isInternalClipboardChange = false;
+                    isSimulatingPaste = false;
+                    pasteSecondImageTimer.Stop();
+                    pasteSecondImageTimer.Start();
+                }
+                else
+                {
+                    restoreClipboardTimer.Stop();
+                    restoreClipboardTimer.Start();
+                }
+            }
+            catch
+            {
+                isInternalClipboardChange = false;
+                isSimulatingPaste = false;
+                isPastingSequenceActive = false;
+            }
+        }
+
+        private void PasteSecondImageTimer_Tick(object sender, EventArgs e)
+        {
+            pasteSecondImageTimer.Stop();
+
+            if (!hasPendingImageAndCaption || !hasPendingSecondImage || pendingImage2 == null)
+            {
+                restoreClipboardTimer.Stop();
+                restoreClipboardTimer.Start();
+                return;
+            }
+
+            try
+            {
+                isInternalClipboardChange = true;
+                isSimulatingPaste = true;
+
+                DataObject data2 = new DataObject();
+                data2.SetImage(pendingImage2);
+                Clipboard.SetDataObject(data2, true, 5, 50);
                 lastInternalSeq = GetClipboardSequenceNumber();
 
                 keybd_event((byte)VK_CONTROL, 0, 0, UIntPtr.Zero);
@@ -540,14 +668,19 @@ namespace CRTaskDesktop
             restoreClipboardTimer.Stop();
             try
             {
-                // Se Modo Multi-Grupo está ativo, restaura a Imagem + Texto para permitir Ctrl+V direto no próximo grupo!
-                if (multiGroupModeEnabled && hasPendingImageAndCaption && pendingImage != null && !string.IsNullOrEmpty(pendingCaption))
+                // Se Modo Multi-Grupo está ativo, restaura a 1ª Imagem + Texto no Clipboard (e mantém a 2ª imagem na memória)
+                // para permitir Ctrl+V direto no próximo grupo!
+                if (multiGroupModeEnabled && hasPendingImageAndCaption && pendingImage != null &&
+                    (!string.IsNullOrEmpty(pendingCaption) || hasPendingSecondImage))
                 {
                     isInternalClipboardChange = true;
 
                     DataObject data = new DataObject();
                     data.SetImage(pendingImage);
-                    data.SetText(pendingCaption);
+                    if (!string.IsNullOrEmpty(pendingCaption))
+                    {
+                        data.SetText(pendingCaption);
+                    }
                     Clipboard.SetDataObject(data, true, 5, 50);
 
                     uint restoredSeq = GetClipboardSequenceNumber();
