@@ -745,6 +745,78 @@ interface MensagemItem {
 const IMG2_SEPARATOR = '||CR_IMG2||';
 const SCHED_SEPARATOR = '||CR_SCHED||';
 
+export interface VerificationInfo {
+  state: 'blank' | 'green' | 'warning' | 'expired';
+  ddMm: string;
+  isoDate: string;
+  diffDays: number | null;
+}
+
+export function parseVerificationInfo(
+  rawVal?: string | null,
+  referenceDateStr?: string
+): VerificationInfo {
+  if (!rawVal) {
+    return { state: 'blank', ddMm: '', isoDate: '', diffDays: null };
+  }
+  const trimmed = rawVal.trim();
+  const upper = trimmed.toUpperCase();
+
+  // Ignora textos antigos (FIXA, TEMPORÁRIA) para que o espaço fique em branco até o líder verificar
+  if (
+    !trimmed ||
+    upper.includes('FIXA') ||
+    upper.includes('TEMPORARIA') ||
+    upper.includes('TEMPORÁRIA')
+  ) {
+    return { state: 'blank', ddMm: '', isoDate: '', diffDays: null };
+  }
+
+  let isoDate = '';
+  const cleanVal = upper.startsWith('VERIF:') ? trimmed.slice(6).trim() : trimmed;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanVal)) {
+    isoDate = cleanVal;
+  } else {
+    const dmMatch = cleanVal.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+    if (dmMatch) {
+      const d = dmMatch[1].padStart(2, '0');
+      const m = dmMatch[2].padStart(2, '0');
+      const refYear = referenceDateStr ? Number(referenceDateStr.split('-')[0]) : new Date().getFullYear();
+      const y = dmMatch[3] || String(refYear);
+      isoDate = `${y}-${m}-${d}`;
+    }
+  }
+
+  if (!isoDate) {
+    return { state: 'blank', ddMm: '', isoDate: '', diffDays: null };
+  }
+
+  const [, mStr, dStr] = isoDate.split('-');
+  const ddMm = `${dStr}/${mStr}`;
+
+  const refStr = referenceDateStr || new Date().toISOString().split('T')[0];
+  const vTime = new Date(isoDate + 'T12:00:00').getTime();
+  const rTime = new Date(refStr + 'T12:00:00').getTime();
+
+  if (isNaN(vTime) || isNaN(rTime)) {
+    return { state: 'green', ddMm, isoDate, diffDays: 1 };
+  }
+
+  const diffDays = Math.max(0, Math.floor((rTime - vTime) / (1000 * 60 * 60 * 24)));
+
+  // 0 a 4 dias (1~4 dias): Ícone redondo verde de verificado (✓)
+  if (diffDays <= 4) {
+    return { state: 'green', ddMm, isoDate, diffDays };
+  }
+  // 5 a 7 dias: Ícone redondo amarelo/laranja de atenção (!)
+  if (diffDays <= 7) {
+    return { state: 'warning', ddMm, isoDate, diffDays };
+  }
+  // Mais de 7 dias (7 dias+): Ícone redondo vermelho com traço branco (−)
+  return { state: 'expired', ddMm, isoDate, diffDays };
+}
+
 export interface MessageScheduleConfig {
   mode: 'mute' | 'only'; // 'mute' = Evitar tocar nos dias selecionados | 'only' = Tocar apenas nos dias selecionados
   dates: string[];       // Datas específicas YYYY-MM-DD marcadas no calendário
@@ -1375,7 +1447,7 @@ export default function MensagensPage() {
   const [formMensagem, setFormMensagem] = useState('');
   const [formHorario, setFormHorario] = useState('08:00');
   const [formTipo, setFormTipo] = useState('GRUPO');
-  const [formUltimoCheck, setFormUltimoCheck] = useState('FIXA (14/09)');
+  const [formUltimoCheck, setFormUltimoCheck] = useState('');
   const [formObs, setFormObs] = useState('');
   const [formImagemUrl, setFormImagemUrl] = useState('');
   const [formImagemUrl2, setFormImagemUrl2] = useState('');
@@ -1414,18 +1486,21 @@ export default function MensagensPage() {
     staleTime: 5 * 60 * 1000
   });
 
-  // Verificação de permissão: apenas colaboradores atrelados ao setor Operacional (ou admin)
-  const { data: isAtreladoOperacional, isLoading: isLoadingAccess } = useQuery({
-    queryKey: ['user_operacional_access', currentUser?.id],
+  // Verificação de permissão e cargo do usuário logado
+  const { data: userAccessInfo, isLoading: isLoadingAccess } = useQuery({
+    queryKey: ['user_operacional_access_v2', currentUser?.id],
     queryFn: async () => {
-      if (!currentUser?.id) return false;
+      if (!currentUser?.id) return { hasAccess: false, role: 'user' };
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', currentUser.id)
         .maybeSingle();
 
-      if (profile?.role === 'admin') return true;
+      const role = (profile?.role || 'user').toLowerCase().trim();
+      if (role === 'admin' || role === 'administrador') {
+        return { hasAccess: true, role };
+      }
 
       const { data: memberWorkspaces } = await supabase
         .from('workspace_members')
@@ -1438,11 +1513,17 @@ export default function MensagensPage() {
         return norm.includes('operac');
       });
 
-      return Boolean(hasOperac);
+      return { hasAccess: Boolean(hasOperac), role };
     },
     enabled: !!currentUser?.id,
     staleTime: 5 * 60 * 1000
   });
+
+  const isAtreladoOperacional = userAccessInfo?.hasAccess;
+  const isLeaderOrAdmin = useMemo(() => {
+    const r = (userAccessInfo?.role || '').toLowerCase();
+    return r === 'admin' || r === 'administrador' || r === 'leader' || r === 'lider' || r === 'líder';
+  }, [userAccessInfo]);
 
   // Nome do Colaborador Ativo (quem está logado)
   const currentUserName = useMemo(() => {
@@ -1486,7 +1567,7 @@ export default function MensagensPage() {
         const { img1, img2 } = parseStoredImages(row.resp_manha, row.apoio_manha);
         return {
           id: row.msg_id,
-          ultimo_check: row.supervisor || 'FIXA',
+          ultimo_check: row.supervisor || '',
           tipo: row.enviado_por || 'GRUPO',
           mensagem: row.analista || '',
           horario: row.horario_envio || '',
@@ -1852,7 +1933,7 @@ export default function MensagensPage() {
     setFormMensagem('');
     setFormHorario('08:00');
     setFormTipo('GRUPO');
-    setFormUltimoCheck('FIXA (14/09)');
+    setFormUltimoCheck('');
     setFormObs('');
     setFormImagemUrl('');
     setFormImagemUrl2('');
@@ -1866,12 +1947,70 @@ export default function MensagensPage() {
     setFormMensagem(item.mensagem);
     setFormHorario(item.horario);
     setFormTipo(item.tipo);
-    setFormUltimoCheck(item.ultimo_check);
+    const verif = parseVerificationInfo(item.ultimo_check, selectedDate);
+    setFormUltimoCheck(verif.isoDate ? `VERIF:${verif.isoDate}` : '');
     setFormObs(item.obs || '');
     setFormImagemUrl(item.imagem_url || '');
     setFormImagemUrl2(item.imagem_url_2 || '');
     setFormTextoCompleto(item.texto_completo || item.mensagem);
     setIsModalOpen(true);
+  };
+
+  // Marcar / Atualizar "Última Verificação" (Exclusivo para Líderes e Admins)
+  const handleLeaderVerifyMessage = async (targetItem: MensagemItem, clearVerification = false) => {
+    if (!isLeaderOrAdmin) return;
+    const newVerifValue = clearVerification ? '' : `VERIF:${selectedDate}`;
+
+    const isExistingInDb = dbTemplates && dbTemplates.length > 0;
+    if (!isExistingInDb) {
+      const defaultList = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
+      const seedPayloads = defaultList.map((m, idx) => ({
+        data: '1970-01-01',
+        base: selectedBase,
+        msg_id: m.id,
+        checked: false,
+        supervisor: m.id === targetItem.id ? newVerifValue : (m.ultimo_check || ''),
+        enviado_por: m.tipo,
+        analista: m.mensagem,
+        horario_envio: m.horario,
+        assistente: m.obs || '',
+        resp_manha: '',
+        resp_inter: m.mensagem,
+        resp_tarde: String(idx),
+        updated_at: new Date().toISOString()
+      }));
+      await supabase.from('mensagens_checklist').upsert(seedPayloads, { onConflict: 'data,base,msg_id' });
+    }
+
+    const payload = {
+      data: '1970-01-01',
+      base: selectedBase,
+      msg_id: targetItem.id,
+      checked: false,
+      supervisor: newVerifValue,
+      enviado_por: targetItem.tipo,
+      analista: targetItem.mensagem,
+      horario_envio: targetItem.horario,
+      assistente: targetItem.obs || '',
+      resp_manha: serializeStoredImages(targetItem.imagem_url, targetItem.imagem_url_2),
+      resp_inter: targetItem.texto_completo || targetItem.mensagem || '',
+      resp_tarde: String(targetItem.ordem ?? 0),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase
+      .from('mensagens_checklist')
+      .upsert(payload, { onConflict: 'data,base,msg_id' });
+
+    if (!error) {
+      refetchTemplates();
+      setShareFeedbackMsg(
+        clearVerification
+          ? `Verificação de "${targetItem.mensagem}" limpa.`
+          : `Mensagem "${targetItem.mensagem}" verificada hoje (${selectedDate.split('-').slice(1).reverse().join('/')})!`
+      );
+      setTimeout(() => setShareFeedbackMsg(''), 3000);
+    }
   };
 
   // Abre modal de detalhe do comunicado (com imagem centralizada no topo e campo de texto)
@@ -2879,7 +3018,7 @@ export default function MensagensPage() {
     ctx.fillRect(0, tableY, width, thH);
 
     const cols = [
-      { name: 'Último Check', w: 140 * scale, align: 'center' },
+      { name: 'Última Verificação', w: 140 * scale, align: 'center' },
       { name: 'Tipo', w: 130 * scale, align: 'center' },
       { name: 'Mensagens', w: 420 * scale, align: 'left' },
       { name: 'Horário', w: 90 * scale, align: 'center' },
@@ -2924,11 +3063,45 @@ export default function MensagensPage() {
         const cellW = col.w;
 
         if (cIdx === 0) {
-          const val = item.ultimo_check || '';
-          ctx.fillStyle = val.includes('(') ? '#DC2626' : '#111827';
-          ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.fillText(val, cellX + cellW / 2, rowY + (23 * scale));
+          const verif = parseVerificationInfo(item.ultimo_check, selectedDate);
+          if (verif.state !== 'blank' && verif.ddMm) {
+            const centerX = cellX + cellW / 2;
+            const centerY = rowY + rowH / 2;
+            const iconR = 8 * scale;
+            const iconX = centerX - (24 * scale);
+
+            // Círculo colorido conforme os dias desde a última verificação
+            ctx.beginPath();
+            ctx.arc(iconX, centerY, iconR, 0, Math.PI * 2);
+            ctx.fillStyle =
+              verif.state === 'green'
+                ? '#10B981'
+                : verif.state === 'warning'
+                ? '#F59E0B'
+                : '#DC2626';
+            ctx.fill();
+
+            // Símbolo interno branco (✓, ! ou −)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = `900 ${11 * scale}px "Segoe UI", Inter, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const symbol =
+              verif.state === 'green' ? '✓' : verif.state === 'warning' ? '!' : '−';
+            ctx.fillText(symbol, iconX, centerY + (0.5 * scale));
+
+            // Data dd/mm ao lado
+            ctx.fillStyle =
+              verif.state === 'green'
+                ? '#047857'
+                : verif.state === 'warning'
+                ? '#B45309'
+                : '#B91C1C';
+            ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(verif.ddMm, iconX + (13 * scale), rowY + (22 * scale));
+          }
         } else if (cIdx === 1) {
           const val = item.tipo || 'GRUPO';
           ctx.fillStyle = val.includes('STATUS') ? '#2563EB' : '#0F766E';
@@ -3582,7 +3755,7 @@ export default function MensagensPage() {
                   <th className="py-3 px-1 text-center w-[44px] min-w-[44px] border-r border-[#1E3A56]" title="Arraste para reordenar as mensagens">
                     <MoveVertical className="w-3.5 h-3.5 mx-auto text-slate-300" />
                   </th>
-                  <th className="py-3 px-2 text-center w-[115px] min-w-[115px] border-r border-[#1E3A56]">Último Check</th>
+                  <th className="py-3 px-2 text-center w-[135px] min-w-[135px] border-r border-[#1E3A56]">Última Verificação</th>
                   <th className="py-3 px-2 text-center w-[95px] min-w-[95px] border-r border-[#1E3A56]">Tipo</th>
                   <th className="py-3 px-3 border-r border-[#1E3A56] min-w-[180px]">Mensagens (Clique para Anexo e Texto)</th>
                   <th
@@ -3703,17 +3876,98 @@ export default function MensagensPage() {
                           </div>
                         </td>
 
-                        {/* Último Check */}
-                        <td className="py-2.5 px-2 text-center font-bold border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap w-[115px] min-w-[115px]">
-                          <span
-                            className={
-                              item.ultimo_check.includes('(')
-                                ? 'text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/70 border border-red-200 dark:border-red-800/70 px-2 py-0.5 rounded-md text-[10px] font-bold'
-                                : 'text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-[10px] font-bold'
-                            }
-                          >
-                            {item.ultimo_check}
-                          </span>
+                        {/* Última Verificação (Apenas Líderes/Admins podem marcar OK; exibe ícone redondo + dd/mm) */}
+                        <td className="py-2 px-2 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap w-[135px] min-w-[135px]">
+                          {(() => {
+                            const verif = parseVerificationInfo(item.ultimo_check, selectedDate);
+
+                            return (
+                              <div className="flex items-center justify-center gap-1.5 min-h-[26px]">
+                                {/* Quando já foi verificado: exibe o ícone redondo correspondente aos dias + data dd/mm */}
+                                {verif.state !== 'blank' && (
+                                  <div
+                                    className="inline-flex items-center gap-1.5"
+                                    title={
+                                      verif.state === 'green'
+                                        ? `Verificado em ${verif.ddMm} (${verif.diffDays === 0 ? 'Hoje' : `há ${verif.diffDays} dia(s)`} • Em dia)`
+                                        : verif.state === 'warning'
+                                        ? `Atenção: Verificado em ${verif.ddMm} (há ${verif.diffDays} dias • Entre 5 e 7 dias)`
+                                        : `Vencido: Verificado em ${verif.ddMm} (há ${verif.diffDays} dias • Mais de 7 dias)`
+                                    }
+                                  >
+                                    {/* Ícone Redondo de Status */}
+                                    {verif.state === 'green' ? (
+                                      <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-2xs shrink-0">
+                                        <Check className="w-3 h-3 stroke-[3.2]" />
+                                      </span>
+                                    ) : verif.state === 'warning' ? (
+                                      <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center font-black text-[11px] leading-none shadow-2xs shrink-0">
+                                        !
+                                      </span>
+                                    ) : (
+                                      <span className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-2xs shrink-0">
+                                        <span className="w-2.5 h-[2.5px] bg-white rounded-full block" />
+                                      </span>
+                                    )}
+
+                                    {/* Data no formato dd/mm ao lado */}
+                                    <span
+                                      className={`text-xs font-extrabold tracking-tight ${
+                                        verif.state === 'green'
+                                          ? 'text-emerald-700 dark:text-emerald-400'
+                                          : verif.state === 'warning'
+                                          ? 'text-amber-700 dark:text-amber-400'
+                                          : 'text-red-600 dark:text-red-400'
+                                      }`}
+                                    >
+                                      {verif.ddMm}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Botão de OK exclusivo para Líderes de Setor / Admins */}
+                                {isLeaderOrAdmin && (
+                                  <div className="flex items-center gap-0.5">
+                                    {(verif.state === 'blank' || verif.state !== 'green') ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleLeaderVerifyMessage(item, false)}
+                                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold border transition-all cursor-pointer flex items-center gap-0.5 ${
+                                          verif.state === 'blank'
+                                            ? 'opacity-35 group-hover:opacity-100 bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 text-slate-500 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 border-slate-200 dark:border-slate-700 hover:border-emerald-300'
+                                            : 'bg-emerald-50 dark:bg-emerald-950/70 hover:bg-emerald-600 text-emerald-700 dark:text-emerald-300 hover:text-white border-emerald-200 dark:border-emerald-800'
+                                        }`}
+                                        title="Verificar mensagem hoje (Exclusivo para Líderes)"
+                                      >
+                                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                        <span>OK</span>
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleLeaderVerifyMessage(item, false)}
+                                        className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-emerald-600 text-slate-500 dark:text-slate-400 hover:text-white transition-all cursor-pointer"
+                                        title="Atualizar verificação para hoje"
+                                      >
+                                        OK
+                                      </button>
+                                    )}
+
+                                    {verif.state !== 'blank' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleLeaderVerifyMessage(item, true)}
+                                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-opacity cursor-pointer"
+                                        title="Deixar espaço em branco (Limpar verificação)"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         {/* Tipo */}
@@ -4005,18 +4259,38 @@ export default function MensagensPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                  Último Check / Validade
-                </label>
-                <input
-                  type="text"
-                  value={formUltimoCheck}
-                  onChange={e => setFormUltimoCheck(e.target.value)}
-                  placeholder="Ex: FIXA (14/09), TEMPORÁRIA"
-                  className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
-                />
-              </div>
+              {isLeaderOrAdmin && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1 flex items-center justify-between">
+                    <span>Última Verificação (Exclusivo Líder)</span>
+                    {formUltimoCheck && (
+                      <button
+                        type="button"
+                        onClick={() => setFormUltimoCheck('')}
+                        className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                      >
+                        Deixar em branco
+                      </button>
+                    )}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={formUltimoCheck.startsWith('VERIF:') ? formUltimoCheck.slice(6) : ''}
+                      onChange={e => setFormUltimoCheck(e.target.value ? `VERIF:${e.target.value}` : '')}
+                      className="flex-1 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setFormUltimoCheck(`VERIF:${selectedDate}`)}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>Verificar Hoje</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5 flex items-center gap-1.5">
