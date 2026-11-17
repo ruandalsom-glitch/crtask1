@@ -255,6 +255,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   // Campos da Escolha Manual de Folgas
   const [manualOffDates, setManualOffDates] = useState<string[]>([]);
   const [preserveSpecialDays, setPreserveSpecialDays] = useState<boolean>(true);
+  const [includeNextMonthTrailingDays, setIncludeNextMonthTrailingDays] = useState<boolean>(true);
 
   // Campos de Período Contínuo (ex: Férias 15 dias)
   const [periodStartDate, setPeriodStartDate] = useState('');
@@ -269,9 +270,15 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   const currentMonthIndex = selectedMonthDate.getMonth(); // 0 a 11
   const daysInCurrentMonth = new Date(currentYear, currentMonthIndex + 1, 0).getDate();
 
-  // Limites do Mês para Consulta SQL
+  // Próximo Mês (para preencher os quadradinhos faltantes do fim do calendário)
+  const nextMonthDateObj = new Date(currentYear, currentMonthIndex + 1, 1);
+  const nextMonthYear = nextMonthDateObj.getFullYear();
+  const nextMonthIndex = nextMonthDateObj.getMonth();
+
+  // Limites do Mês para Consulta SQL (inclui até o dia 07 do próximo mês para carregar folgas/escalas dos quadradinhos finais)
   const startOfMonthStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-01`;
   const endOfMonthStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(daysInCurrentMonth).padStart(2, '0')}`;
+  const nextMonthQueryEndStr = `${nextMonthYear}-${String(nextMonthIndex + 1).padStart(2, '0')}-07`;
 
   // 1. Busca Todos os Perfis do Sistema (compartilhado no cache global 'all_profiles')
   const { data: allProfiles } = useQuery({
@@ -453,9 +460,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     enabled: !!workspaceBoardIds
   });
 
-  // 5. Busca Todas as Escalas do Mês Atual (Unificadas no Setor — executa 1 única vez após workspaceBoardIds)
+  // 5. Busca Todas as Escalas do Mês Atual + Primeiros Dias do Próximo Mês (Unificadas no Setor)
   const { data: rawShiftsData } = useQuery({
-    queryKey: ['operational_shifts_roster', boardId, boardData?.workspace_id, workspaceBoardIds, startOfMonthStr, endOfMonthStr],
+    queryKey: ['operational_shifts_roster', boardId, boardData?.workspace_id, workspaceBoardIds, startOfMonthStr, nextMonthQueryEndStr],
     queryFn: async () => {
       let query = supabase.from('operational_shifts').select('*');
       if (boardData?.workspace_id && workspaceBoardIds && workspaceBoardIds.length > 0) {
@@ -465,7 +472,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       } else {
         query = query.eq('board_id', boardId);
       }
-      query = query.gte('shift_date', startOfMonthStr).lte('shift_date', endOfMonthStr);
+      query = query.gte('shift_date', startOfMonthStr).lte('shift_date', nextMonthQueryEndStr);
       const { data, error } = await query;
       if (error) {
         console.warn("Erro ao buscar shifts:", error);
@@ -779,14 +786,24 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       // MODO 1: ESCALA 5x2 DIFERENCIADA (1 DIA DA SEMANA + 1 DIA DO FIM DE SEMANA)
       if (scaleTabMode === '5x2') {
         const firstDayMonOffset = (new Date(currentYear, currentMonthIndex, 1).getDay() + 6) % 7;
+        const totalCurrentCells = firstDayMonOffset + daysInCurrentMonth;
+        const trailingNextMonthCount = includeNextMonthTrailingDays
+          ? (7 - (totalCurrentCells % 7)) % 7
+          : 0;
+        const totalDaysToProcess = daysInCurrentMonth + trailingNextMonthCount;
 
-        for (let d = 1; d <= daysInCurrentMonth; d++) {
-          const dStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          const dateObj = new Date(currentYear, currentMonthIndex, d);
+        for (let step = 1; step <= totalDaysToProcess; step++) {
+          const isNextMonthStep = step > daysInCurrentMonth;
+          const dayNum = isNextMonthStep ? step - daysInCurrentMonth : step;
+          const targetY = isNextMonthStep ? nextMonthYear : currentYear;
+          const targetM = isNextMonthStep ? nextMonthIndex : currentMonthIndex;
+
+          const dStr = `${targetY}-${String(targetM + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+          const dateObj = new Date(targetY, targetM, dayNum);
           const dow = dateObj.getDay(); // 0=dom, 1=seg, 2=ter, 3=qua, 4=qui, 5=sex, 6=sab
 
           // Determina a linha da semana no calendário (Segunda a Domingo: 0, 1, 2, 3, 4, 5)
-          const weekIndex = Math.floor((firstDayMonOffset + d - 1) / 7);
+          const weekIndex = Math.floor((firstDayMonOffset + step - 1) / 7);
 
           // Folga no final de semana alternada
           let isWeekendOff = false;
@@ -1173,12 +1190,12 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
   const publishedMembersSet = useMemo(() => {
     const set = new Set<string>();
     (rawShiftsData || []).forEach((row: any) => {
-      if (row.shift_name === '__ESC_ENVIADA__' && row.operator_name) {
+      if (row.shift_name === '__ESC_ENVIADA__' && row.operator_name && row.shift_date === startOfMonthStr) {
         set.add(row.operator_name.toLowerCase().trim());
       }
     });
     return set;
-  }, [rawShiftsData]);
+  }, [rawShiftsData, startOfMonthStr]);
 
   // Verifica se o gestor já clicou em "Enviar" para este colaborador neste mês
   const isMemberSchedulePublished = (memberName: string) => {
@@ -1194,6 +1211,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     if (!memberName) return false;
     return (rawShiftsData || []).some((row: any) => {
       if (row.shift_name === '__ESC_ENVIADA__' || !row.operator_name) return false;
+      if (row.shift_date < startOfMonthStr || row.shift_date > endOfMonthStr) return false;
       return isSameCollaborator(row.operator_name, memberName);
     });
   };
@@ -1390,13 +1408,20 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
     };
   };
 
-  // Matriz de semanas Segunda -> Domingo para o Card CR Task
+  // Matriz de semanas Segunda -> Domingo para o Card CR Task (incluindo dias do próximo mês nos quadradinhos faltantes)
   const goCalendarWeeks = useMemo(() => {
     const firstDayDate = new Date(currentYear, currentMonthIndex, 1);
     // 0 = Segunda, 1 = Terça, ..., 5 = Sábado, 6 = Domingo
     const startOffset = (firstDayDate.getDay() + 6) % 7;
 
-    const cells: ({ dayNumber: number; dateStr: string; dayOfWeek: number } | null)[] = [];
+    const cells: ({
+      dayNumber: number;
+      dateStr: string;
+      dayOfWeek: number;
+      isNextMonth?: boolean;
+      monthShort?: string;
+    } | null)[] = [];
+
     for (let i = 0; i < startOffset; i++) {
       cells.push(null);
     }
@@ -1406,11 +1431,25 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       cells.push({
         dayNumber: d,
         dateStr,
-        dayOfWeek: dateObj.getDay()
+        dayOfWeek: dateObj.getDay(),
+        isNextMonth: false,
+        monthShort: MONTH_SHORT[currentMonthIndex]
       });
     }
+
+    // Completa os quadradinhos faltantes da última linha com os primeiros dias do próximo mês
+    let nextDay = 1;
     while (cells.length % 7 !== 0) {
-      cells.push(null);
+      const nextDateObj = new Date(nextMonthYear, nextMonthIndex, nextDay);
+      const nextDateStr = `${nextMonthYear}-${String(nextMonthIndex + 1).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`;
+      cells.push({
+        dayNumber: nextDay,
+        dateStr: nextDateStr,
+        dayOfWeek: nextDateObj.getDay(),
+        isNextMonth: true,
+        monthShort: MONTH_SHORT[nextMonthIndex]
+      });
+      nextDay++;
     }
 
     const weeks: typeof cells[] = [];
@@ -1418,7 +1457,7 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
       weeks.push(cells.slice(i, i + 7));
     }
     return weeks;
-  }, [currentYear, currentMonthIndex, daysInCurrentMonth]);
+  }, [currentYear, currentMonthIndex, daysInCurrentMonth, nextMonthYear, nextMonthIndex]);
 
   // Gera um Canvas HTML5 de Alta Resolução com o visual oficial CR TASK e a logo /logo.png
   const generateGoScheduleCanvas = async (memberName: string): Promise<HTMLCanvasElement> => {
@@ -1598,30 +1637,64 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
         }
 
         const st = resolveGoCellStyle(memberName, cell.dateStr, cell.dayOfWeek);
+        const isNextM = Boolean(cell.isNextMonth);
+        const hasNextMStatus = st.category !== 'vazio';
+
+        ctx.save();
+        if (isNextM) {
+          ctx.globalAlpha = hasNextMStatus ? 0.9 : 0.75;
+        }
 
         ctx.beginPath();
         ctx.roundRect(x, y, colW, rowH, 14);
-        ctx.fillStyle = st.bgHex;
+        ctx.fillStyle = isNextM && !hasNextMStatus ? '#0c1425' : st.bgHex;
         ctx.fill();
         ctx.lineWidth = 1.8;
-        ctx.strokeStyle = st.borderHex;
+        if (isNextM) {
+          ctx.setLineDash([5, 4]);
+        }
+        ctx.strokeStyle = isNextM && !hasNextMStatus ? '#334155' : st.borderHex;
         ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Selo do Próximo Mês no canto superior direito (ex: DEZ, JAN)
+        if (isNextM && cell.monthShort) {
+          const tagW = 38;
+          const tagH = 17;
+          const tagX = x + colW - tagW - 7;
+          const tagY = y + 7;
+          ctx.beginPath();
+          ctx.roundRect(tagX, tagY, tagW, tagH, 5);
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+          ctx.stroke();
+
+          ctx.fillStyle = '#c7d2fe';
+          ctx.font = '800 9px Inter, Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(cell.monthShort.toUpperCase(), tagX + tagW / 2, tagY + tagH / 2 + 0.5);
+        }
 
         // Número do Dia
-        ctx.fillStyle = st.textHex;
+        ctx.fillStyle = isNextM && !hasNextMStatus ? '#94a3b8' : st.textHex;
         ctx.font = '900 26px Inter, Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(cell.dayNumber), x + colW / 2, y + rowH / 2 - 10);
 
         // Badge / Status embaixo
-        if (st.badge) {
-          ctx.fillStyle = st.subTextHex;
+        const badgeText = isNextM && !hasNextMStatus ? 'PRÓX. MÊS' : st.badge;
+        if (badgeText) {
+          ctx.fillStyle = isNextM && !hasNextMStatus ? '#64748b' : st.subTextHex;
           ctx.font = '800 11px Inter, Arial, sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(st.badge.toUpperCase(), x + colW / 2, y + rowH - 20);
+          ctx.fillText(badgeText.toUpperCase(), x + colW / 2, y + rowH - 20);
         }
+        ctx.restore();
       });
     });
 
@@ -2178,6 +2251,9 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
 
                         const cellStyle = resolveGoCellStyle(targetName, cell.dateStr, cell.dayOfWeek);
                         const rawStatus = resolveCellStatus(targetName, cell.dateStr);
+                        const isNextM = Boolean(cell.isNextMonth);
+                        const hasNextMStatus = cellStyle.category !== 'vazio';
+                        const badgeToShow = isNextM && !hasNextMStatus ? 'PRÓX. MÊS' : cellStyle.badge;
 
                         return (
                           <div
@@ -2195,30 +2271,53 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                               });
                             }}
                             style={{
-                              backgroundColor: isScheduleUndefined ? '#1e293b' : cellStyle.bgHex,
-                              borderColor: isScheduleUndefined ? '#334155' : cellStyle.borderHex,
-                              color: isScheduleUndefined ? '#64748b' : cellStyle.textHex
+                              backgroundColor: isScheduleUndefined
+                                ? '#1e293b'
+                                : isNextM && !hasNextMStatus
+                                ? '#0c1425'
+                                : cellStyle.bgHex,
+                              borderColor: isScheduleUndefined
+                                ? '#334155'
+                                : isNextM && !hasNextMStatus
+                                ? '#334155'
+                                : cellStyle.borderHex,
+                              color: isScheduleUndefined
+                                ? '#64748b'
+                                : isNextM && !hasNextMStatus
+                                ? '#94a3b8'
+                                : cellStyle.textHex
                             }}
                             title={
                               isScheduleUndefined
-                                ? `${targetName} - Dia ${cell.dayNumber}: Ainda não definido`
-                                : `${targetName} - Dia ${cell.dayNumber}: ${cellStyle.badge || 'Não definido'}`
+                                ? `${targetName} - Dia ${cell.dayNumber}${isNextM ? `/${cell.monthShort}` : ''}: Ainda não definido`
+                                : `${targetName} - Dia ${cell.dayNumber}${isNextM ? `/${cell.monthShort} (Próximo Mês)` : ''}: ${
+                                    hasNextMStatus ? cellStyle.badge : 'Sem escala lançada'
+                                  }`
                             }
                             className={`h-14 sm:h-16 rounded-xl border-[1.5px] flex flex-col items-center justify-center relative transition-all shadow-sm ${
+                              isNextM ? 'border-dashed' : ''
+                            } ${
+                              isNextM && !hasNextMStatus ? 'opacity-80' : isNextM ? 'opacity-95' : ''
+                            } ${
                               canManageRoster
                                 ? 'cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95'
                                 : ''
                             }`}
                           >
+                            {isNextM && cell.monthShort && (
+                              <span className="absolute top-1 right-1.5 px-1.5 py-0.2 rounded bg-slate-950/75 border border-slate-500/40 text-[8px] font-black uppercase tracking-wider text-indigo-200 leading-tight">
+                                {cell.monthShort}
+                              </span>
+                            )}
                             <span className="text-lg sm:text-xl font-black tracking-tight leading-none">
                               {cell.dayNumber}
                             </span>
                             {!isScheduleUndefined && (
                               <span
-                                style={{ color: cellStyle.subTextHex }}
+                                style={{ color: isNextM && !hasNextMStatus ? '#64748b' : cellStyle.subTextHex }}
                                 className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-tight mt-1 truncate max-w-[90%]"
                               >
-                                {cellStyle.badge}
+                                {badgeToShow}
                               </span>
                             )}
                           </div>
@@ -3906,6 +4005,19 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
                     />
                     <span className="text-[11px] text-amber-900 font-semibold leading-snug">
                       Manter <strong>Férias, Atestados, Day Off e Folgas Justificadas</strong> já lançados no mês (não sobrescrever esses dias ao aplicar a escala 5x2).
+                    </span>
+                  </label>
+
+                  {/* Completar quadradinhos finais com os primeiros dias do próximo mês */}
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeNextMonthTrailingDays}
+                      onChange={e => setIncludeNextMonthTrailingDays(e.target.checked)}
+                      className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 shrink-0"
+                    />
+                    <span className="text-[11px] text-indigo-900 font-semibold leading-snug">
+                      Preencher também os <strong>quadradinhos finais do início do próximo mês ({MONTH_SHORT[nextMonthIndex].toUpperCase()})</strong> que completam a última semana do card/imagem.
                     </span>
                   </label>
                 </div>
