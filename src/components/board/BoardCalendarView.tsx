@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
+import { fetchBoardTasksWithShared } from '@/lib/boardActions';
+import { hasAssigneeEmail } from '@/lib/privacy';
 import { ChevronLeft, ChevronRight, Search, User, Filter, Calendar as CalendarIcon, MessageCirclePlus, AlignLeft, Flag, FileText, DollarSign, Clock, Users, Circle, CheckCircle2, ChevronDown, Type, MessageSquare, MoreHorizontal, X, Paperclip, Activity, Trash2, Bell, Eye, EyeOff, AlertCircle, Headset, ShieldCheck } from 'lucide-react';
 
 import { DndContext, DragEndEvent, DragStartEvent, useDraggable, useDroppable, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -58,7 +60,7 @@ function TaskChip({ task, onClick, isOverlay = false, currentUserEmail }: any) {
   });
 
   const isSla = task.priority === 'SLA' || task.task_type === 'SLA' || task.title?.toUpperCase().includes('SLA');
-  const isMySla = isSla && currentUserEmail && task.assignee_email === currentUserEmail;
+  const isMySla = isSla && currentUserEmail && hasAssigneeEmail(task.assignee_email, currentUserEmail);
   const isLembrete = task.task_type === 'Lembrete';
   const bgColor = isLembrete ? 'bg-amber-400 text-amber-950' : (STATUS_COLORS[task.status] || STATUS_COLORS['Pendente']);
   
@@ -297,19 +299,10 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     }
   };
 
-  // Busca de Tarefas
+  // Busca de Tarefas (locais + compartilhadas)
   const { data: rawTasks } = useQuery({
     queryKey: ['tasks', boardId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*, task_updates(id)')
-        .eq('board_id', boardId)
-        .or('is_routine.eq.false,is_routine.is.null')
-        .order('position');
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchBoardTasksWithShared(boardId, queryClient),
     staleTime: 60 * 1000,
     refetchInterval: 60000,
     refetchIntervalInBackground: false
@@ -752,12 +745,35 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
           {
             task_id: newTask.id,
             content: dataToSave.notes.trim(),
-            // Se houver um usuário logado disponível, poderia ser o email dele. Aqui usaremos 'Usuário' como default se não tivermos
-            author_email: 'Sistema / Nota Inicial'
+            author_email: userProfile?.email || 'Sistema / Nota Inicial'
           }
         ]);
         if (updateError) {
           console.error("Erro ao inserir nota inicial como atualização:", updateError);
+        }
+      }
+
+      // 3. Se foi atribuída a outro colaborador, envia notificação
+      if (newTask && dataToSave.assignee_email) {
+        const targetEmail = dataToSave.assignee_email.trim();
+        const rawAuthor = userProfile?.email || '';
+        const isSelf =
+          targetEmail.toLowerCase() === rawAuthor.toLowerCase() ||
+          targetEmail.toLowerCase() === (defaultCreatorEmail || '').toLowerCase();
+        if (!isSelf) {
+          const authorPrefix = (defaultCreatorEmail || rawAuthor || 'Líder').split('@')[0];
+          const authorName = authorPrefix
+            .split(/[\._-]/)
+            .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+          await supabase.from('notifications').insert([
+            {
+              user_email: targetEmail,
+              task_id: newTask.id,
+              message: `${defaultCreatorEmail || rawAuthor || 'sistema'}||📋 ${authorName} compartilhou a tarefa "${newTask.title}" com você`,
+              read: false
+            }
+          ]);
         }
       }
 
@@ -800,20 +816,20 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
 
   const filteredTasks = [
     ...(rawTasks?.filter((task: any) => {
-      if (task.is_private && !isLeaderOrAdmin && task.assignee_email !== userProfile?.email) return false;
+      if (task.is_private && !isLeaderOrAdmin && !hasAssigneeEmail(task.assignee_email, userProfile?.email)) return false;
       if (task.is_routine) return false;
       if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (filterStatus && task.status !== filterStatus) return false;
-      if (filterPersonEmail && task.assignee_email !== filterPersonEmail) return false;
+      if (filterPersonEmail && !hasAssigneeEmail(task.assignee_email, filterPersonEmail)) return false;
 
       // Escala / Lembrete de SLA - ATENDIMENTO:
       // Não exibe no calendário geral! Exibe APENAS para o colaborador específico designado (ou quando filtrado por ele)
       const isSlaTask = task.priority === 'SLA' || task.task_type === 'SLA' || task.title?.toUpperCase().includes('SLA');
       if (isSlaTask) {
         if (filterPersonEmail) {
-          return task.assignee_email === filterPersonEmail;
+          return hasAssigneeEmail(task.assignee_email, filterPersonEmail);
         }
-        return Boolean(userProfile?.email && task.assignee_email === userProfile.email);
+        return Boolean(userProfile?.email && hasAssigneeEmail(task.assignee_email, userProfile.email));
       }
 
       return true;

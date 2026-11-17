@@ -155,7 +155,7 @@ export function NotificationBell({ isCollapsed }: NotificationBellProps) {
       const isSla = msg.includes('sla') || msg.includes('plantao') || msg.includes('plantão');
       const isEscala = msg.includes('escala') || msg.includes('turno') || msg.includes('roster');
 
-      // 1. Notificação com task_id (redireciona para o quadro da tarefa)
+      // 1. Notificação com task_id (redireciona para o quadro acessível pelo usuário)
       if (notif.task_id) {
         const { data: task } = await supabase
           .from('tasks')
@@ -174,13 +174,37 @@ export function NotificationBell({ isCollapsed }: NotificationBellProps) {
             }
           }
 
+          // Verifica o cargo do usuário para decidir se abre o quadro original (Líder/Admin)
+          // ou o próprio quadro do colaborador (onde a tarefa compartilhada já aparece)
+          const cachedProfiles: any[] | undefined = queryClient.getQueryData(['all_profiles']);
+          let role = cachedProfiles?.find(
+            (p: any) => p.id === userProfile?.id || p.email === userProfile?.email
+          )?.role;
+
+          if (!role && userProfile?.id) {
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', userProfile.id)
+              .maybeSingle();
+            role = prof?.role;
+          }
+
+          let destinationBoardId = task.board_id;
+          if (role !== 'admin' && role !== 'leader') {
+            const ownBoardId = await resolveTargetBoardId();
+            if (ownBoardId) {
+              destinationBoardId = ownBoardId;
+            }
+          }
+
           if (typeof window !== 'undefined') {
             sessionStorage.setItem('crtask_pending_open_task', JSON.stringify(task));
             window.dispatchEvent(new CustomEvent('crtask_tab_switch', { detail: { tab: targetTab } }));
             window.dispatchEvent(new CustomEvent('crtask_open_task', { detail: { task, taskId: task.id } }));
           }
 
-          router.push(`/boards/${task.board_id}?tab=${targetTab}&taskId=${task.id}`);
+          router.push(`/boards/${destinationBoardId}?tab=${targetTab}&taskId=${task.id}`);
           return;
         }
       }

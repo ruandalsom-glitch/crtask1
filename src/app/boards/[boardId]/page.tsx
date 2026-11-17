@@ -150,7 +150,12 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
       const board = boardRes.data;
       if (!board) return { allowed: false, reason: 'not_found', userRole: 'user' };
 
-      queryClient.setQueryData(['board_info', boardId], { name: board.name, workspace_id: board.workspace_id });
+      queryClient.setQueryData(['board_info', boardId], {
+        id: board.id,
+        name: board.name,
+        workspace_id: board.workspace_id,
+        created_by: board.created_by
+      });
       queryClient.setQueryData(['board_workspace_roster', boardId], { workspace_id: board.workspace_id, name: board.name });
       queryClient.setQueryData(['board_workspace_shift', boardId], { workspace_id: board.workspace_id, name: board.name });
 

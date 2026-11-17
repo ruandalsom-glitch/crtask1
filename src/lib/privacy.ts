@@ -5,6 +5,26 @@ export function normalizeStr(str?: string | null): string {
   return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
+export function parseAssigneeEmails(assigneeEmailField?: string | null): string[] {
+  if (!assigneeEmailField) return [];
+  return assigneeEmailField
+    .split(',')
+    .map(e => e.trim())
+    .filter(Boolean);
+}
+
+export function hasAssigneeEmail(
+  assigneeEmailField?: string | null,
+  targetEmail?: string | null
+): boolean {
+  if (!assigneeEmailField || !targetEmail) return false;
+  const target = targetEmail.trim().toLowerCase();
+  if (!target) return false;
+  return parseAssigneeEmails(assigneeEmailField).some(
+    email => email.toLowerCase() === target
+  );
+}
+
 export function isBoardOwnedByUser(
   board?: { name?: string | null; created_by?: string | null } | null,
   user?: { id?: string | null; email?: string | null } | null

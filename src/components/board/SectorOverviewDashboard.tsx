@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { renameBoard } from '@/lib/boardActions';
+import { hasAssigneeEmail } from '@/lib/privacy';
 import {
   CheckCircle2,
   Clock,
@@ -814,7 +815,7 @@ export function SectorOverviewDashboard({
               ) : (
                 sectorMembers.slice(0, 5).map((m: any) => {
                   const userTaskCount = scopedTasks.filter(
-                    (t: any) => t.assignee_email === m.email || t.assignee_name === m.email.split('@')[0]
+                    (t: any) => hasAssigneeEmail(t.assignee_email, m.email) || t.assignee_name === m.email.split('@')[0]
                   ).length;
                   const isLeader = m.sectorRole === 'leader' || m.role === 'leader';
 

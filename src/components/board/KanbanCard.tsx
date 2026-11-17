@@ -96,6 +96,13 @@ export function KanbanCard({ task, isOverlay, onOpenTask }: { task: any, isOverl
         isOverlay ? 'scale-105 shadow-xl rotate-2 opacity-90 cursor-grabbing !transition-none' : ''
       }`}
     >
+      {task.is_external && (
+        <div className="mb-1.5">
+          <span className="inline-block bg-purple-100 text-purple-700 border border-purple-200 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+            Compartilhada • {task.external_board_name}
+          </span>
+        </div>
+      )}
       <h4 className="font-semibold text-[#323338] text-[14px] leading-tight mb-3">
         {task.title}
       </h4>

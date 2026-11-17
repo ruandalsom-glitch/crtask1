@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, getFastUser } from '@/lib/supabaseClient';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { UserPlus, X, Search, User, Mail, Image, Crown, Building2 } from 'lucide-react';
 import { AssigneeViewMode } from './AssigneeViewToggle';
@@ -198,16 +198,60 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
   };
 
   const updateTask = useMutation({
-    mutationFn: async (newEmail: string | null) => {
+    mutationFn: async ({
+      newEmail,
+      addedEmail
+    }: {
+      newEmail: string | null;
+      addedEmail?: string | null;
+    }) => {
       const { error } = await supabase
         .from('tasks')
         .update({ assignee_email: newEmail })
         .eq('id', task.id);
       if (error) throw error;
+
+      // Dispara notificação automática quando uma pessoa é adicionada/marcada na tarefa
+      if (addedEmail && task?.id) {
+        try {
+          const currentUser = await getFastUser();
+          const rawAuthorEmail = currentUser?.email || '';
+          const authorEmail =
+            rawAuthorEmail === 'ruan.dalsom@crexpresstransportessp.com.br'
+              ? 'ruan.dalsom@masterdeliveryexpress.com.br'
+              : rawAuthorEmail;
+
+          const cleanTarget = addedEmail.trim().toLowerCase();
+          const isSelf =
+            cleanTarget === rawAuthorEmail.toLowerCase() ||
+            cleanTarget === authorEmail.toLowerCase();
+
+          if (!isSelf) {
+            const authorPrefix = (authorEmail || 'Líder').split('@')[0];
+            const authorName = authorPrefix
+              .split(/[\._-]/)
+              .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+              .join(' ');
+
+            await supabase.from('notifications').insert([
+              {
+                user_email: addedEmail.trim(),
+                task_id: task.id,
+                message: `${authorEmail || 'sistema'}||📋 ${authorName} compartilhou a tarefa "${task.title || 'Nova Tarefa'}" com você`,
+                read: false
+              }
+            ]);
+          }
+        } catch (notifErr) {
+          console.error('Erro ao enviar notificação de atribuição:', notifErr);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      setIsOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['my_work_clean'] });
+      queryClient.invalidateQueries({ queryKey: ['workspace_overview_tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     }
   });
 
@@ -229,14 +273,23 @@ export function AssigneeCell({ task, disabled }: { task: any; disabled?: boolean
   }, [currentEmails]);
 
   const toggleEmail = (email: string) => {
-    let newEmails;
-    if (currentEmails.includes(email)) {
-      newEmails = currentEmails.filter((e: string) => e !== email);
+    const cleanEmail = email.trim();
+    const isAlreadyAssigned = currentEmails.some(
+      (e: string) => e.toLowerCase() === cleanEmail.toLowerCase()
+    );
+    let newEmails: string[];
+    if (isAlreadyAssigned) {
+      newEmails = currentEmails.filter(
+        (e: string) => e.toLowerCase() !== cleanEmail.toLowerCase()
+      );
     } else {
-      newEmails = [...currentEmails, email];
+      newEmails = [...currentEmails, cleanEmail];
     }
     const newString = newEmails.length > 0 ? newEmails.join(', ') : null;
-    updateTask.mutate(newString);
+    updateTask.mutate({
+      newEmail: newString,
+      addedEmail: isAlreadyAssigned ? null : cleanEmail
+    });
   };
 
   const renderContent = () => {

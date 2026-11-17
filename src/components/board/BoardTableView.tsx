@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, getFastUser } from '@/lib/supabaseClient';
+import { fetchBoardTasksWithShared } from '@/lib/boardActions';
+import { hasAssigneeEmail } from '@/lib/privacy';
 import { StatusCell } from './StatusCell';
 import { PriorityCell } from './PriorityCell';
 import { EffortCell } from './EffortCell';
@@ -320,16 +322,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['tasks', boardId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*, task_updates(id)')
-        .eq('board_id', boardId)
-        .order('position', { ascending: true })
-        .order('created_at', { ascending: true });
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: () => fetchBoardTasksWithShared(boardId, queryClient),
     staleTime: 60 * 1000
   });
 
@@ -390,7 +383,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
     const handleOpenTaskEvent = (e: any) => {
       const taskObj = e.detail?.task;
       const taskId = e.detail?.taskId;
-      if (taskObj && (taskObj.board_id === boardId || !taskObj.board_id)) {
+      if (taskObj) {
         setTaskDetailsOpen(taskObj);
         return;
       }
@@ -420,7 +413,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
-            if (parsed && (parsed.board_id === boardId || !parsed.board_id)) {
+            if (parsed?.id) {
               pendingTask = parsed;
             }
           } catch {}
@@ -695,7 +688,7 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
   }
 
   const filteredTasks = tasks?.filter((task: any) => {
-    if (task.is_private && !isLeaderOrAdmin && task.assignee_email !== userProfile?.email) return false;
+    if (task.is_private && !isLeaderOrAdmin && !hasAssigneeEmail(task.assignee_email, userProfile?.email)) return false;
     if (task.is_routine) return false; // Filtra as rotinas
     if (task.task_type === 'Lembrete') return false; // Lembretes ficam APENAS no Calendário
     if (filterStatus && task.status !== filterStatus) return false;
@@ -868,9 +861,22 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
                         <div className="flex items-center justify-between w-full h-full">
                           <div className="flex items-center gap-2 flex-1 min-w-0 pr-6">
                             {task.is_external && (
-                              <a href={`/boards/${task.external_board_id}`} className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 hover:bg-purple-200 transition-colors" title="Ir para o quadro">
-                                Quadro: {task.external_board_name}
-                              </a>
+                              isLeaderOrAdmin ? (
+                                <a
+                                  href={`/boards/${task.external_board_id}`}
+                                  className="bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 hover:bg-purple-200 transition-colors"
+                                  title={`Ir para o quadro de origem (${task.external_board_name})`}
+                                >
+                                  Quadro: {task.external_board_name}
+                                </a>
+                              ) : (
+                                <span
+                                  className="bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0"
+                                  title={`Tarefa compartilhada do quadro ${task.external_board_name}`}
+                                >
+                                  Compartilhada • {task.external_board_name}
+                                </span>
+                              )
                             )}
                             <input 
                               type="text" 

@@ -2,6 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
+import { fetchBoardTasksWithShared } from '@/lib/boardActions';
+import { hasAssigneeEmail } from '@/lib/privacy';
 import { 
   DndContext, 
   DragOverlay, 
@@ -29,18 +31,10 @@ export function BoardKanbanView({ boardId, isReadOnly }: { boardId: string; isRe
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   
-  // Buscar tarefas
+  // Buscar tarefas (locais + compartilhadas)
   const { data: rawTasks, isLoading } = useQuery({
     queryKey: ['tasks', boardId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*, task_updates(id)')
-        .eq('board_id', boardId)
-        .order('position');
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchBoardTasksWithShared(boardId, queryClient),
     refetchInterval: 30000
   });
 
@@ -157,7 +151,7 @@ export function BoardKanbanView({ boardId, isReadOnly }: { boardId: string; isRe
     const handleOpenTaskEvent = (e: any) => {
       const taskObj = e.detail?.task;
       const taskId = e.detail?.taskId;
-      if (taskObj && (taskObj.board_id === boardId || !taskObj.board_id)) {
+      if (taskObj) {
         setTaskDetailsOpen(taskObj);
         return;
       }
@@ -187,7 +181,7 @@ export function BoardKanbanView({ boardId, isReadOnly }: { boardId: string; isRe
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
-            if (parsed && (parsed.board_id === boardId || !parsed.board_id)) {
+            if (parsed?.id) {
               pendingTask = parsed;
             }
           } catch {}
@@ -326,7 +320,7 @@ export function BoardKanbanView({ boardId, isReadOnly }: { boardId: string; isRe
     id: status,
     title: status,
     tasks: tasks.filter(t => {
-      if (t.is_private && !isLeaderOrAdmin && t.assignee_email !== userProfile?.email) return false;
+      if (t.is_private && !isLeaderOrAdmin && !hasAssigneeEmail(t.assignee_email, userProfile?.email)) return false;
       return !t.is_routine && t.task_type !== 'Lembrete' && (t.status || 'Pendente') === status;
     })
   }));
