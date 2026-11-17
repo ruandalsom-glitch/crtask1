@@ -9,7 +9,7 @@ import { useDesktopAppStatus } from '@/lib/useIsDesktopApp';
 import { 
   Calendar, Copy, Download, RefreshCw, Trash2, CheckCircle2, 
   Check, Users, MessageSquare, Clock, Plus, Edit2, X,
-  ChevronDown, Shield, Briefcase, ClipboardList, CheckSquare,
+  ChevronDown, ChevronLeft, ChevronRight, Shield, Briefcase, ClipboardList, CheckSquare,
   GripVertical, Image as ImageIcon, Upload, ArrowUp, ArrowDown, ArrowUpDown,
   Eye, FileText, MoveVertical, Bell, BellRing, BellOff, Volume2, VolumeX, Monitor,
   Search, AtSign, User, Building2
@@ -743,6 +743,475 @@ interface MensagemItem {
 }
 
 const IMG2_SEPARATOR = '||CR_IMG2||';
+const SCHED_SEPARATOR = '||CR_SCHED||';
+
+export interface MessageScheduleConfig {
+  mode: 'mute' | 'only'; // 'mute' = Evitar tocar nos dias selecionados | 'only' = Tocar apenas nos dias selecionados
+  dates: string[];       // Datas específicas YYYY-MM-DD marcadas no calendário
+}
+
+const WEEKDAY_OPTIONS = [
+  { dow: 1, short: 'Seg', full: 'Segunda-feira', code: 'SEG' },
+  { dow: 2, short: 'Ter', full: 'Terça-feira', code: 'TER' },
+  { dow: 3, short: 'Qua', full: 'Quarta-feira', code: 'QUA' },
+  { dow: 4, short: 'Qui', full: 'Quinta-feira', code: 'QUI' },
+  { dow: 5, short: 'Sex', full: 'Sexta-feira', code: 'SEX' },
+  { dow: 6, short: 'Sáb', full: 'Sábado', code: 'SÁB' },
+  { dow: 0, short: 'Dom', full: 'Domingo', code: 'DOM' },
+];
+
+const CALENDAR_MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
+
+export function getCleanObsDisplay(rawObs?: string | null): string {
+  if (!rawObs) return '';
+  if (rawObs.includes(SCHED_SEPARATOR)) {
+    return rawObs.split(SCHED_SEPARATOR)[0].trim();
+  }
+  return rawObs.trim();
+}
+
+export function getMonthDatesForWeekday(year: number, monthIndex: number, dow: number): string[] {
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const result: string[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(year, monthIndex, d);
+    if (dt.getDay() === dow) {
+      result.push(`${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+    }
+  }
+  return result;
+}
+
+export function buildScheduleSummaryLabel(config: MessageScheduleConfig, fallbackNote = ''): string {
+  const sortedDates = [...(config.dates || [])].sort();
+  if (sortedDates.length === 0) return fallbackNote.trim();
+
+  // Identifica se todas as ocorrências de algum dia da semana do mês principal estão marcadas
+  const firstDateParts = sortedDates[0].split('-').map(Number);
+  const refYear = firstDateParts[0] || new Date().getFullYear();
+  const refMonth = (firstDateParts[1] || (new Date().getMonth() + 1)) - 1;
+
+  const matchedWeekdays: string[] = [];
+  const coveredByFullWeekday = new Set<string>();
+
+  for (const w of WEEKDAY_OPTIONS) {
+    const allDatesOfW = getMonthDatesForWeekday(refYear, refMonth, w.dow);
+    if (allDatesOfW.length > 0 && allDatesOfW.every(d => sortedDates.includes(d))) {
+      matchedWeekdays.push(w.code);
+      allDatesOfW.forEach(d => coveredByFullWeekday.add(d));
+    }
+  }
+
+  const extraDates = sortedDates.filter(d => !coveredByFullWeekday.has(d));
+  const extraFormatted = extraDates.slice(0, 3).map(d => {
+    const [, m, day] = d.split('-');
+    return `${day}/${m}`;
+  });
+  if (extraDates.length > 3) {
+    extraFormatted.push(`+${extraDates.length - 3}`);
+  }
+
+  const parts = [...matchedWeekdays, ...extraFormatted];
+  const summaryCore = parts.length > 0 ? parts.join(', ') : `${sortedDates.length} dia(s)`;
+
+  return config.mode === 'mute' ? `NÃO TOCA: ${summaryCore}` : `TOCA: ${summaryCore}`;
+}
+
+export function parseMessageSchedule(
+  rawObs?: string | null,
+  referenceDateStr?: string
+): { displayLabel: string; config: MessageScheduleConfig; hasLegacyRule: boolean; legacyWeekdays: number[] } {
+  const raw = rawObs || '';
+  if (raw.includes(SCHED_SEPARATOR)) {
+    const [labelPart, jsonPart] = raw.split(SCHED_SEPARATOR);
+    try {
+      const parsed = JSON.parse(jsonPart);
+      return {
+        displayLabel: (labelPart || '').trim(),
+        config: {
+          mode: parsed?.mode === 'only' ? 'only' : 'mute',
+          dates: Array.isArray(parsed?.dates) ? parsed.dates : []
+        },
+        hasLegacyRule: false,
+        legacyWeekdays: []
+      };
+    } catch {}
+  }
+
+  const clean = raw.trim();
+  const upper = clean.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // Suporte automático a textos já existentes como "QUINTA", "TERÇA|QUINTA", "SEG Á SÁB"
+  const legacyWeekdays: number[] = [];
+  if (upper.includes('SEG A SAB') || upper.includes('SEGUNDA A SABADO')) {
+    legacyWeekdays.push(1, 2, 3, 4, 5, 6);
+  } else {
+    if (upper.includes('DOMINGO') || /\bDOM\b/.test(upper)) legacyWeekdays.push(0);
+    if (upper.includes('SEGUNDA') || /\bSEG\b/.test(upper)) legacyWeekdays.push(1);
+    if (upper.includes('TERCA') || /\bTER\b/.test(upper)) legacyWeekdays.push(2);
+    if (upper.includes('QUARTA') || /\bQUA\b/.test(upper)) legacyWeekdays.push(3);
+    if (upper.includes('QUINTA') || /\bQUI\b/.test(upper)) legacyWeekdays.push(4);
+    if (upper.includes('SEXTA') || /\bSEX\b/.test(upper)) legacyWeekdays.push(5);
+    if (upper.includes('SABADO') || /\bSAB\b/.test(upper)) legacyWeekdays.push(6);
+  }
+
+  if (legacyWeekdays.length > 0 && referenceDateStr) {
+    const [y, m] = referenceDateStr.split('-').map(Number);
+    if (y && m) {
+      const prefilledDates = legacyWeekdays.flatMap(dow => getMonthDatesForWeekday(y, m - 1, dow));
+      return {
+        displayLabel: clean,
+        config: { mode: 'only', dates: Array.from(new Set(prefilledDates)).sort() },
+        hasLegacyRule: true,
+        legacyWeekdays
+      };
+    }
+  }
+
+  return {
+    displayLabel: clean,
+    config: { mode: 'mute', dates: [] },
+    hasLegacyRule: legacyWeekdays.length > 0,
+    legacyWeekdays
+  };
+}
+
+export function serializeMessageSchedule(config: MessageScheduleConfig, customDisplayLabel?: string): string {
+  const uniqueDates = Array.from(new Set(config.dates || [])).sort();
+  if (uniqueDates.length === 0) {
+    return (customDisplayLabel || '').trim();
+  }
+  const cleanConfig: MessageScheduleConfig = {
+    mode: config.mode,
+    dates: uniqueDates
+  };
+  const label = buildScheduleSummaryLabel(cleanConfig, customDisplayLabel);
+  return `${label}${SCHED_SEPARATOR}${JSON.stringify(cleanConfig)}`;
+}
+
+export function isMessageScheduledForDate(
+  item: MensagemItem,
+  dateStr: string
+): { shouldRing: boolean; isMutedExplicitly: boolean; badgeLabel: string } {
+  const parsed = parseMessageSchedule(item.obs, dateStr);
+  const { config, hasLegacyRule, legacyWeekdays, displayLabel } = parsed;
+
+  if (config.dates.length > 0) {
+    const isHit = config.dates.includes(dateStr);
+    if (config.mode === 'mute') {
+      return {
+        shouldRing: !isHit,
+        isMutedExplicitly: isHit,
+        badgeLabel: displayLabel || buildScheduleSummaryLabel(config)
+      };
+    } else {
+      return {
+        shouldRing: isHit,
+        isMutedExplicitly: !isHit,
+        badgeLabel: displayLabel || buildScheduleSummaryLabel(config)
+      };
+    }
+  }
+
+  if (hasLegacyRule && legacyWeekdays.length > 0) {
+    const dt = new Date(dateStr + 'T12:00:00');
+    const dow = dt.getDay();
+    const shouldRing = legacyWeekdays.includes(dow);
+    return {
+      shouldRing,
+      isMutedExplicitly: !shouldRing,
+      badgeLabel: displayLabel
+    };
+  }
+
+  return {
+    shouldRing: true,
+    isMutedExplicitly: false,
+    badgeLabel: displayLabel
+  };
+}
+
+// =========================================================================
+// COMPONENTE: CALENDÁRIO INTERATIVO E SELETOR DE DIAS DA SEMANA (SUSPENSO OU INLINE)
+// =========================================================================
+interface MessageDaysCalendarPickerProps {
+  rawObs: string;
+  referenceDate: string;
+  onChange: (newSerializedObs: string) => void;
+  onClose?: () => void;
+  compact?: boolean;
+}
+
+function MessageDaysCalendarPicker({
+  rawObs,
+  referenceDate,
+  onChange,
+  onClose,
+  compact = false
+}: MessageDaysCalendarPickerProps) {
+  const initialParsed = useMemo(() => parseMessageSchedule(rawObs, referenceDate), [rawObs, referenceDate]);
+  const [mode, setMode] = useState<'mute' | 'only'>(initialParsed.config.mode);
+  const [selectedDates, setSelectedDates] = useState<string[]>(initialParsed.config.dates);
+  const [manualTextNote, setManualTextNote] = useState<string>(() => {
+    if (initialParsed.config.dates.length === 0) return initialParsed.displayLabel;
+    return '';
+  });
+
+  const [viewMonthDate, setViewMonthDate] = useState<Date>(() => {
+    const [y, m] = (referenceDate || '').split('-').map(Number);
+    if (y && m) return new Date(y, m - 1, 1);
+    return new Date();
+  });
+
+  const viewYear = viewMonthDate.getFullYear();
+  const viewMonth = viewMonthDate.getMonth();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDayDow = new Date(viewYear, viewMonth, 1).getDay(); // 0=Dom .. 6=Sáb
+
+  const emitChange = (nextMode: 'mute' | 'only', nextDates: string[], fallbackNote = manualTextNote) => {
+    setMode(nextMode);
+    setSelectedDates(nextDates);
+    const serialized = serializeMessageSchedule({ mode: nextMode, dates: nextDates }, fallbackNote);
+    onChange(serialized);
+  };
+
+  // Marca ou desmarca todas as ocorrências de um dia da semana (ex: todas as Quartas-feiras do mês vigente)
+  const toggleWeekdayInMonth = (dow: number) => {
+    const monthDatesForDow = getMonthDatesForWeekday(viewYear, viewMonth, dow);
+    const allAlreadySelected = monthDatesForDow.length > 0 && monthDatesForDow.every(d => selectedDates.includes(d));
+
+    let nextDates: string[];
+    if (allAlreadySelected) {
+      nextDates = selectedDates.filter(d => !monthDatesForDow.includes(d));
+    } else {
+      nextDates = Array.from(new Set([...selectedDates, ...monthDatesForDow])).sort();
+    }
+    emitChange(mode, nextDates);
+  };
+
+  // Marca ou desmarca um dia específico no calendário
+  const toggleSingleDate = (dateStr: string) => {
+    const exists = selectedDates.includes(dateStr);
+    const nextDates = exists
+      ? selectedDates.filter(d => d !== dateStr)
+      : [...selectedDates, dateStr].sort();
+    emitChange(mode, nextDates);
+  };
+
+  const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-`;
+  const selectedInCurrentViewMonth = selectedDates.filter(d => d.startsWith(monthPrefix));
+
+  return (
+    <div className="flex flex-col gap-3 text-xs select-none">
+      {/* 1. Escolha do Comportamento: Evitar Tocar vs Tocar Apenas */}
+      <div className="grid grid-cols-2 gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+        <button
+          type="button"
+          onClick={() => emitChange('mute', selectedDates)}
+          className={`py-1.5 px-2 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            mode === 'mute'
+              ? 'bg-rose-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+          }`}
+          title="A mensagem toca normalmente, EXCETO nos dias marcados abaixo"
+        >
+          <BellOff className="w-3.5 h-3.5 shrink-0" />
+          <span>Evitar Tocar nos Dias</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => emitChange('only', selectedDates)}
+          className={`py-1.5 px-2 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            mode === 'only'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+          }`}
+          title="A mensagem SÓ toca nos dias marcados abaixo"
+        >
+          <BellRing className="w-3.5 h-3.5 shrink-0" />
+          <span>Tocar Só nos Dias</span>
+        </button>
+      </div>
+
+      {/* 2. Botões Rápidos de Dias da Semana (ex: Quarta-Feira marca todas as quartas do mês vigente) */}
+      <div className="bg-slate-50 dark:bg-slate-900/70 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Marcar dia da semana no mês ({CALENDAR_MONTH_NAMES[viewMonth]}):
+          </span>
+          {selectedDates.length > 0 && (
+            <button
+              type="button"
+              onClick={() => emitChange(mode, [], '')}
+              className="text-[10px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+            >
+              Limpar ({selectedDates.length})
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-1">
+          {WEEKDAY_OPTIONS.map(w => {
+            const wDates = getMonthDatesForWeekday(viewYear, viewMonth, w.dow);
+            const isAllWSelected = wDates.length > 0 && wDates.every(d => selectedDates.includes(d));
+            const isSomeWSelected = !isAllWSelected && wDates.some(d => selectedDates.includes(d));
+
+            return (
+              <button
+                key={w.dow}
+                type="button"
+                onClick={() => toggleWeekdayInMonth(w.dow)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                  isAllWSelected
+                    ? mode === 'mute'
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                      : 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                    : isSomeWSelected
+                    ? mode === 'mute'
+                      ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-700'
+                      : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-blue-400'
+                }`}
+                title={`Clique para marcar/desmarcar todas as ${w.full}s de ${CALENDAR_MONTH_NAMES[viewMonth]}`}
+              >
+                <span>{w.full.split('-')[0]}</span>
+                {isAllWSelected && <Check className="w-3 h-3 stroke-[3]" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. Calendário do Mês Vigente para marcar/desmarcar dias específicos */}
+      <div className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+        {/* Navegação do Mês */}
+        <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setViewMonthDate(new Date(viewYear, viewMonth - 1, 1))}
+            className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+            title="Mês anterior"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="font-extrabold text-xs text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+            {CALENDAR_MONTH_NAMES[viewMonth]} {viewYear}
+          </span>
+          <button
+            type="button"
+            onClick={() => setViewMonthDate(new Date(viewYear, viewMonth + 1, 1))}
+            className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+            title="Próximo mês"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Cabeçalho Dom..Sáb (Clicável também para marcar a coluna inteira) */}
+        <div className="grid grid-cols-7 gap-1 mb-1 text-center">
+          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((label, dowIdx) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => toggleWeekdayInMonth(dowIdx)}
+              className="py-1 text-[10px] font-extrabold uppercase text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+              title={`Marcar/desmarcar todos os dias de ${label} neste mês`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Grade de Dias 1..31 */}
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: firstDayDow }).map((_, idx) => (
+            <div key={`empty_${idx}`} className="h-7" />
+          ))}
+
+          {Array.from({ length: daysInMonth }).map((_, idx) => {
+            const dayNum = idx + 1;
+            const dStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+            const isSelected = selectedDates.includes(dStr);
+            const isTodayRef = dStr === referenceDate;
+
+            return (
+              <button
+                key={dStr}
+                type="button"
+                onClick={() => toggleSingleDate(dStr)}
+                className={`h-7 rounded-lg font-bold text-xs flex items-center justify-center transition-all cursor-pointer relative border ${
+                  isSelected
+                    ? mode === 'mute'
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-2xs scale-[1.03]'
+                      : 'bg-emerald-600 text-white border-emerald-600 shadow-2xs scale-[1.03]'
+                    : isTodayRef
+                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-400 font-black'
+                    : 'bg-slate-50/70 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200 border-transparent hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title={
+                  isSelected
+                    ? mode === 'mute'
+                      ? `Dia ${dayNum}: Alarme silenciado (clique para remover)`
+                      : `Dia ${dayNum}: Alarme ativo neste dia (clique para remover)`
+                    : `Clique para selecionar o dia ${dayNum}`
+                }
+              >
+                {dayNum}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Resumo inferior do calendário */}
+        <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+          <span className="text-slate-500 dark:text-slate-400 font-medium truncate">
+            {selectedInCurrentViewMonth.length === 0 ? (
+              'Nenhum dia marcado neste mês (Toca todos os dias)'
+            ) : mode === 'mute' ? (
+              <span className="text-rose-600 dark:text-rose-400 font-bold">
+                🔕 Evitando tocar em {selectedInCurrentViewMonth.length} dia(s) deste mês
+              </span>
+            ) : (
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                🔔 Tocando apenas em {selectedInCurrentViewMonth.length} dia(s) deste mês
+              </span>
+            )}
+          </span>
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-[11px] shadow-2xs cursor-pointer shrink-0 ml-2"
+            >
+              Concluir
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Caso não haja dias marcados, permite observação livre */}
+      {!compact && selectedDates.length === 0 && (
+        <div>
+          <input
+            type="text"
+            value={manualTextNote}
+            onChange={e => {
+              setManualTextNote(e.target.value);
+              onChange(e.target.value);
+            }}
+            placeholder="Ou digite uma observação livre (opcional)..."
+            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function parseStoredImages(raw?: string | null, raw2?: string | null): { img1: string; img2: string } {
   if (!raw) return { img1: '', img2: (raw2 || '').trim() };
@@ -911,6 +1380,32 @@ export default function MensagensPage() {
   const [formImagemUrl, setFormImagemUrl] = useState('');
   const [formImagemUrl2, setFormImagemUrl2] = useState('');
   const [formTextoCompleto, setFormTextoCompleto] = useState('');
+
+  // Calendário Suspenso de Dias por Mensagem (Direto na Tabela)
+  const [calendarPopover, setCalendarPopover] = useState<{
+    item: MensagemItem;
+    top: number;
+    left: number;
+  } | null>(null);
+  const calendarPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!calendarPopover) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (calendarPopoverRef.current && !calendarPopoverRef.current.contains(e.target as Node)) {
+        setCalendarPopover(null);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCalendarPopover(null);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [calendarPopover]);
 
   // Usuário Logado
   const { data: currentUser, isLoading: isLoadingUser } = useQuery({
@@ -1819,6 +2314,12 @@ export default function MensagensPage() {
         const normItemTime = normalizeTime(item.horario);
         if (!normItemTime) continue;
 
+        // Respeita os dias configurados no calendário da mensagem (evita tocar nos dias silenciados)
+        const scheduleStatus = isMessageScheduledForDate(item, todayStr);
+        if (!scheduleStatus.shouldRing) {
+          continue;
+        }
+
         // Se o horário bate com a hora atual (ou minuto corrente)
         if (normItemTime === currentTimeStr) {
           const isChecked = checksMap[item.id]?.checked;
@@ -2015,6 +2516,71 @@ export default function MensagensPage() {
     setDraggedIndex(null);
     setDragOverIndex(null);
     await saveReorderedList(updated);
+  };
+
+  // Salva rapidamente os dias/calendário de uma mensagem direto pelo menu suspenso da tabela
+  const handleQuickSaveMessageDays = async (targetItem: MensagemItem, newObs: string) => {
+    const isExistingInDb = dbTemplates && dbTemplates.length > 0;
+    if (!isExistingInDb) {
+      const defaultList = (mensagensConfig.mensagens_por_base as Record<string, MensagemItem[]>)[selectedBase] || [];
+      const seedPayloads = defaultList.map((m, idx) => ({
+        data: '1970-01-01',
+        base: selectedBase,
+        msg_id: m.id,
+        checked: false,
+        supervisor: m.ultimo_check,
+        enviado_por: m.tipo,
+        analista: m.mensagem,
+        horario_envio: m.horario,
+        assistente: m.id === targetItem.id ? newObs : (m.obs || ''),
+        resp_manha: '',
+        resp_inter: m.mensagem,
+        resp_tarde: String(idx),
+        updated_at: new Date().toISOString()
+      }));
+      await supabase.from('mensagens_checklist').upsert(seedPayloads, { onConflict: 'data,base,msg_id' });
+    }
+
+    const payload = {
+      data: '1970-01-01',
+      base: selectedBase,
+      msg_id: targetItem.id,
+      checked: false,
+      supervisor: targetItem.ultimo_check,
+      enviado_por: targetItem.tipo,
+      analista: targetItem.mensagem,
+      horario_envio: targetItem.horario,
+      assistente: newObs,
+      resp_manha: serializeStoredImages(targetItem.imagem_url, targetItem.imagem_url_2),
+      resp_inter: targetItem.texto_completo || targetItem.mensagem || '',
+      resp_tarde: String(targetItem.ordem ?? 0),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase
+      .from('mensagens_checklist')
+      .upsert(payload, { onConflict: 'data,base,msg_id' });
+
+    if (!error) {
+      refetchTemplates();
+    }
+  };
+
+  const openRowCalendarPopover = (e: React.MouseEvent, item: MensagemItem) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const popW = 340;
+    const popH = 430;
+    let left = rect.left + rect.width / 2 - popW / 2;
+    if (left < 12) left = 12;
+    if (left + popW > window.innerWidth - 12) left = window.innerWidth - popW - 12;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < popH && rect.top > popH
+      ? Math.max(12, rect.top - popH - 8)
+      : Math.min(window.innerHeight - popH - 12, rect.bottom + 8);
+
+    setCalendarPopover({ item, top, left });
   };
 
   // Salva no Supabase (criação ou edição de templates da base)
@@ -2405,10 +2971,13 @@ export default function MensagensPage() {
             ctx.textAlign = 'center';
             ctx.fillText(txt, cellX + cellW / 2, rowY + (23 * scale));
           } else if (item.obs) {
-            ctx.fillStyle = '#DC2626';
-            ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(item.obs, cellX + cellW / 2, rowY + (23 * scale));
+            const cleanObs = getCleanObsDisplay(item.obs);
+            if (cleanObs) {
+              ctx.fillStyle = '#DC2626';
+              ctx.font = `bold ${12 * scale}px "Segoe UI", Inter, sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.fillText(cleanObs, cellX + cellW / 2, rowY + (23 * scale));
+            }
           }
         }
 
@@ -3220,20 +3789,53 @@ export default function MensagensPage() {
                           </button>
                         </td>
 
-                        {/* Horário Check / Envio (Exibe horário e quem marcou) */}
+                        {/* Horário Check / Envio (Exibe horário, quem marcou ou calendário suspenso de dias) */}
                         <td className="py-2.5 px-2 text-center border-r border-slate-100 dark:border-slate-700/80 whitespace-nowrap w-[160px] min-w-[150px]">
-                          {isChecked ? (
-                            <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xs">
-                              ✓ {state.horario_envio} {state.enviado_por && `(${state.enviado_por})`}
-                            </span>
-                          ) : item.obs ? (
-                            <span className="text-red-500 dark:text-red-400 font-semibold">{item.obs}</span>
-                          ) : (
-                            <span className="text-slate-300 dark:text-slate-600">-</span>
-                          )}
+                          {(() => {
+                            const schedInfo = isMessageScheduledForDate(item, selectedDate);
+                            const cleanObs = schedInfo.badgeLabel || getCleanObsDisplay(item.obs);
+                            if (isChecked) {
+                              return (
+                                <span className="text-emerald-700 dark:text-emerald-400 font-bold text-xs">
+                                  ✓ {state.horario_envio} {state.enviado_por && `(${state.enviado_por})`}
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => openRowCalendarPopover(e, item)}
+                                className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border max-w-full ${
+                                  !schedInfo.shouldRing
+                                    ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/80'
+                                    : cleanObs
+                                    ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/70 hover:bg-amber-100'
+                                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-dashed border-slate-200 dark:border-slate-700 hover:text-blue-600 hover:border-blue-300'
+                                }`}
+                                title="Clique para abrir o calendário suspenso e escolher os dias da semana ou datas do mês"
+                              >
+                                {!schedInfo.shouldRing ? (
+                                  <>
+                                    <BellOff className="w-3 h-3 shrink-0 text-rose-500" />
+                                    <span className="truncate">{cleanObs || 'Silenciado hoje'}</span>
+                                  </>
+                                ) : cleanObs ? (
+                                  <>
+                                    <Calendar className="w-3 h-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                                    <span className="truncate">{cleanObs}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Calendar className="w-3 h-3 shrink-0" />
+                                    <span>Dias / Silenciar</span>
+                                  </>
+                                )}
+                              </button>
+                            );
+                          })()}
                         </td>
 
-                        {/* Ações: Visualizar/Copiar, Editar e Excluir */}
+                        {/* Ações: Visualizar/Copiar, Calendário de Dias, Editar e Excluir */}
                         <td className="py-2 px-1 text-center whitespace-nowrap w-[125px] min-w-[125px]">
                           <div className="flex items-center justify-center gap-1">
                             {(item.imagem_url || item.imagem_url_2 || item.texto_completo) && (
@@ -3250,6 +3852,14 @@ export default function MensagensPage() {
                                 <Copy className="w-3.5 h-3.5" />
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => openRowCalendarPopover(e, item)}
+                              className="w-7 h-7 flex items-center justify-center hover:bg-amber-100 dark:hover:bg-amber-950/70 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-lg transition-colors cursor-pointer"
+                              title="Calendário Suspenso: Marcar dias da semana (ex: Quarta-feira) ou datas para evitar tocar"
+                            >
+                              <Calendar className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => openDetailModal(item)}
                               className="w-7 h-7 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-950/70 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer"
@@ -3282,6 +3892,53 @@ export default function MensagensPage() {
           </div>
         </div>
       </div>
+
+      {/* CALENDÁRIO SUSPENSO FLUTUANTE DE DIAS DA MENSAGEM (DIRETO NA TABELA) */}
+      {calendarPopover && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={calendarPopoverRef}
+          style={{
+            top: `${calendarPopover.top}px`,
+            left: `${calendarPopover.left}px`
+          }}
+          className="fixed z-[99999] w-[340px] bg-white dark:bg-[#1e293b] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-3.5 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="min-w-0 pr-2">
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                <span>Calendário de Dias da Mensagem</span>
+              </div>
+              <div className="text-xs font-bold text-slate-900 dark:text-white truncate mt-0.5">
+                {calendarPopover.item.mensagem} ({calendarPopover.item.horario})
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCalendarPopover(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <MessageDaysCalendarPicker
+            rawObs={calendarPopover.item.obs || ''}
+            referenceDate={selectedDate}
+            compact
+            onChange={(newVal) => {
+              setCalendarPopover(prev => prev ? { ...prev, item: { ...prev.item, obs: newVal } } : null);
+              handleQuickSaveMessageDays(calendarPopover.item, newVal);
+            }}
+            onClose={() => {
+              setShareFeedbackMsg(`Dias de "${calendarPopover.item.mensagem}" atualizados!`);
+              setTimeout(() => setShareFeedbackMsg(''), 3000);
+              setCalendarPopover(null);
+            }}
+          />
+        </div>,
+        document.body
+      )}
 
       {/* MODAL DE ADICIONAR / EDITAR MENSAGEM */}
       {isModalOpen && (
@@ -3348,32 +4005,29 @@ export default function MensagensPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                    Último Check / Validade
-                  </label>
-                  <input
-                    type="text"
-                    value={formUltimoCheck}
-                    onChange={e => setFormUltimoCheck(e.target.value)}
-                    placeholder="Ex: FIXA (14/09), TEMPORÁRIA"
-                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                  Último Check / Validade
+                </label>
+                <input
+                  type="text"
+                  value={formUltimoCheck}
+                  onChange={e => setFormUltimoCheck(e.target.value)}
+                  placeholder="Ex: FIXA (14/09), TEMPORÁRIA"
+                  className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                    Obs / Dias da Semana
-                  </label>
-                  <input
-                    type="text"
-                    value={formObs}
-                    onChange={e => setFormObs(e.target.value)}
-                    placeholder="Ex: QUINTA, SEG Á SÁB"
-                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-[#0f172a] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Calendário de Dias (Evitar tocar ou programar dias no mês)</span>
+                </label>
+                <MessageDaysCalendarPicker
+                  rawObs={formObs}
+                  referenceDate={selectedDate}
+                  onChange={newVal => setFormObs(newVal)}
+                />
               </div>
 
               {/* Anexo de 1ª Imagem (URL ou Upload) */}
