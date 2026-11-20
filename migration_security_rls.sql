@@ -1,22 +1,21 @@
 -- =========================================================================
 -- CR TASK — BLINDAGEM DE SEGURANÇA (RLS & TRIGGERS NO SUPABASE)
--- Execute este script no SQL Editor do Supabase.
--- É idempotente (pode ser executado com segurança mais de uma vez).
+-- Execute TODO este script no SQL Editor do Supabase (sem selecionar linhas parciais).
 -- =========================================================================
 
--- 1. Helper seguro para consultar o cargo do usuário autenticado sem recursão de RLS
+-- 1. Helpers seguros para consultar o cargo do usuário autenticado sem recursão de RLS
 CREATE OR REPLACE FUNCTION public.get_my_role()
 RETURNS TEXT
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func$
   SELECT LOWER(COALESCE(role, 'user'))
   FROM public.profiles
   WHERE id = auth.uid()
   LIMIT 1;
-$$;
+$func$;
 
 CREATE OR REPLACE FUNCTION public.is_leader_or_admin()
 RETURNS BOOLEAN
@@ -24,20 +23,18 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func$
   SELECT public.get_my_role() IN ('admin', 'administrador', 'leader', 'lider', 'líder');
-$$;
+$func$;
 
 -- 2. TRIGGER DE PROTEÇÃO CONTRA AUTO-ESCALAÇÃO DE CARGO (profiles.role)
--- Impede que um colaborador comum altere a própria coluna "role" para "admin" ou "leader" via DevTools/REST.
 CREATE OR REPLACE FUNCTION public.prevent_role_escalation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $func$
 BEGIN
-  -- Permite alterações feitas via service_role / SQL Editor (auth.uid() IS NULL)
   IF auth.uid() IS NULL THEN
     RETURN NEW;
   END IF;
@@ -50,7 +47,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$func$;
 
 DROP TRIGGER IF EXISTS trg_prevent_role_escalation ON public.profiles;
 CREATE TRIGGER trg_prevent_role_escalation
@@ -69,14 +66,15 @@ CREATE POLICY "Mensagens autenticados" ON public.mensagens_checklist
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
 
--- 4. OPERATIONAL_SHIFTS & OPERATIONAL_SHIFT_SETTINGS:
--- Todos os autenticados podem LER (para "Minha Escala"), mas apenas Líderes e Admins podem CRIAR/EDITAR/EXCLUIR escalas.
+-- 4. OPERATIONAL_SHIFTS & OPERATIONAL_SHIFT_SETTINGS
 ALTER TABLE public.operational_shifts ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Permitir leitura para usuarios autenticados" ON public.operational_shifts;
 DROP POLICY IF EXISTS "Permitir edicao para usuarios autenticados" ON public.operational_shifts;
 DROP POLICY IF EXISTS "Shifts leitura autenticados" ON public.operational_shifts;
 DROP POLICY IF EXISTS "Shifts escrita lideres e admins" ON public.operational_shifts;
+DROP POLICY IF EXISTS "Shifts update lideres e admins" ON public.operational_shifts;
+DROP POLICY IF EXISTS "Shifts delete lideres e admins" ON public.operational_shifts;
 
 CREATE POLICY "Shifts leitura autenticados" ON public.operational_shifts
   FOR SELECT
@@ -86,13 +84,11 @@ CREATE POLICY "Shifts escrita lideres e admins" ON public.operational_shifts
   FOR INSERT
   WITH CHECK (public.is_leader_or_admin());
 
-DROP POLICY IF EXISTS "Shifts update lideres e admins" ON public.operational_shifts;
 CREATE POLICY "Shifts update lideres e admins" ON public.operational_shifts
   FOR UPDATE
   USING (public.is_leader_or_admin())
   WITH CHECK (public.is_leader_or_admin());
 
-DROP POLICY IF EXISTS "Shifts delete lideres e admins" ON public.operational_shifts;
 CREATE POLICY "Shifts delete lideres e admins" ON public.operational_shifts
   FOR DELETE
   USING (public.is_leader_or_admin());
@@ -113,8 +109,8 @@ CREATE POLICY "Shift settings escrita lideres e admins" ON public.operational_sh
   USING (public.is_leader_or_admin())
   WITH CHECK (public.is_leader_or_admin());
 
--- 5. AI_INSIGHTS: Apenas Líderes e Admins podem visualizar ou criar relatórios de IA
-DO $$
+-- 5. AI_INSIGHTS: Apenas Líderes e Admins
+DO $do$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ai_insights') THEN
     ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
@@ -124,10 +120,11 @@ BEGIN
       USING (public.is_leader_or_admin())
       WITH CHECK (public.is_leader_or_admin());
   END IF;
-END $$;
+END
+$do$;
 
--- 6. NOTIFICATIONS: Cada usuário lê/marca como lida apenas suas próprias notificações (e líderes/admins veem tudo)
-DO $$
+-- 6. NOTIFICATIONS: Cada usuário lê/atualiza apenas suas próprias notificações (líderes/admins veem tudo)
+DO $do$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'notifications') THEN
     ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
@@ -153,4 +150,5 @@ BEGIN
         OR LOWER(user_email) = LOWER(COALESCE(auth.jwt() ->> 'email', ''))
       );
   END IF;
-END $$;
+END
+$do$;
