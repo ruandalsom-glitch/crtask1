@@ -1,21 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+const ALLOWED_CALENDAR_HOSTS = [
+  'calendar.google.com',
+  'outlook.office365.com',
+  'outlook.live.com',
+];
+
+function isAllowedCalendarUrl(rawUrl: string): { valid: boolean; parsed?: URL } {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:') return { valid: false };
+    const host = parsed.hostname.toLowerCase();
+    const isAllowedHost = ALLOWED_CALENDAR_HOSTS.some(
+      allowed => host === allowed || host.endsWith(`.${allowed}`)
+    );
+    if (!isAllowedHost) return { valid: false };
+    return { valid: true, parsed };
+  } catch {
+    return { valid: false };
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Exige sessão autenticada do Supabase
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Sessão não autenticada.' }, { status: 401 });
+    }
+
+    const token = authHeader.replace('Bearer ', '').trim();
+    const authClient = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: { user }, error: authError } = await authClient.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 });
+    }
+
     const { url } = await req.json();
 
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'URL do Google Agenda é obrigatória.' }, { status: 400 });
     }
 
-    // Garante que é uma URL válida do Google Calendar iCal
+    // Garante que é uma URL HTTPS válida de provedor de calendário permitido (previne SSRF)
     let cleanUrl = url.trim();
     if (cleanUrl.startsWith('webcal://')) {
       cleanUrl = cleanUrl.replace('webcal://', 'https://');
     }
 
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      return NextResponse.json({ error: 'URL inválida. O link deve começar com https://' }, { status: 400 });
+    const validation = isAllowedCalendarUrl(cleanUrl);
+    if (!validation.valid || !validation.parsed) {
+      return NextResponse.json(
+        { error: 'URL não permitida. Utilize um link iCal HTTPS oficial do Google Agenda (calendar.google.com).' },
+        { status: 400 }
+      );
     }
 
     const controller = new AbortController();
@@ -23,10 +66,11 @@ export async function POST(req: NextRequest) {
     let res: Response;
 
     try {
-      res = await fetch(cleanUrl, {
+      res = await fetch(validation.parsed.toString(), {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
+        redirect: 'error',
         signal: controller.signal,
         next: { revalidate: 60 }, // Cache de 1 minuto
       });
@@ -44,6 +88,9 @@ export async function POST(req: NextRequest) {
     }
 
     const icsText = await res.text();
+    if (icsText.length > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Arquivo da agenda excede o tamanho máximo suportado (5MB).' }, { status: 413 });
+    }
     const allEvents = parseIcsContent(icsText);
 
     // Filtra para manter apenas eventos relevantes (-30 dias no passado até +90 dias no futuro)

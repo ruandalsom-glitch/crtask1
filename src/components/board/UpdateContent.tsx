@@ -42,18 +42,47 @@ export function UpdateContent({ content, taskTitle }: UpdateContentProps) {
     cleanContent = cleanContent.replace(match[0], '');
   });
 
+  // Renderiza texto e links Markdown seguros (http/https apenas) como elementos React sem dangerouslySetInnerHTML
+  const renderSafeTextWithLinks = (text: string) => {
+    const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    const nodes: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = linkPattern.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        nodes.push(text.slice(lastIndex, match.index));
+      }
+      const label = match[1];
+      const href = match[2];
+      nodes.push(
+        <a
+          key={`${match.index}-${href}`}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
+        >
+          {label}
+        </a>
+      );
+      lastIndex = linkPattern.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      nodes.push(text.slice(lastIndex));
+    }
+
+    return nodes;
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {/* Text Content */}
       {cleanContent.trim() && (
-        <div 
-          className="text-sm text-slate-700 whitespace-pre-wrap"
-          dangerouslySetInnerHTML={{
-            __html: cleanContent
-              .replace(/</g, '&lt;').replace(/>/g, '&gt;') // Basic XSS protection
-              .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 hover:underline inline-flex items-center gap-1 font-medium">$1</a>')
-          }}
-        />
+        <div className="text-sm text-slate-700 whitespace-pre-wrap break-words">
+          {renderSafeTextWithLinks(cleanContent)}
+        </div>
       )}
 
       {/* Attachments List */}

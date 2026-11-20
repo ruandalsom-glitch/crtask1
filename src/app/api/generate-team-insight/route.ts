@@ -4,19 +4,37 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Acesso negado. Token não fornecido.' }, { status: 401 });
     }
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace('Bearer ', '').trim();
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 });
+    }
+
+    const dbClient = supabaseServiceKey
+      ? createClient(supabaseUrl, supabaseServiceKey)
+      : createClient(supabaseUrl, supabaseKey, {
+          global: { headers: { Authorization: `Bearer ${token}` } }
+        });
+
+    const { data: profile } = await dbClient
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const userRole = (profile?.role || 'user').toLowerCase().trim();
+    if (!['admin', 'administrador', 'leader', 'lider', 'líder'].includes(userRole)) {
+      return NextResponse.json({ error: 'Apenas Líderes e Administradores podem gerar relatórios de IA.' }, { status: 403 });
     }
 
     const { allTasks, sectorName, assigneeEmail } = await req.json();
@@ -113,8 +131,8 @@ ${JSON.stringify(allTasks, null, 2)}
       throw lastError || new Error('Não foi possível gerar a resposta com os modelos disponíveis.');
     }
 
-    // Salvar no banco
-    const { data, error } = await supabase.from('ai_insights').insert([
+    // Salvar no banco utilizando cliente autenticado/service role
+    const { data, error } = await dbClient.from('ai_insights').insert([
       { summary_text: responseText, type: 'team_summary' }
     ]).select();
 

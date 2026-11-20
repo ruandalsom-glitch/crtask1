@@ -617,10 +617,14 @@ export function BoardShiftView({
           read: false
         }]);
 
-        // 2. Dispara e-mail com visual corporativo CR Task
+        // 2. Dispara e-mail com visual corporativo CR Task (autenticado com Bearer token)
+        const { data: { session } } = await supabase.auth.getSession();
         fetch('/api/send-email', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+          },
           body: JSON.stringify({
             to: targetEmail,
             subject: `Sua Escala Operacional - ${shift.shift_name} (${shift.shift_date}) - CR Task`,

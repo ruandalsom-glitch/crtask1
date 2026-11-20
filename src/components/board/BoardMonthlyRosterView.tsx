@@ -1813,11 +1813,15 @@ export function BoardMonthlyRosterView({ boardId, isReadOnly }: { boardId: strin
           read: false
         }]);
 
-        // 3. Dispara e-mail formatado no padrão visual CR Task
+        // 3. Dispara e-mail formatado no padrão visual CR Task (autenticado com Bearer token)
         const s = memberMonthlyStats.get(memberName);
+        const { data: { session } } = await supabase.auth.getSession();
         fetch('/api/send-email', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+          },
           body: JSON.stringify({
             to: profile.email,
             subject: `📅 Sua Escala Mensal CR Task - ${MONTH_NAMES[currentMonthIndex].toUpperCase()} ${currentYear}`,

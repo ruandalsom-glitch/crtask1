@@ -227,9 +227,13 @@ export function BoardCalendarView({ boardId, isReadOnly }: { boardId: string; is
     setGoogleSyncLoading(true);
     setGoogleSyncError('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/sync-google-calendar', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        },
         body: JSON.stringify({ url: urlToSync })
       });
       const data = await res.json();

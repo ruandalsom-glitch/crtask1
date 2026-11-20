@@ -540,6 +540,14 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
       'Muito Alto': { bg: '#784bd1', label: 'Muito Alto' }
     };
 
+    const escapeHtml = (str?: string | null) =>
+      String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
     const rowsHtml = targetTasks.map((t: any) => {
       const statusBg = statusColors[t.status] || '#c4c4c4';
       const effortKey = t.effort || 'Vazio';
@@ -550,20 +558,20 @@ export function BoardTableView({ boardId, isReadOnly }: { boardId: string; isRea
 
       return `
         <tr style="border-bottom: 1px solid #e2e8f0; height: 42px;">
-          <td style="padding: 10px 14px; font-weight: 600; color: #1e293b;">${t.title}</td>
-          <td style="padding: 10px 14px; text-align: center; color: #64748b; font-size: 13px;">${t.group_name || 'Tarefas pendentes'}</td>
+          <td style="padding: 10px 14px; font-weight: 600; color: #1e293b;">${escapeHtml(t.title)}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #64748b; font-size: 13px;">${escapeHtml(t.group_name || 'Tarefas pendentes')}</td>
           <td style="padding: 10px 14px; text-align: center;">
             <span style="background: ${statusBg}; color: white; padding: 5px 14px; border-radius: 6px; font-weight: 700; font-size: 12px; display: inline-block; width: 95px;">
-              ${t.status || 'Pendente'}
+              ${escapeHtml(t.status || 'Pendente')}
             </span>
           </td>
           <td style="padding: 10px 14px; text-align: center;">
             <span style="background: ${effortBg}; color: white; padding: 5px 14px; border-radius: 6px; font-weight: 700; font-size: 12px; display: inline-block; width: 100px;">
-              ${effortLabel}
+              ${escapeHtml(effortLabel)}
             </span>
           </td>
-          <td style="padding: 10px 14px; text-align: center; color: #334155; font-size: 13px;">${assignee}</td>
-          <td style="padding: 10px 14px; text-align: center; color: #64748b; font-size: 13px;">${dateFormatted}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #334155; font-size: 13px;">${escapeHtml(assignee)}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #64748b; font-size: 13px;">${escapeHtml(dateFormatted)}</td>
         </tr>
       `;
     }).join('');
