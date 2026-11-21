@@ -179,15 +179,32 @@ function playAlarmTune() {
   }
 }
 
-// Normaliza strings de horário para formato HH:MM
+// Retorna a data local no formato YYYY-MM-DD (evita erro de virada de dia às 21h UTC-3)
+function getLocalDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Normaliza strings de horário para formato HH:MM (aceita "8:00", "08:00", "08h30", "08.30", "14:30h")
 function normalizeTime(t?: string | null): string {
   if (!t) return '';
   const clean = t.trim();
-  const match = clean.match(/^(\d{1,2}):(\d{2})$/);
+  const match = clean.match(/(\d{1,2})\s*[:hH\.]\s*(\d{2})/);
   if (match) {
-    return `${match[1].padStart(2, '0')}:${match[2]}`;
+    const hh = Number(match[1]);
+    const mm = Number(match[2]);
+    if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
   }
-  return clean;
+  return '';
+}
+
+function parseTimeToMinutes(t?: string | null): number | null {
+  const norm = normalizeTime(t);
+  if (!norm) return null;
+  const [hh, mm] = norm.split(':').map(Number);
+  if (isNaN(hh) || isNaN(mm)) return null;
+  return hh * 60 + mm;
 }
 
 // =========================================================================
@@ -1343,10 +1360,23 @@ async function imageUrlToPngBlob(imageUrl: string): Promise<Blob | null> {
 export default function MensagensPage() {
   const queryClient = useQueryClient();
 
-  // Data Selecionada (Padrão: Hoje)
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
-  });
+  // Data Selecionada (Padrão: Hoje no fuso horário LOCAL de Brasília, não UTC)
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateStr());
+  const lastTrackedTodayRef = useRef<string>(getLocalDateStr());
+
+  // Virada automática da meia-noite caso a aba fique aberta de um dia para o outro
+  useEffect(() => {
+    const checkDayRollover = () => {
+      const currentLocalToday = getLocalDateStr();
+      if (currentLocalToday !== lastTrackedTodayRef.current) {
+        const previousToday = lastTrackedTodayRef.current;
+        lastTrackedTodayRef.current = currentLocalToday;
+        setSelectedDate(prev => (prev === previousToday ? currentLocalToday : prev));
+      }
+    };
+    const timer = setInterval(checkDayRollover, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Bases restritas estritamente para: Sumarezinho, Recreio, Aldeota (persistida)
   const bases = useMemo(() => ['Sumarezinho', 'Recreio', 'Aldeota'], []);
@@ -1802,6 +1832,8 @@ export default function MensagensPage() {
 
     if (willCheck) {
       dismissAlarm(undefined, msgId);
+    } else {
+      undismissAlarm(msgId);
     }
 
     // Atualização otimista com o usuário logado
@@ -2341,7 +2373,15 @@ export default function MensagensPage() {
 
     const normTime = normalizeTime(item.horario);
     const key = `${selectedDate}_${selectedBase}_${item.id}_${normTime}`;
-    dismissAlarm(key, item.id);
+    const itemMins = parseTimeToMinutes(normTime);
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+
+    // Só dispensa o alarme se ele já estiver tocando ou se o horário já tiver chegado
+    // (evita silenciar uma mensagem futura caso o operador apenas clique em Copiar antes da hora)
+    if (activeAlarmItem?.item.id === item.id || (itemMins !== null && nowMins >= itemMins)) {
+      dismissAlarm(key, item.id);
+    }
 
     await handleCopyAllToClipboard(img1, txt, img2);
   };
@@ -2371,7 +2411,6 @@ export default function MensagensPage() {
         if (alarmKey) next[alarmKey] = true;
         if (itemId) {
           next[`${selectedDate}_${selectedBase}_${itemId}`] = true;
-          next[`${selectedDate}_${itemId}`] = true;
         }
         try {
           if (typeof window !== 'undefined') {
@@ -2384,6 +2423,26 @@ export default function MensagensPage() {
       });
     }
     setActiveAlarmItem(null);
+  };
+
+  // Reativa o alarme de uma mensagem caso seja desmarcada ou tenha o horário editado
+  const undismissAlarm = (itemId: string) => {
+    setDismissedAlarms(prev => {
+      const next = { ...prev };
+      const prefixBase = `${selectedDate}_${selectedBase}_${itemId}`;
+      const prefixGlobal = `${selectedDate}_${itemId}`;
+      Object.keys(next).forEach(k => {
+        if (k === prefixBase || k.startsWith(`${prefixBase}_`) || k === prefixGlobal) {
+          delete next[k];
+        }
+      });
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(DISMISSED_ALARMS_STORAGE_KEY, JSON.stringify(next));
+        }
+      } catch {}
+      return next;
+    });
   };
 
   const snoozeAlarm = (alarmKey: string) => {
@@ -2429,6 +2488,7 @@ export default function MensagensPage() {
   };
 
   // Monitoramento contínuo dos horários das mensagens para disparar o alarme
+  // (Imune a throttling de abas em 2º plano, suporta múltiplas mensagens no mesmo horário e "Adiar 5 min")
   useEffect(() => {
     const checkSchedule = () => {
       // Regra de Negócio: Se o colaborador conectado NÃO faz parte da equipe escalada nesta base,
@@ -2437,21 +2497,26 @@ export default function MensagensPage() {
         return;
       }
 
-      const now = new Date();
-      const currentHours = String(now.getHours()).padStart(2, '0');
-      const currentMinutes = String(now.getMinutes()).padStart(2, '0');
-      const currentTimeStr = `${currentHours}:${currentMinutes}`;
-      const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const utcTodayStr = now.toISOString().split('T')[0];
+      // Se já existe um popup de alarme aberto na tela, aguarda o operador interagir antes de subir o próximo da fila
+      if (activeAlarmItem) {
+        return;
+      }
 
-      // Dispara na data de hoje (compatível com fuso local e UTC)
-      if (selectedDate !== localTodayStr && selectedDate !== utcTodayStr) return;
-      const todayStr = selectedDate;
+      const now = new Date();
+      const localTodayStr = getLocalDateStr(now);
+      const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+
+      // Dispara apenas na data local de hoje
+      if (selectedDate !== localTodayStr) return;
+      const todayStr = localTodayStr;
+
+      const ALARM_CATCHUP_WINDOW_MINUTES = 10;
 
       for (const item of mensagensList) {
         if (!item.horario) continue;
         const normItemTime = normalizeTime(item.horario);
-        if (!normItemTime) continue;
+        const itemTotalMinutes = parseTimeToMinutes(normItemTime);
+        if (!normItemTime || itemTotalMinutes === null) continue;
 
         // Respeita os dias configurados no calendário da mensagem (evita tocar nos dias silenciados)
         const scheduleStatus = isMessageScheduledForDate(item, todayStr);
@@ -2459,42 +2524,67 @@ export default function MensagensPage() {
           continue;
         }
 
-        // Se o horário bate com a hora atual (ou minuto corrente)
-        if (normItemTime === currentTimeStr) {
-          const isChecked = checksMap[item.id]?.checked;
-          const alarmKey = `${todayStr}_${selectedBase}_${item.id}_${normItemTime}`;
-          const itemKey = `${todayStr}_${selectedBase}_${item.id}`;
-          const globalItemKey = `${todayStr}_${item.id}`;
+        const isChecked = checksMap[item.id]?.checked;
+        if (isChecked) continue;
 
-          // 1. Verifica se já foi dispensado (persistido no localStorage)
-          if (dismissedAlarms[alarmKey] || dismissedAlarms[itemKey] || dismissedAlarms[globalItemKey]) {
-            continue;
+        const alarmKey = `${todayStr}_${selectedBase}_${item.id}_${normItemTime}`;
+        const itemKey = `${todayStr}_${selectedBase}_${item.id}`;
+
+        // 1. Verifica se já foi dispensado (persistido no localStorage para esta base e data)
+        if (dismissedAlarms[alarmKey] || dismissedAlarms[itemKey]) {
+          continue;
+        }
+
+        // 2. Verifica se está em modo "adiado" (snooze) ou se o adiamento acabou de vencer
+        const snoozedUntil = snoozedAlarms[alarmKey];
+        if (snoozedUntil && Date.now() < snoozedUntil) {
+          continue;
+        }
+        const isSnoozeDue = Boolean(snoozedUntil && Date.now() >= snoozedUntil);
+
+        // 3. Janela de disparo: exatamente no horário OU até 10 min depois (cobre throttling em 2º plano e 2+ msgs no mesmo horário)
+        //    OU retorno de "Adiar 5 min" vencido
+        const minutesPast = currentTotalMinutes - itemTotalMinutes;
+        const isWithinTriggerWindow = minutesPast >= 0 && minutesPast <= ALARM_CATCHUP_WINDOW_MINUTES;
+
+        if (isWithinTriggerWindow || isSnoozeDue) {
+          if (isSnoozeDue) {
+            setSnoozedAlarms(prev => {
+              const next = { ...prev };
+              delete next[alarmKey];
+              try {
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem(SNOOZED_ALARMS_STORAGE_KEY, JSON.stringify(next));
+                }
+              } catch {}
+              return next;
+            });
           }
 
-          // 2. Verifica se está em modo "adiado" (snooze)
-          const snoozedUntil = snoozedAlarms[alarmKey];
-          if (snoozedUntil && Date.now() < snoozedUntil) {
-            continue;
-          }
-
-          if (!isChecked) {
-            if (activeAlarmItem?.alarmKey === alarmKey) return;
-
-            setActiveAlarmItem({ item, alarmKey });
-            startAlarmSound();
-            break;
-          }
+          setActiveAlarmItem({ item, alarmKey });
+          startAlarmSound();
+          break;
         }
       }
     };
 
-    const interval = setInterval(checkSchedule, 4000);
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        checkSchedule();
+      }
+    };
+
+    const interval = setInterval(checkSchedule, 3000);
     checkSchedule();
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
 
     return () => {
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
     };
-  }, [mensagensList, checksMap, selectedDate, selectedBase, dismissedAlarms, isAlarmSoundEnabled, activeAlarmItem, isCurrentUserInEquipe]);
+  }, [mensagensList, checksMap, selectedDate, selectedBase, dismissedAlarms, snoozedAlarms, isAlarmSoundEnabled, activeAlarmItem, isCurrentUserInEquipe]);
 
   // Se o usuário não estiver na equipe escalada desta base, garante que o alarme sonoro pare e o popup feche
   useEffect(() => {
@@ -2777,6 +2867,7 @@ export default function MensagensPage() {
       console.error('[Mensagens] Erro ao salvar mensagem:', error);
       alert('Erro ao salvar mensagem.');
     } else {
+      undismissAlarm(targetId);
       setIsModalOpen(false);
       refetchTemplates();
     }
@@ -4851,8 +4942,8 @@ export default function MensagensPage() {
       {/* =========================================================================
           POPUP DE ALARME DE HORÁRIO DE ENVIO DE MENSAGEM (COM COR POR REGIÃO)
           ========================================================================= */}
-      {activeAlarmItem && (
-        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+      {activeAlarmItem && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div
             className={`bg-white dark:bg-[#1e293b] rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border-2 animate-in zoom-in-95 duration-200 ${
               selectedBase === 'Sumarezinho'
@@ -5035,7 +5126,8 @@ export default function MensagensPage() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* =========================================================================
